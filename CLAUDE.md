@@ -53,6 +53,14 @@ name, any aliases, and shareable key. Report them as a short list (names, plus a
 count). If it returns zero, say the address book is empty and remind them they
 can add someone with a 6-character code.
 
+## Renaming a contact
+When the user says "rename Niels to Bob" (or "call Niels something else"), call
+`list_contacts`, take that contact's `fullKey`, then call `add_contact` with
+`name` = the new name and `key` = that fullKey. Saving a name against a key
+that's already on file replaces the old entry (the book upserts by key, not
+name), so it renames in place with no duplicate — no need to ask the user for a
+code. Confirm in one line ("Renamed Niels to Bob.").
+
 ## Style: act, then report — don't ask permission
 Default to doing the obvious thing and announcing it, e.g. "Sent to Niels: '…'."
 Only pause for a question when you're missing a fact you can't infer. Never end a
