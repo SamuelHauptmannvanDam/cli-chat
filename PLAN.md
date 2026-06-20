@@ -197,7 +197,7 @@ messages(
 - Verified by `npm run test:net` (in-process) and `npm run test:net:mcp` (real
   MCP processes + running mailbox).
 - **DEPLOYED LIVE** (2026-06-15) to Cloudflare Workers + D1:
-  `https://cli-chat.samuelhauptmannvandam.workers.dev`. Full
+  `https://mailbox.cli-chat-mcp.workers.dev`. Full
   encrypted round-trip verified against the public URL.
 - **Crypto split (Workers constraint):** Workers forbids runtime
   `WebAssembly.instantiate`, so libsodium (WASM) can't run server-side. The

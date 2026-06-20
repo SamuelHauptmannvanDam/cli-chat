@@ -18,6 +18,7 @@ import { createMailboxClient } from "./mailbox-client.ts";
 import { randomHandle } from "./key-code.ts";
 import { currentUser, setCurrentUser } from "./current-user.ts";
 import { usersDir, userDir, identityFile, contactsFile } from "./paths.ts";
+import { resolveMailboxUrl } from "./config.ts";
 
 // Display name: MESSENGER_USER, else the first CLI arg, else the OS login name.
 const display = (process.env.MESSENGER_USER || process.argv[2] || userInfo().username).trim();
@@ -25,9 +26,7 @@ if (!display) {
   console.error("Couldn't determine a name. Pass one: node src/init-identity.ts <name>");
   process.exit(1);
 }
-const url =
-  process.env.MESSENGER_MAILBOX_URL ??
-  "https://cli-chat.samuelhauptmannvandam.workers.dev";
+const url = resolveMailboxUrl();
 
 await initCrypto();
 mkdirSync(usersDir(), { recursive: true });

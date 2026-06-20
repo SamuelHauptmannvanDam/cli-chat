@@ -26,7 +26,7 @@ not next to the code, so it survives across `npx` runs.
 **1. Wire up your CLI** — add one MCP server entry. On Claude Code:
 ```bash
 claude mcp add cli-chat --scope user \
-  --env MESSENGER_MAILBOX_URL=https://cli-chat.samuelhauptmannvandam.workers.dev \
+  --env MESSENGER_MAILBOX_URL=https://mailbox.cli-chat-mcp.workers.dev \
   -- npx -y cli-chat-mcp
 ```
 Or paste this into any MCP-capable CLI's config (Gemini, Cursor, Codex, …):
@@ -36,7 +36,7 @@ Or paste this into any MCP-capable CLI's config (Gemini, Cursor, Codex, …):
     "cli-chat": {
       "command": "npx",
       "args": ["-y", "cli-chat-mcp"],
-      "env": { "MESSENGER_MAILBOX_URL": "https://cli-chat.samuelhauptmannvandam.workers.dev" }
+      "env": { "MESSENGER_MAILBOX_URL": "https://mailbox.cli-chat-mcp.workers.dev" }
     }
   }
 }

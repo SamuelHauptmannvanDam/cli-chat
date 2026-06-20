@@ -16,11 +16,10 @@ import { loadIdentity } from "./identity.ts";
 import { createMailboxClient } from "./mailbox-client.ts";
 import { randomHandle } from "./key-code.ts";
 import { usersDir as usersDirFn } from "./paths.ts";
+import { resolveMailboxUrl } from "./config.ts";
 
 const usersDir = usersDirFn();
-const url =
-  process.env.MESSENGER_MAILBOX_URL ??
-  "https://cli-chat.samuelhauptmannvandam.workers.dev";
+const url = resolveMailboxUrl();
 
 await initCrypto();
 
