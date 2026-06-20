@@ -1,0 +1,9 @@
+node_modules/
+mailbox.db
+mailbox.db-*
+mailbox-server.db
+mailbox-server.db-*
+# Each user generates their own identity + contacts locally; never ship them.
+users/
+.wrangler/
+*.log

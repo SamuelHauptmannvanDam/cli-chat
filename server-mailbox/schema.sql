@@ -1,0 +1,21 @@
+-- Hosted mailbox schema (D1 / SQLite). Store-and-forward of encrypted blobs
+-- keyed by recipient address. The server never sees plaintext.
+CREATE TABLE IF NOT EXISTS messages (
+  id          TEXT PRIMARY KEY,
+  recipient   TEXT NOT NULL,   -- recipient signPub (mailbox key)
+  sender      TEXT NOT NULL,   -- sender signPub
+  body        TEXT NOT NULL,   -- base64 sealed-box ciphertext
+  tags        TEXT,            -- reserved: encrypted meta tags (Phase 2)
+  created_at  INTEGER NOT NULL,
+  fetched_at  INTEGER,         -- null until drained by the recipient
+  in_reply_to TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_recipient ON messages (recipient, fetched_at);
+
+-- Directory: short 6-char handle → a user's public keys (phone-number style).
+CREATE TABLE IF NOT EXISTS handles (
+  handle      TEXT PRIMARY KEY,
+  signPub     TEXT NOT NULL,
+  boxPub      TEXT NOT NULL,
+  created_at  INTEGER NOT NULL
+);

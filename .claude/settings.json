@@ -1,0 +1,38 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__cli-chat__send_message",
+      "mcp__cli-chat__messages_available",
+      "mcp__cli-chat__read_message",
+      "mcp__cli-chat__draft_reply",
+      "mcp__cli-chat__add_contact",
+      "mcp__cli-chat__my_key"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/src/check-inbox.ts\"",
+            "timeout": 20,
+            "statusMessage": "Checking messenger inbox..."
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/src/check-inbox.ts\"",
+            "timeout": 12,
+            "statusMessage": "Checking messenger inbox..."
+          }
+        ]
+      }
+    ]
+  }
+}
