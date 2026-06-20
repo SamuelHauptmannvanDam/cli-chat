@@ -40,8 +40,12 @@ if (existsSync(idPath)) {
   console.error(`Using your existing identity for "${user}".`);
 } else {
   id = generateIdentity();
-  writeFileSync(idPath, JSON.stringify(id, null, 2) + "\n");
   console.error(`Generated a new identity for "${user}" (private keys stay here).`);
+}
+// Display name lives in the identity (local only); backfill for older files too.
+if (!id.name) {
+  id.name = user;
+  writeFileSync(idPath, JSON.stringify(id, null, 2) + "\n");
 }
 
 const contactsPath = join(dir, "contacts.json");

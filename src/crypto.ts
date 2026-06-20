@@ -28,6 +28,7 @@ export interface Identity {
   signPub: string; // doubles as the user's address / mailbox key
   signSec: string;
   handle?: string; // short 6-char directory handle, assigned at registration
+  name?: string; // human display label — local only, never sent to the server
 }
 
 // Public half of an identity — what lives in a contact book.
