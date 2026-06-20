@@ -18,8 +18,8 @@ export interface MessageRow {
 
 export function openMailbox(path: string): DatabaseSync {
   const db = new DatabaseSync(path);
-  // WAL + a busy timeout so the watcher daemon, the MCP server, and the
-  // SessionStart hook can share one inbox.db without locking each other out.
+  // WAL + a busy timeout so the MCP server and the SessionStart hook can share
+  // one inbox.db without locking each other out.
   try {
     db.exec(`PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 3000;`);
   } catch {
