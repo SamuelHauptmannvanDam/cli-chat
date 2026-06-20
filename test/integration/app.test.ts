@@ -38,6 +38,13 @@ function signedRequest(
   return app.fetch(new Request(`http://mailbox${path}`, init));
 }
 
+// Claim a handle so this identity is a valid recipient (POST /messages now
+// rejects mail to never-registered keys).
+function register(app: ReturnType<typeof createApp>, id: Identity, handle: string) {
+  const body = JSON.stringify({ handle, signPub: id.signPub, boxPub: id.boxPub });
+  return signedRequest(app, id, "POST", "/register", body);
+}
+
 test("GET /health is open and ok", async () => {
   const res = await freshApp().fetch(new Request("http://mailbox/health"));
   assert.equal(res.status, 200);
@@ -55,6 +62,7 @@ test("a signed message can be posted, then drained by its recipient", async () =
   const app = freshApp();
   const alice = generateIdentity();
   const bob = generateIdentity();
+  await register(app, bob, "bob123"); // recipient must have a handle on file
   const msg = {
     id: "msg-1",
     recipient: bob.signPub,
@@ -121,6 +129,43 @@ test("POST /messages with missing fields is a 400", async () => {
   const body = JSON.stringify({ id: "x", sender: alice.signPub }); // no recipient/body
   const res = await signedRequest(app, alice, "POST", "/messages", body);
   assert.equal(res.status, 400);
+});
+
+test("POST /messages to a never-registered recipient is a 404", async () => {
+  const app = freshApp();
+  const alice = generateIdentity();
+  const stranger = generateIdentity(); // no handle claimed
+  const msg = JSON.stringify({
+    id: "m-404",
+    recipient: stranger.signPub,
+    sender: alice.signPub,
+    body: "c2VhbGVk",
+    tags: null,
+    created_at: NOW,
+    in_reply_to: null,
+  });
+  const res = await signedRequest(app, alice, "POST", "/messages", msg);
+  assert.equal(res.status, 404);
+  assert.match((await res.json()).error, /unknown recipient/);
+});
+
+test("POST /messages with an oversize body is rejected 413", async () => {
+  const app = freshApp();
+  const alice = generateIdentity();
+  const bob = generateIdentity();
+  await register(app, bob, "bob413");
+  const msg = JSON.stringify({
+    id: "m-big",
+    recipient: bob.signPub,
+    sender: alice.signPub,
+    body: "A".repeat(17 * 1024), // over MAX_BODY_BYTES (16 KB)
+    tags: null,
+    created_at: NOW,
+    in_reply_to: null,
+  });
+  const res = await signedRequest(app, alice, "POST", "/messages", msg);
+  assert.equal(res.status, 413);
+  assert.match((await res.json()).error, /too large/);
 });
 
 test("register then resolve a handle round-trips public keys", async () => {

@@ -16,6 +16,12 @@ export interface AppDeps {
   now: () => number;
 }
 
+// Abuse limits. These are short text ciphertexts, so the caps are generous yet
+// far below anything that would let one POST balloon the store. MAX_REQUEST_BYTES
+// bounds the whole signed envelope; MAX_BODY_BYTES bounds the sealed ciphertext.
+const MAX_REQUEST_BYTES = 64 * 1024;
+const MAX_BODY_BYTES = 16 * 1024;
+
 export function createApp(deps: AppDeps): Hono {
   const app = new Hono();
   const { store, now } = deps;
@@ -23,7 +29,15 @@ export function createApp(deps: AppDeps): Hono {
   app.get("/health", (c) => c.json({ ok: true }));
 
   app.post("/messages", async (c) => {
+    // Reject oversize bodies as cheaply as possible: trust Content-Length first
+    // (avoids buffering the body), then re-check the bytes we actually read,
+    // before spending any crypto on verification.
+    const declared = Number(c.req.header("content-length") ?? 0);
+    if (declared > MAX_REQUEST_BYTES)
+      return c.json({ error: "message too large" }, 413);
     const raw = await c.req.text();
+    if (raw.length > MAX_REQUEST_BYTES)
+      return c.json({ error: "message too large" }, 413);
     const auth = await verifyRequest(
       (h) => c.req.header(h),
       "POST",
@@ -44,6 +58,13 @@ export function createApp(deps: AppDeps): Hono {
       return c.json({ error: "sender does not match signer" }, 403);
     if (!msg.id || !msg.recipient || !msg.body)
       return c.json({ error: "missing fields" }, 400);
+    if (msg.body.length > MAX_BODY_BYTES)
+      return c.json({ error: "message too large" }, 413);
+    // Only accept mail for a recipient who has actually claimed a handle. Stops
+    // attackers spraying blobs at random/never-registered keys that would never
+    // be drained (and so would pile up until the retention sweep).
+    if (!(await store.isRegistered(msg.recipient)))
+      return c.json({ error: "unknown recipient" }, 404);
 
     await store.put({
       id: msg.id,

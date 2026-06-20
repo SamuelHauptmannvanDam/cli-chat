@@ -11,6 +11,8 @@ CREATE TABLE IF NOT EXISTS messages (
   in_reply_to TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_recipient ON messages (recipient, fetched_at);
+-- Supports the daily retention sweep (DELETE ... WHERE created_at < ?).
+CREATE INDEX IF NOT EXISTS idx_created ON messages (created_at);
 
 -- Directory: short 6-char handle → a user's public keys (phone-number style).
 CREATE TABLE IF NOT EXISTS handles (
@@ -19,3 +21,5 @@ CREATE TABLE IF NOT EXISTS handles (
   boxPub      TEXT NOT NULL,
   created_at  INTEGER NOT NULL
 );
+-- Reverse lookup for the recipient-exists check on POST /messages.
+CREATE INDEX IF NOT EXISTS idx_handles_signpub ON handles (signPub);
