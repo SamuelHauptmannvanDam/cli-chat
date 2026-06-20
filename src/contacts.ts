@@ -1,0 +1,64 @@
+// Phase 0 contact book: a flat local JSON file per user + an exact-name
+// resolver. No social graph, no learned tags yet (Phase 2/3). Resolution is
+// case-insensitive match against the contact's name and any aliases.
+
+import { readFileSync } from "node:fs";
+
+export interface Contact {
+  id: string; // the recipient user id used by the mailbox (Phase 0)
+  name: string; // display name, e.g. "Niels"
+  aliases?: string[]; // alternative spellings the resolver also matches
+  signPub?: string; // Phase 1: contact's Ed25519 address (mailbox key)
+  boxPub?: string; // Phase 1: contact's X25519 key we seal messages to
+}
+
+export interface ContactBook {
+  me: string; // this user's own id
+  contacts: Contact[];
+}
+
+export function loadContacts(path: string): ContactBook {
+  const raw = readFileSync(path, "utf8");
+  const book = JSON.parse(raw) as ContactBook;
+  if (!book.me || !Array.isArray(book.contacts)) {
+    throw new Error(`Invalid contact book at ${path}: needs { me, contacts[] }`);
+  }
+  return book;
+}
+
+export type ResolveResult =
+  | { status: "resolved"; contact: Contact }
+  | { status: "none"; query: string }
+  | { status: "ambiguous"; query: string; candidates: Contact[] };
+
+// Map a name → a specific contact. Phase 0 is exact (case-insensitive) only;
+// ambiguity and "did you mean X connected to Y?" land in Phase 2/3.
+export function resolve(book: ContactBook, query: string): ResolveResult {
+  const q = query.trim().toLowerCase();
+  const matches = book.contacts.filter((c) => {
+    const names = [c.name, ...(c.aliases ?? [])].map((n) => n.toLowerCase());
+    return names.includes(q);
+  });
+
+  if (matches.length === 1) return { status: "resolved", contact: matches[0] };
+  if (matches.length === 0) return { status: "none", query };
+  return { status: "ambiguous", query, candidates: matches };
+}
+
+// Reverse lookup: given a sender id, what do we call them? Falls back to the
+// raw id when they aren't in the book.
+export function displayName(book: ContactBook, id: string): string {
+  const c = book.contacts.find((c) => c.id === id);
+  return c?.name ?? id;
+}
+
+// Phase 1 reverse lookup keyed by Ed25519 address. Falls back to a short prefix
+// of the key for unknown senders.
+export function displayNameByKey(book: ContactBook, signPub: string): string {
+  const c = book.contacts.find((c) => c.signPub === signPub);
+  return c?.name ?? `${signPub.slice(0, 8)}…`;
+}
+
+export function contactByKey(book: ContactBook, signPub: string): Contact | undefined {
+  return book.contacts.find((c) => c.signPub === signPub);
+}

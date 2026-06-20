@@ -1,0 +1,17 @@
+# Cloudflare Workers + D1 deploy config for the hosted mailbox (PLAN.md §7).
+# Deploy path (not part of the local test suite):
+#   1. npx wrangler d1 create cli-chat
+#      → copy the database_id into [[d1_databases]] below.
+#   2. npx wrangler d1 execute cli-chat --file server-mailbox/schema.sql
+#   3. npx wrangler deploy
+# Point the client at the deployed URL via MESSENGER_MAILBOX_URL.
+
+name = "cli-chat"
+main = "server-mailbox/worker.ts"
+compatibility_date = "2026-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "cli-chat"
+database_id = "3789e756-8aaf-42ab-8366-1d289133b39a"

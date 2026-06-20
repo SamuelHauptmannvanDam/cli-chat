@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "cli-chat": {
+      "command": "node",
+      "args": ["${PWD}/src/server-net.ts"],
+      "env": {
+        "MESSENGER_USER": "${MESSENGER_USER:-}",
+        "MESSENGER_MAILBOX_URL": "${MESSENGER_MAILBOX_URL:-https://cli-chat.samuelhauptmannvandam.workers.dev}"
+      }
+    }
+  }
+}
