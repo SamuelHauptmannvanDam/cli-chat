@@ -3,8 +3,12 @@
 // they all just run a stdio command. Behavior travels via the server's MCP
 // `instructions`, so no per-CLI prompt file is required.
 //
-//   export MESSENGER_USER=sam
-//   node src/install.ts
+//   node src/install.ts   (or: npm run install-clis)   # from a clone
+//
+// The registered command is `npx -y cli-chat-mcp`, so the target CLI always
+// runs the published package — no repo checkout or build needed on that machine.
+// Identity lives in ~/.cli-chat (created on first use via create_account), so
+// MESSENGER_USER is optional; set it only to pin a specific identity by name.
 //
 // Idempotent: re-running updates the entry. Prints a manual snippet for any CLI
 // it can't detect.
@@ -12,26 +16,24 @@
 import { execSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join } from "node:path";
 
-const ROOT = resolve(import.meta.dirname, "..");
 const HOME = process.env.HOME_OVERRIDE ?? homedir(); // HOME_OVERRIDE for testing
-const NAME = "cli-chat";
+const PKG = "cli-chat-mcp"; // the published npm package run via npx
+const NAME = "cli-chat"; // the server key shown in each CLI's config
 
-const user = process.env.MESSENGER_USER;
-if (!user) {
-  console.error("Set MESSENGER_USER first, e.g.  export MESSENGER_USER=sam");
-  process.exit(1);
-}
+const user = process.env.MESSENGER_USER; // optional: pin a named identity
 const mailboxUrl =
   process.env.MESSENGER_MAILBOX_URL ??
   "https://cli-chat.samuelhauptmannvandam.workers.dev";
-const serverPath = join(ROOT, "src", "server-net.ts");
+
+const env: Record<string, string> = { MESSENGER_MAILBOX_URL: mailboxUrl };
+if (user) env.MESSENGER_USER = user;
 
 const spec = {
-  command: "node",
-  args: [serverPath],
-  env: { MESSENGER_USER: user, MESSENGER_MAILBOX_URL: mailboxUrl },
+  command: "npx",
+  args: ["-y", PKG],
+  env,
 };
 
 const results: string[] = [];
@@ -66,19 +68,19 @@ function mergeJsonMcp(path: string): void {
 // --- Claude Code: use the official CLI when present (schema-safe) -----------
 if (onPath("claude")) {
   try {
+    const envFlags =
+      `--env MESSENGER_MAILBOX_URL=${mailboxUrl}` +
+      (user ? ` --env MESSENGER_USER=${user}` : "");
     execSync(
-      `claude mcp add ${NAME} --scope user ` +
-        `--env MESSENGER_USER=${user} --env MESSENGER_MAILBOX_URL=${mailboxUrl} ` +
-        `-- node ${JSON.stringify(serverPath)}`,
+      `claude mcp add ${NAME} --scope user ${envFlags} -- npx -y ${PKG}`,
       { stdio: "ignore" },
     );
     ok("Claude Code", "registered (user scope) via `claude mcp add`");
   } catch {
-    // Fall back to the project-scoped .mcp.json that ships with the repo.
-    skip("Claude Code", "`claude mcp add` failed; project .mcp.json still works");
+    skip("Claude Code", "`claude mcp add` failed; add the manual block below");
   }
 } else {
-  skip("Claude Code", "`claude` not on PATH; use the repo's .mcp.json");
+  skip("Claude Code", "`claude` not on PATH; add the manual block below");
 }
 
 // --- Gemini CLI: ~/.gemini/settings.json ------------------------------------
@@ -113,11 +115,14 @@ if (existsSync(codexDir) || onPath("codex")) {
   try {
     const tomlPath = join(codexDir, "config.toml");
     mkdirSync(codexDir, { recursive: true });
+    const envToml = user
+      ? `{ MESSENGER_USER = ${JSON.stringify(user)}, MESSENGER_MAILBOX_URL = ${JSON.stringify(mailboxUrl)} }`
+      : `{ MESSENGER_MAILBOX_URL = ${JSON.stringify(mailboxUrl)} }`;
     const block =
       `\n[mcp_servers.${NAME}]\n` +
-      `command = "node"\n` +
-      `args = [${JSON.stringify(serverPath)}]\n` +
-      `env = { MESSENGER_USER = ${JSON.stringify(user)}, MESSENGER_MAILBOX_URL = ${JSON.stringify(mailboxUrl)} }\n`;
+      `command = "npx"\n` +
+      `args = ["-y", ${JSON.stringify(PKG)}]\n` +
+      `env = ${envToml}\n`;
     const existing = existsSync(tomlPath) ? readFileSync(tomlPath, "utf8") : "";
     if (existing.includes(`[mcp_servers.${NAME}]`)) {
       skip("Codex CLI", "already present in ~/.codex/config.toml (left as-is)");
@@ -132,11 +137,12 @@ if (existsSync(codexDir) || onPath("codex")) {
   skip("Codex CLI", "not detected");
 }
 
-console.log(`\ncli-chat install — identity "${user}", mailbox ${mailboxUrl}\n`);
+console.log(`\ncli-chat install — package ${PKG}, mailbox ${mailboxUrl}\n`);
 console.log(results.join("\n"));
 console.log(
   `\nManual config (any MCP-capable CLI) — register a stdio server:\n` +
-    `  command: node\n  args:    [${serverPath}]\n` +
-    `  env:     MESSENGER_USER=${user}, MESSENGER_MAILBOX_URL=${mailboxUrl}\n` +
-    `\nRestart each CLI to pick it up. Behavior is built into the server.`,
+    `  command: npx\n  args:    ["-y", "${PKG}"]\n` +
+    `  env:     MESSENGER_MAILBOX_URL=${mailboxUrl}` +
+    (user ? `, MESSENGER_USER=${user}` : "") +
+    `\n\nRestart each CLI to pick it up, then say "set me up" to get your code.`,
 );

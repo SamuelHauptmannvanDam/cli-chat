@@ -10,14 +10,14 @@
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { initCrypto, type Identity } from "./crypto.ts";
 import { loadIdentity } from "./identity.ts";
 import { createMailboxClient } from "./mailbox-client.ts";
 import { randomHandle } from "./key-code.ts";
+import { usersDir as usersDirFn } from "./paths.ts";
 
-const ROOT = resolve(import.meta.dirname, "..");
-const usersDir = join(ROOT, "users");
+const usersDir = usersDirFn();
 const url =
   process.env.MESSENGER_MAILBOX_URL ??
   "https://cli-chat.samuelhauptmannvandam.workers.dev";
@@ -110,7 +110,3 @@ if (currentBefore) {
 }
 
 console.log("Migration complete.");
-console.log(
-  "Note: if you had auto-delivery installed, its service ID was name-based — " +
-    "re-run enable_auto_delivery to reinstall it under your handle.",
-);

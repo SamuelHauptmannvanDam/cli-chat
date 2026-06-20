@@ -114,8 +114,7 @@ until the recipient fetches them and never sees plaintext. It's a mailbox, not a
    Server stores opaque ciphertext keyed by recipient pubkey.
 
 For the MVP, use **fetch-on-open (polling)**, not push. When the CLI opens, the agent calls
-`GET /mailbox?since=T`. Add WebSocket push only later, for notifications while the CLI is
-already idle-open.
+`GET /mailbox?since=T`.
 
 ### Recommended stack
 
@@ -158,7 +157,6 @@ messages(
 - `GET  /messages?since=T` — pull the encrypted blobs; marks `fetched_at`.
 
 ### Not building yet
-- Push notifications (poll-on-open covers the proactive inbox).
 - The social graph / "search a friend's contacts" — the one feature that pulls toward a
   smarter, more privacy-fraught server. Out of v1.
 
@@ -216,9 +214,13 @@ messages(
 - **6-character handles** via a server registry (`POST /register`, `GET /resolve`):
   share a short code instead of a long key; `send_message`/`add_contact` resolve
   it. Trade-off: handle→key lookup trusts the (self-hosted) server.
-- **Automatic delivery** (`enable_auto_delivery` tool / `src/watch.ts`): a
-  background watcher polls + desktop-notifies cross-OS (launchd/systemd/Task
-  Scheduler). Notifies only — agent-interrupts-mid-chat is still Phase 4.
+- **Background auto-delivery watcher** (`enable_auto_delivery` tool /
+  `src/watch.ts`): **Removed (2026-06-20)** — a separate long-lived per-OS
+  process was more moving parts than it was worth versus poll-on-open. Replaced
+  by the in-session `watch` tool (a long-poll loop the agent re-calls), which
+  needs no OS service and works in any MCP CLI. Dropped the
+  `enable_auto_delivery`/`disable_auto_delivery`/`delivery_status` tools and
+  `src/watch.ts`.
 - **Cleanup (2026-06-16):** removed the superseded Phase 0 local stack
   (`server.ts`, `core.ts`, `config.ts`, `setup-identities.ts`, `AGENT.md`,
   `test/roundtrip.ts`, `test/live.ts`). Stack is Node/TS throughout.

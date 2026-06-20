@@ -17,74 +17,81 @@ agent surfaces the message and helps them reply.
 See [PLAN.md](./PLAN.md) for the full concept and roadmap.
 
 ## Requirements
-Node 23+ (uses built-in `node:sqlite` + native TypeScript). `npm install` pulls
-`@modelcontextprotocol/sdk`, `hono`, `@hono/node-server`, `libsodium-wrappers`, `zod`.
+Node 22.6+ (uses built-in `node:sqlite`). That's all an end user needs — `npx`
+fetches the rest. State (identity, contacts, inbox cache) lives in `~/.cli-chat`,
+not next to the code, so it survives across `npx` runs.
 
-## Quick test (no setup)
+## Set up to message someone (no clone)
+
+**1. Wire up your CLI** — add one MCP server entry. On Claude Code:
 ```bash
-npm install
-npm test          # in-process: encryption, server-only-ciphertext, spoof rejection (14 checks)
-npm run test:mcp  # real MCP server processes against the live cloud mailbox
+claude mcp add cli-chat --scope user \
+  --env MESSENGER_MAILBOX_URL=https://cli-chat.samuelhauptmannvandam.workers.dev \
+  -- npx -y cli-chat-mcp
 ```
-
-## Set up to message someone
-
-**1. Install + create your identity** (one-time per machine):
-```bash
-npm install
-export MESSENGER_USER=sam        # your handle/name
-node src/init-identity.ts        # prints your 6-char code, e.g. dC0v6m
+Or paste this into any MCP-capable CLI's config (Gemini, Cursor, Codex, …):
+```json
+{
+  "mcpServers": {
+    "cli-chat": {
+      "command": "npx",
+      "args": ["-y", "cli-chat-mcp"],
+      "env": { "MESSENGER_MAILBOX_URL": "https://cli-chat.samuelhauptmannvandam.workers.dev" }
+    }
+  }
+}
 ```
+(From a clone, `npm run install-clis` auto-writes this entry for every detected CLI.)
 
-**2. Wire up your CLI(s):**
-```bash
-node src/install.ts              # writes MCP config for each detected CLI
-```
-Then restart your CLI and approve the `cli-chat` server once. (On Claude
-Code you can instead use the bundled `.mcp.json` — both work.)
+**2. Restart your CLI**, approve the `cli-chat` server once, then say *"set me
+up"* — `create_account` mints your identity and prints your 6-char code (e.g.
+`dC0v6m`) to share.
 
 **3. Swap 6-char codes** with whoever you're messaging (both directions).
 
-**4. Message** — launch your CLI with `MESSENGER_USER` exported:
+**4. Message:**
 ```
 write Sam at dC0v6m: hey      # first time: by code (saves them)
 write Sam: hey                # after that: by name
 ```
-The recipient's message auto-reads when they open their CLI; they reply the same way.
+When the recipient opens their CLI they're told a message is waiting and asked if
+they want it read; they reply the same way.
+
+## Develop from a clone
+```bash
+npm install
+npm test          # unit + integration (92 checks): encryption, server-only-ciphertext, spoofing
+npm run test:mcp  # real MCP server processes against the live cloud mailbox
+npm run build     # bundle src/ → dist/ (what gets published)
+```
+Running from a checkout keeps state in the repo's `users/` dir (back-compat);
+set `MESSENGER_HOME` to override where state lives.
 
 > Two-way chat needs both codes shared once — a message can't safely carry a
 > reply-to key (that would let the server MITM). Mutual, out-of-band exchange is
 > the secure choice.
 
 ## The MCP tools
-`create_account` · `send_message` · `messages_available` · `listen_for_messages` ·
-`read_message` · `draft_reply` · `add_contact` · `my_key` · `list_contacts` ·
-`enable_auto_delivery` · `disable_auto_delivery` · `delivery_status`. Behavior
-(when to check, how to reply, offering auto-delivery) is carried in the server's
-MCP `instructions`, so it's the same in every CLI.
+`create_account` · `send_message` · `messages_available` · `watch` ·
+`read_message` · `draft_reply` · `add_contact` · `my_key` · `list_contacts`.
+Behavior (when to check, how to reply) is carried in the server's MCP
+`instructions`, so it's the same in every CLI.
 
 - **`create_account`** mints your identity + 6-char code from inside the CLI, so
   you don't need `npm run init` first. The server now boots even with no identity
   on the device — until you have one, the other tools report `no_account` and the
   agent offers to run `create_account`.
-- **`listen_for_messages`** is a cross-CLI listening loop: it long-polls ~25s for
-  new mail (marking it read) and the agent re-calls it to keep listening. Unlike
-  the background watcher it needs no OS service and works in any MCP CLI, but it's
-  not silent — each return is a turn you see.
+- **`watch`** is a cross-CLI watch loop: it long-polls ~25s for new mail (marking
+  it read) and the agent re-calls it to keep watching. It needs no OS service and
+  works in any MCP CLI, but it's not silent — each return is a turn you see.
 
-## Receiving: on-open, on-demand, or automatic
+## Receiving: on-open or on-demand
 - **On open** — Claude Code runs a `SessionStart` hook (`src/check-inbox.ts`)
-  that pulls + reads waiting mail aloud. Other CLIs check on their first turn
-  (via the server instructions).
-- **On demand** — ask "any messages?" anytime.
-- **Automatic** — a background watcher polls every 10s, pulls into your local
-  cache, and desktop-notifies you even with no CLI open:
-  ```bash
-  npm run watch                  # foreground, in a spare tab
-  ```
-  …or have the agent install it as a background service: *"turn on automatic
-  delivery"* → `enable_auto_delivery` (launchd/systemd/Task Scheduler). It
-  *notifies* you; it can't make the agent speak unprompted (that's Phase 4).
+  that pulls waiting mail and tells you how many are waiting and from whom, then
+  offers to read them (the bodies stay private to the agent until you say yes).
+  Other CLIs check on their first turn (via the server instructions).
+- **On demand** — ask "any messages?" anytime, or have the agent `watch` to
+  long-poll for new mail while you wait.
 
 ## Layout
 | Path | Role |
@@ -95,7 +102,7 @@ MCP `instructions`, so it's the same in every CLI.
 | `src/key-code.ts` · `identity.ts` · `contacts.ts` · `db.ts` | codes, identity, contacts, local cache |
 | `src/mailbox-client.ts` | signed HTTP client |
 | `src/init-identity.ts` · `install.ts` · `add-contact.ts` | onboarding helpers |
-| `src/check-inbox.ts` · `watch.ts` · `service.ts` | on-open read, watcher, background service |
+| `src/check-inbox.ts` | on-open read (SessionStart hook) |
 | `server-mailbox/` | the Hono mailbox: `app.ts`, `node.ts` (local), `worker.ts`+`wrangler.toml` (Cloudflare/D1), `store*.ts`, `verify.ts`, `schema.sql` |
 | `test/live-net.ts` · `live-net-mcp.ts` | in-process + real-MCP tests |
 

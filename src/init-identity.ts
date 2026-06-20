@@ -12,14 +12,13 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { userInfo } from "node:os";
-import { join, resolve } from "node:path";
 import { initCrypto, generateIdentity, type Identity } from "./crypto.ts";
 import { loadIdentity } from "./identity.ts";
 import { createMailboxClient } from "./mailbox-client.ts";
 import { randomHandle } from "./key-code.ts";
 import { currentUser, setCurrentUser } from "./current-user.ts";
+import { usersDir, userDir, identityFile, contactsFile } from "./paths.ts";
 
-const ROOT = resolve(import.meta.dirname, "..");
 // Display name: MESSENGER_USER, else the first CLI arg, else the OS login name.
 const display = (process.env.MESSENGER_USER || process.argv[2] || userInfo().username).trim();
 if (!display) {
@@ -31,15 +30,15 @@ const url =
   "https://cli-chat.samuelhauptmannvandam.workers.dev";
 
 await initCrypto();
-mkdirSync(join(ROOT, "users"), { recursive: true });
+mkdirSync(usersDir(), { recursive: true });
 
 // Reuse an existing identity on this device if there is one.
-const existingDir = currentUser(ROOT);
+const existingDir = currentUser();
 let id: Identity;
 let existing = false;
 if (existingDir) {
   try {
-    id = loadIdentity(join(ROOT, "users", existingDir, "identity.json"));
+    id = loadIdentity(identityFile(existingDir));
     existing = true;
     console.error(`Using your existing identity (${id.name ?? existingDir}).`);
   } catch {
@@ -66,14 +65,15 @@ try {
   }
 
   // Persist under the handle-keyed directory.
-  const dir = join(ROOT, "users", id.handle);
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, "identity.json"), JSON.stringify(id, null, 2) + "\n");
-  const contactsPath = join(dir, "contacts.json");
+  mkdirSync(userDir(id.handle), { recursive: true });
+  writeFileSync(identityFile(id.handle), JSON.stringify(id, null, 2) + "\n");
   if (!existing) {
-    writeFileSync(contactsPath, JSON.stringify({ me: id.signPub, contacts: [] }, null, 2) + "\n");
+    writeFileSync(
+      contactsFile(id.handle),
+      JSON.stringify({ me: id.signPub, contacts: [] }, null, 2) + "\n",
+    );
   }
-  setCurrentUser(ROOT, id.handle);
+  setCurrentUser(id.handle);
 
   console.error("\n──────────────────────────────────────────────");
   console.error(`Your code — give it to anyone who wants to message you. They say:`);
