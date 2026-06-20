@@ -16,6 +16,7 @@ import { createMailboxClient } from "./mailbox-client.ts";
 import { sync, type NetContext } from "./core-net.ts";
 import { currentUser } from "./current-user.ts";
 import { identityFile, contactsFile, inboxFile } from "./paths.ts";
+import { resolveMailboxUrl } from "./config.ts";
 
 const user = currentUser();
 
@@ -67,9 +68,7 @@ if (!setUp) {
   process.exit(0); // nothing more to do without an account
 }
 
-const url =
-  process.env.MESSENGER_MAILBOX_URL ??
-  "https://cli-chat.samuelhauptmannvandam.workers.dev";
+const url = resolveMailboxUrl();
 
 try {
   await initCrypto();

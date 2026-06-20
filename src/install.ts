@@ -17,15 +17,14 @@ import { execSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { resolveMailboxUrl } from "./config.ts";
 
 const HOME = process.env.HOME_OVERRIDE ?? homedir(); // HOME_OVERRIDE for testing
 const PKG = "cli-chat-mcp"; // the published npm package run via npx
 const NAME = "cli-chat"; // the server key shown in each CLI's config
 
 const user = process.env.MESSENGER_USER; // optional: pin a named identity
-const mailboxUrl =
-  process.env.MESSENGER_MAILBOX_URL ??
-  "https://cli-chat.samuelhauptmannvandam.workers.dev";
+const mailboxUrl = resolveMailboxUrl();
 
 const env: Record<string, string> = { MESSENGER_MAILBOX_URL: mailboxUrl };
 if (user) env.MESSENGER_USER = user;

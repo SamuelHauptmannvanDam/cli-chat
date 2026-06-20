@@ -20,6 +20,7 @@ import { createMailboxClient, type MailboxClient } from "./mailbox-client.ts";
 import { encodeKey, randomHandle } from "./key-code.ts";
 import { currentUser, setCurrentUser } from "./current-user.ts";
 import { userDir as userDirOf, identityFile, contactsFile, inboxFile } from "./paths.ts";
+import { resolveMailboxUrl } from "./config.ts";
 import {
   addContact,
   draftReply,
@@ -30,7 +31,7 @@ import {
   type NetContext,
 } from "./core-net.ts";
 
-const mailboxUrl = process.env.MESSENGER_MAILBOX_URL ?? "http://localhost:8787";
+const mailboxUrl = resolveMailboxUrl();
 const now = () => Date.now();
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 

@@ -6,7 +6,9 @@
 #   3. npx wrangler deploy
 # Point the client at the deployed URL via MESSENGER_MAILBOX_URL.
 
-name = "cli-chat"
+# Worker name = first segment of the URL: mailbox.<account-subdomain>.workers.dev
+# (the D1 database below keeps its own name, "cli-chat", and its data.)
+name = "mailbox"
 main = "server-mailbox/worker.ts"
 compatibility_date = "2026-01-01"
 compatibility_flags = ["nodejs_compat"]
