@@ -57,10 +57,20 @@ The recipient's message auto-reads when they open their CLI; they reply the same
 > the secure choice.
 
 ## The MCP tools
-`send_message` · `messages_available` · `read_message` · `draft_reply` ·
-`add_contact` · `my_key` · `enable_auto_delivery` · `disable_auto_delivery` ·
-`delivery_status`. Behavior (when to check, how to reply, offering auto-delivery)
-is carried in the server's MCP `instructions`, so it's the same in every CLI.
+`create_account` · `send_message` · `messages_available` · `listen_for_messages` ·
+`read_message` · `draft_reply` · `add_contact` · `my_key` · `list_contacts` ·
+`enable_auto_delivery` · `disable_auto_delivery` · `delivery_status`. Behavior
+(when to check, how to reply, offering auto-delivery) is carried in the server's
+MCP `instructions`, so it's the same in every CLI.
+
+- **`create_account`** mints your identity + 6-char code from inside the CLI, so
+  you don't need `npm run init` first. The server now boots even with no identity
+  on the device — until you have one, the other tools report `no_account` and the
+  agent offers to run `create_account`.
+- **`listen_for_messages`** is a cross-CLI listening loop: it long-polls ~25s for
+  new mail (marking it read) and the agent re-calls it to keep listening. Unlike
+  the background watcher it needs no OS service and works in any MCP CLI, but it's
+  not silent — each return is a turn you see.
 
 ## Receiving: on-open, on-demand, or automatic
 - **On open** — Claude Code runs a `SessionStart` hook (`src/check-inbox.ts`)

@@ -1,61 +1,100 @@
-// Phase 1 MCP server: networked + encrypted. Same four tools as Phase 0, but
-// bodies are sealed and travel through the hosted mailbox.
+// Phase 1 MCP server: networked + encrypted. Bodies are sealed and travel
+// through the hosted mailbox.
 // Run as:  MESSENGER_USER=sam MESSENGER_MAILBOX_URL=http://localhost:8787 node src/server-net.ts
+//
+// The server boots even with NO identity on the device: in that state only
+// `create_account` works (the rest report `no_account`), so a brand-new user
+// can mint their identity + 6-char code from inside any CLI — no `npm run init`.
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { initCrypto } from "./crypto.ts";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
+import { userInfo } from "node:os";
+import { initCrypto, generateIdentity } from "./crypto.ts";
 import { loadIdentity } from "./identity.ts";
 import { loadContacts } from "./contacts.ts";
-import { openMailbox } from "./db.ts";
-import { createMailboxClient } from "./mailbox-client.ts";
-import { encodeKey } from "./key-code.ts";
+import { openMailbox, unreadFor, markRead } from "./db.ts";
+import { createMailboxClient, type MailboxClient } from "./mailbox-client.ts";
+import { encodeKey, randomHandle } from "./key-code.ts";
 import { enableService, disableService, statusService } from "./service.ts";
-import { currentUser } from "./current-user.ts";
+import { currentUser, setCurrentUser } from "./current-user.ts";
 import {
   addContact,
   draftReply,
   messagesAvailable,
   readMessage,
   sendMessage,
+  sync,
   type NetContext,
 } from "./core-net.ts";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-
-const user = currentUser(ROOT);
-if (!user)
-  throw new Error(
-    "No identity selected. Run `npm run init` to create one (it becomes this " +
-      "device's default), or set MESSENGER_USER to pick among several.",
-  );
 const mailboxUrl = process.env.MESSENGER_MAILBOX_URL ?? "http://localhost:8787";
+const now = () => Date.now();
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 await initCrypto();
 
-const userDir = join(ROOT, "users", user);
-const contactsPath = join(userDir, "contacts.json");
-const me = loadIdentity(join(userDir, "identity.json"));
-const book = loadContacts(contactsPath);
-const cache = openMailbox(join(userDir, "inbox.db"));
-const now = () => Date.now();
+// A resolved identity + everything bound to it. Built lazily so the server can
+// start with no account and create one on demand (create_account).
+function buildSession(user: string) {
+  const userDir = join(ROOT, "users", user);
+  const contactsPath = join(userDir, "contacts.json");
+  const me = loadIdentity(join(userDir, "identity.json"));
+  const book = loadContacts(contactsPath);
+  const cache = openMailbox(join(userDir, "inbox.db"));
+  const ctx: NetContext = {
+    me,
+    book,
+    cache,
+    client: createMailboxClient(mailboxUrl, me, now),
+    now,
+    contactsPath,
+  };
+  const serviceOpts = {
+    user,
+    mailboxUrl,
+    watchPath: join(ROOT, "src", "watch.ts"),
+    nodePath: process.execPath,
+  };
+  return { user, me, book, cache, ctx, serviceOpts };
+}
 
-const ctx: NetContext = {
-  me,
-  book,
-  cache,
-  client: createMailboxClient(mailboxUrl, me, now),
-  now,
-  contactsPath,
-};
+let S: ReturnType<typeof buildSession> | null = null;
+const existing = currentUser(ROOT);
+if (existing) {
+  try {
+    S = buildSession(existing);
+  } catch (e) {
+    console.error(`Found user "${existing}" but couldn't load identity: ${(e as Error).message}`);
+  }
+}
+
+// Claim a free 6-char handle in the registry (retries on collision).
+async function claimHandle(client: MailboxClient): Promise<string> {
+  for (let i = 0; i < 8; i++) {
+    const candidate = randomHandle(randomBytes(8));
+    if ((await client.registerHandle(candidate)) === "ok") return candidate;
+  }
+  throw new Error("couldn't find a free handle after several tries");
+}
 
 // Behavior travels WITH the server (MCP `instructions`, sent on connect) so it
 // works in any MCP-capable CLI — not just Claude Code's CLAUDE.md. Every major
 // agent CLI surfaces these instructions to its model.
 const INSTRUCTIONS = `You are the user's personal CLI messenger, backed by the cli-chat MCP server.
+
+GETTING STARTED: a tool returning \`no_account\` means this device has no account
+yet. Just fix it automatically — call \`create_account\` (pass name=their name if
+the user gave one, otherwise let it default to the OS login name), then retry
+whatever they were doing. You don't need to ask permission for this. If the user
+explicitly asks to be set up ("set me up as Sam"), do the same. After creating,
+report the new 6-char code in one line so they can share it. If they already have
+an account, \`create_account\` just returns their existing code.
 
 AT THE START OF A SESSION: if your host already injected an \`[inbox] …\` block
 (a startup hook fetched and displayed the waiting mail), do NOT repeat it or
@@ -83,6 +122,14 @@ MESSAGING SOMEONE NEW: people share a short 6-character code. When the user says
 "write Sam at AbC123: hey", call \`send_message\` with to="Sam", body=the message,
 key="AbC123". It saves them, so next time just "write Sam".
 
+LISTENING: when the user asks you to "wait for", "watch for", "listen for", or
+"keep an eye out for" incoming messages, call \`listen_for_messages\`. It blocks
+up to ~25s and returns any new mail (already marked read). After it returns —
+whether it found messages or was idle — call it AGAIN to keep listening, and keep
+looping until the user tells you to stop. Report each message as it arrives and
+offer to reply. This is intentionally NOT silent: each return is a turn the user
+sees.
+
 AUTOMATIC DELIVERY: new mail already surfaces in-chat — on session start and,
 where the host supports it, each time the user sends a message. Do NOT
 proactively offer background notifications. Only call \`enable_auto_delivery\` if
@@ -92,12 +139,95 @@ watcher with opt-in desktop notifications). \`disable_auto_delivery\` /
 
 OTHER: \`add_contact\` saves a person from their code; \`list_contacts\` shows the
 user's saved address book; \`my_key\` returns the user's own 6-char code to share.
+
+RENAMING: when the user says "rename Niels to Bob" (or "call Niels something
+else"), call \`list_contacts\`, take that contact's \`fullKey\`, then call
+\`add_contact\` with name="Bob" and key=that fullKey. Saving a name against a key
+already on file replaces the old entry, so it renames in place with no duplicate
+and no need to ask the user for a code. Confirm in one line ("Renamed Niels to
+Bob.").
+
 Always keep the human in control of what's sent.`;
 
 const server = new McpServer({ name: "cli-chat", version: "0.2.0" }, { instructions: INSTRUCTIONS });
 const ok = (data: unknown) => ({
   content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }],
 });
+// Returned by any identity-requiring tool when no account exists yet.
+const noAccount = () =>
+  ok({
+    ok: false,
+    reason: "no_account",
+    note: "No account on this device yet. Call create_account to generate your identity and 6-char code.",
+  });
+
+server.registerTool(
+  "create_account",
+  {
+    title: "Create your account and get your 6-char code",
+    description:
+      "Set up the USER'S OWN identity on this device: generate their keypair " +
+      "(private keys never leave the machine), claim a short 6-character code " +
+      "(their 'number') in the registry, and return it to share. Use when the " +
+      "user wants to get set up / join / get their code, or when another tool " +
+      "reported `no_account`. Idempotent: if they already have an account it just " +
+      "returns their existing code. (This is for the user themselves — to save " +
+      "OTHER people, use add_contact.)",
+    inputSchema: {
+      name: z
+        .string()
+        .optional()
+        .describe("What to call this user, e.g. 'Sam'. Defaults to the OS login name."),
+    },
+  },
+  async ({ name }) => {
+    if (S) {
+      if (!S.me.handle) {
+        S.me.handle = await claimHandle(S.ctx.client);
+        writeFileSync(
+          join(ROOT, "users", S.user, "identity.json"),
+          JSON.stringify(S.me, null, 2) + "\n",
+        );
+      }
+      return ok({
+        ok: true,
+        created: false,
+        name: S.user,
+        handle: S.me.handle,
+        fullKey: encodeKey(S.me.signPub, S.me.boxPub),
+        note: "You already have an account — this is your code to share.",
+      });
+    }
+
+    const who =
+      (name ?? process.env.MESSENGER_USER ?? userInfo().username ?? "me").trim() || "me";
+    const userDir = join(ROOT, "users", who);
+    mkdirSync(userDir, { recursive: true });
+    const idPath = join(userDir, "identity.json");
+    const id = existsSync(idPath) ? loadIdentity(idPath) : generateIdentity();
+    if (!existsSync(idPath)) writeFileSync(idPath, JSON.stringify(id, null, 2) + "\n");
+
+    const contactsPath = join(userDir, "contacts.json");
+    if (!existsSync(contactsPath)) {
+      writeFileSync(contactsPath, JSON.stringify({ me: id.signPub, contacts: [] }, null, 2) + "\n");
+    }
+    setCurrentUser(ROOT, who);
+
+    if (!id.handle) {
+      id.handle = await claimHandle(createMailboxClient(mailboxUrl, id, now));
+      writeFileSync(idPath, JSON.stringify(id, null, 2) + "\n");
+    }
+    S = buildSession(who);
+    return ok({
+      ok: true,
+      created: true,
+      name: who,
+      handle: S.me.handle,
+      fullKey: encodeKey(S.me.signPub, S.me.boxPub),
+      note: `Account ready. Share this 6-character code so people can message you: ${S.me.handle}`,
+    });
+  },
+);
 
 server.registerTool(
   "send_message",
@@ -118,23 +248,28 @@ server.registerTool(
         .describe("Key code for a new person (long letters+numbers); saves them under `to`"),
     },
   },
-  async ({ to, body, key }) => ok(await sendMessage(ctx, { to, body, key })),
+  async ({ to, body, key }) => (S ? ok(await sendMessage(S.ctx, { to, body, key })) : noAccount()),
 );
 
 server.registerTool(
   "add_contact",
   {
-    title: "Save a contact from their key code",
+    title: "Save or rename a contact",
     description:
       "Remember a person by name from the key code they shared, so the user can " +
       "later just say 'write <name>'. Use when the user says something like " +
-      "'add my mate Sam, his key is …'.",
+      "'add my mate Sam, his key is …'. ALSO renames an existing contact: saving " +
+      "a name against a key that's already on file REPLACES the old entry (the " +
+      "book is upserted by key, not name), so there's no duplicate. To rename " +
+      "(e.g. 'rename Niels to Bob'), first call `list_contacts`, copy that " +
+      "contact's `fullKey`, then call this with name=the new name and key=that " +
+      "fullKey. No need to ask the user for a code — it's already saved.",
     inputSchema: {
       name: z.string().describe("What to call them, e.g. 'Sam'"),
       key: z.string().describe("Their key code (a long string of letters and numbers)"),
     },
   },
-  async ({ name, key }) => ok(await addContact(ctx, { name, key })),
+  async ({ name, key }) => (S ? ok(await addContact(S.ctx, { name, key })) : noAccount()),
 );
 
 server.registerTool(
@@ -148,12 +283,14 @@ server.registerTool(
     inputSchema: {},
   },
   async () =>
-    ok({
-      name: user,
-      handle: me.handle ?? null,
-      note: me.handle ? undefined : "No handle yet — run `node src/init-identity.ts` to get one.",
-      fullKey: encodeKey(me.signPub, me.boxPub),
-    }),
+    S
+      ? ok({
+          name: S.user,
+          handle: S.me.handle ?? null,
+          note: S.me.handle ? undefined : "No handle yet — call create_account to claim one.",
+          fullKey: encodeKey(S.me.signPub, S.me.boxPub),
+        })
+      : noAccount(),
 );
 
 server.registerTool(
@@ -167,23 +304,17 @@ server.registerTool(
     inputSchema: {},
   },
   async () =>
-    ok({
-      count: book.contacts.length,
-      contacts: book.contacts.map((c) => ({
-        name: c.name,
-        aliases: c.aliases ?? [],
-        fullKey: c.signPub && c.boxPub ? encodeKey(c.signPub, c.boxPub) : null,
-      })),
-    }),
+    S
+      ? ok({
+          count: S.book.contacts.length,
+          contacts: S.book.contacts.map((c) => ({
+            name: c.name,
+            aliases: c.aliases ?? [],
+            fullKey: c.signPub && c.boxPub ? encodeKey(c.signPub, c.boxPub) : null,
+          })),
+        })
+      : noAccount(),
 );
-
-// --- automatic background delivery (cross-OS service) ----------------------
-const serviceOpts = {
-  user,
-  mailboxUrl,
-  watchPath: join(ROOT, "src", "watch.ts"),
-  nodePath: process.execPath,
-};
 
 server.registerTool(
   "enable_auto_delivery",
@@ -197,7 +328,7 @@ server.registerTool(
       "background service is powerful — expect a permission prompt.",
     inputSchema: {},
   },
-  async () => ok(enableService(serviceOpts)),
+  async () => (S ? ok(enableService(S.serviceOpts)) : noAccount()),
 );
 
 server.registerTool(
@@ -207,7 +338,7 @@ server.registerTool(
     description: "Remove the background delivery service.",
     inputSchema: {},
   },
-  async () => ok(disableService(user)),
+  async () => (S ? ok(disableService(S.user)) : noAccount()),
 );
 
 server.registerTool(
@@ -217,7 +348,7 @@ server.registerTool(
     description: "Report whether background auto-delivery is on for this user.",
     inputSchema: {},
   },
-  async () => ok(statusService(user)),
+  async () => (S ? ok(statusService(S.user)) : noAccount()),
 );
 
 server.registerTool(
@@ -229,7 +360,56 @@ server.registerTool(
       "count and previews of unread messages. Call this when the CLI opens.",
     inputSchema: {},
   },
-  async () => ok(await messagesAvailable(ctx)),
+  async () => (S ? ok(await messagesAvailable(S.ctx)) : noAccount()),
+);
+
+server.registerTool(
+  "listen_for_messages",
+  {
+    title: "Wait for incoming messages (long-poll loop)",
+    description:
+      "Block for up to ~25 seconds waiting for new mail, then return it (already " +
+      "marked read) or report idle if none arrived. This is the building block of " +
+      "a listening loop: after it returns, call it AGAIN to keep listening, and " +
+      "repeat until the user says to stop. Portable across CLIs and intentionally " +
+      "not silent — each return is a turn the user sees. Use when the user asks to " +
+      "wait for / watch for / keep an eye out for messages.",
+    inputSchema: {},
+  },
+  async () => {
+    if (!S) return noAccount();
+    const deadline = now() + 25_000;
+    for (;;) {
+      await sync(S.ctx);
+      const rows = unreadFor(S.cache, S.me.signPub);
+      if (rows.length > 0) {
+        const messages = rows.map((m) => {
+          markRead(S!.cache, m.id, now());
+          return {
+            id: m.id,
+            from: (S!.book.contacts.find((c) => c.signPub === m.sender)?.name ?? m.sender),
+            body: m.body,
+            at: m.created_at,
+            in_reply_to: m.in_reply_to,
+          };
+        });
+        return ok({
+          status: "messages",
+          count: messages.length,
+          messages,
+          note: "Report these and offer to reply (draft_reply). Call listen_for_messages again to keep listening.",
+        });
+      }
+      if (now() >= deadline) {
+        return ok({
+          status: "idle",
+          count: 0,
+          note: "No new messages in the last ~25s. Call listen_for_messages again to keep listening, or stop if the user is done.",
+        });
+      }
+      await sleep(3_000);
+    }
+  },
 );
 
 server.registerTool(
@@ -239,7 +419,7 @@ server.registerTool(
     description: "Read a decrypted message by id (or oldest unread). Marks it read.",
     inputSchema: { id: z.string().optional().describe("Message id; omit for oldest unread") },
   },
-  async ({ id }) => ok(await readMessage(ctx, { id })),
+  async ({ id }) => (S ? ok(await readMessage(S.ctx, { id })) : noAccount()),
 );
 
 server.registerTool(
@@ -254,9 +434,14 @@ server.registerTool(
       body: z.string().describe("The reply text"),
     },
   },
-  async ({ in_reply_to, body }) => ok(await draftReply(ctx, { in_reply_to, body })),
+  async ({ in_reply_to, body }) =>
+    S ? ok(await draftReply(S.ctx, { in_reply_to, body })) : noAccount(),
 );
 
 const transport = new StdioServerTransport();
 await server.connect(transport);
-console.error(`cli-chat (Phase 1) up as "${user}" → mailbox ${mailboxUrl}`);
+console.error(
+  S
+    ? `cli-chat (Phase 1) up as "${S.user}" → mailbox ${mailboxUrl}`
+    : `cli-chat (Phase 1) up with NO account → mailbox ${mailboxUrl} (call create_account)`,
+);

@@ -18,7 +18,6 @@ import { currentUser } from "./current-user.ts";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const user = currentUser(ROOT);
-if (!user) process.exit(0); // no identity on this device — stay quiet
 
 // This script is wired to BOTH the SessionStart and UserPromptSubmit hooks.
 // The CLI rejects output whose hookSpecificOutput.hookEventName doesn't match
@@ -30,6 +29,42 @@ try {
   if (payload?.hook_event_name) hookEventName = payload.hook_event_name;
 } catch {
   // no/invalid stdin — keep the default
+}
+
+// Does this device have an account yet? If not, nudge the user to set up — but
+// only ONCE per session (on SessionStart), never nagging on every prompt. We
+// can check without crypto: loadIdentity just reads + validates the JSON.
+let setUp = false;
+if (user) {
+  try {
+    loadIdentity(join(ROOT, "users", user, "identity.json"));
+    setUp = true;
+  } catch {
+    /* identity dir/file missing — treat as not set up */
+  }
+}
+if (!setUp) {
+  if (hookEventName === "SessionStart") {
+    const text =
+      "You don't have a cli-chat account on this device yet — I'll create one " +
+      "automatically the first time you message someone. Say \"set me up as Sam\" " +
+      "if you'd like to choose your name (and get your 6-character code) now.";
+    console.log(
+      JSON.stringify({
+        systemMessage: text,
+        hookSpecificOutput: {
+          hookEventName,
+          additionalContext:
+            text +
+            " (No identity exists on this device. The other messaging tools return " +
+            "no_account until then; when that happens, or if the user asks to get " +
+            "set up, call create_account automatically — defaulting the name to the " +
+            "OS login unless the user gave one — then continue.)",
+        },
+      }),
+    );
+  }
+  process.exit(0); // nothing more to do without an account
 }
 
 const url =
