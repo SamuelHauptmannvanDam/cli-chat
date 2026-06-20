@@ -109,6 +109,14 @@ npm run deploy
 Point clients at it with `MESSENGER_MAILBOX_URL=https://…`.
 
 ## Notes
+- **Storage is keyed by handle, not name.** Each identity lives in
+  `users/<handle>/` (your 6-char code), and the device default `users/.current`
+  holds that handle. Your name is a cosmetic `name` field inside `identity.json`
+  — local only, never sent to the server, and free to change. `MESSENGER_USER`
+  accepts a handle, a display name, or a `signPub` and resolves to the right
+  identity. Upgrading from the older name-keyed layout? Run `npm run migrate`
+  (it claims a handle for any identity missing one, renames the dirs, and fixes
+  `.current`). After migrating, restart any running CLI so its server reloads.
 - **Secrets:** `users/*/identity.json` holds private keys and is gitignored; only
   public keys ever leave your machine.
 - The deployed mailbox is currently open (no API token) — it only holds

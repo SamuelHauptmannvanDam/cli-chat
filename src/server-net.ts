@@ -11,7 +11,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { userInfo } from "node:os";
 import { initCrypto, generateIdentity } from "./crypto.ts";
@@ -56,7 +56,7 @@ function buildSession(user: string) {
     contactsPath,
   };
   const serviceOpts = {
-    user,
+    user: me.handle ?? user, // service IDs key on the stable handle, not the name
     mailboxUrl,
     watchPath: join(ROOT, "src", "watch.ts"),
     nodePath: process.execPath,
@@ -210,26 +210,24 @@ server.registerTool(
       });
     }
 
-    const who =
+    // Display name is cosmetic; the identity is keyed on disk by its handle.
+    const display =
       (name ?? process.env.MESSENGER_USER ?? userInfo().username ?? "me").trim() || "me";
-    const userDir = join(ROOT, "users", who);
+    const id = generateIdentity();
+    id.name = display;
+    // Claim the handle FIRST — it's the directory key, and an account isn't
+    // usable without a code anyway. (Throws if the registry is unreachable.)
+    id.handle = await claimHandle(createMailboxClient(mailboxUrl, id, now));
+
+    const userDir = join(ROOT, "users", id.handle);
     mkdirSync(userDir, { recursive: true });
-    const idPath = join(userDir, "identity.json");
-    const id = existsSync(idPath) ? loadIdentity(idPath) : generateIdentity();
-    if (!id.name) id.name = who; // display label lives in the identity itself
-    writeFileSync(idPath, JSON.stringify(id, null, 2) + "\n");
-
-    const contactsPath = join(userDir, "contacts.json");
-    if (!existsSync(contactsPath)) {
-      writeFileSync(contactsPath, JSON.stringify({ me: id.signPub, contacts: [] }, null, 2) + "\n");
-    }
-    setCurrentUser(ROOT, who);
-
-    if (!id.handle) {
-      id.handle = await claimHandle(createMailboxClient(mailboxUrl, id, now));
-      writeFileSync(idPath, JSON.stringify(id, null, 2) + "\n");
-    }
-    S = buildSession(who);
+    writeFileSync(join(userDir, "identity.json"), JSON.stringify(id, null, 2) + "\n");
+    writeFileSync(
+      join(userDir, "contacts.json"),
+      JSON.stringify({ me: id.signPub, contacts: [] }, null, 2) + "\n",
+    );
+    setCurrentUser(ROOT, id.handle);
+    S = buildSession(id.handle);
     return ok({
       ok: true,
       created: true,

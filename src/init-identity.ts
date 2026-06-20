@@ -1,59 +1,56 @@
-// One-time per machine: create your identity (keypair) if you don't have one,
-// claim a short 6-character handle in the mailbox registry, and print it. Your
-// PRIVATE keys never leave this machine — the registry only stores public keys.
+// One-time per machine: create your identity (keypair), claim a short 6-char
+// handle in the mailbox registry, and print it. The identity is stored on disk
+// keyed by that handle (users/<handle>/); the name you pass is just a cosmetic
+// display label saved inside identity.json. PRIVATE keys never leave this
+// machine — the registry only stores public keys.
 //
-//   export MESSENGER_USER=sam
-//   node src/init-identity.ts
+//   node src/init-identity.ts [display-name]
+//
+// If this device already has an identity it reuses it (re-asserting its handle)
+// rather than minting a second one.
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { userInfo } from "node:os";
 import { join, resolve } from "node:path";
 import { initCrypto, generateIdentity, type Identity } from "./crypto.ts";
+import { loadIdentity } from "./identity.ts";
 import { createMailboxClient } from "./mailbox-client.ts";
 import { randomHandle } from "./key-code.ts";
-import { setCurrentUser } from "./current-user.ts";
+import { currentUser, setCurrentUser } from "./current-user.ts";
 
 const ROOT = resolve(import.meta.dirname, "..");
-// Name comes from MESSENGER_USER if given, else the first CLI arg, else the OS
-// login name — so `npm run init` Just Works with no env var.
-const user = (process.env.MESSENGER_USER || process.argv[2] || userInfo().username).trim();
-if (!user) {
+// Display name: MESSENGER_USER, else the first CLI arg, else the OS login name.
+const display = (process.env.MESSENGER_USER || process.argv[2] || userInfo().username).trim();
+if (!display) {
   console.error("Couldn't determine a name. Pass one: node src/init-identity.ts <name>");
   process.exit(1);
 }
-// Make this identity the device default so future sessions need no env var.
-mkdirSync(join(ROOT, "users"), { recursive: true });
-setCurrentUser(ROOT, user);
 const url =
   process.env.MESSENGER_MAILBOX_URL ??
   "https://cli-chat.samuelhauptmannvandam.workers.dev";
 
 await initCrypto();
-const dir = join(ROOT, "users", user);
-mkdirSync(dir, { recursive: true });
-const idPath = join(dir, "identity.json");
+mkdirSync(join(ROOT, "users"), { recursive: true });
 
+// Reuse an existing identity on this device if there is one.
+const existingDir = currentUser(ROOT);
 let id: Identity;
-if (existsSync(idPath)) {
-  id = JSON.parse(readFileSync(idPath, "utf8")) as Identity;
-  console.error(`Using your existing identity for "${user}".`);
+let existing = false;
+if (existingDir) {
+  try {
+    id = loadIdentity(join(ROOT, "users", existingDir, "identity.json"));
+    existing = true;
+    console.error(`Using your existing identity (${id.name ?? existingDir}).`);
+  } catch {
+    id = generateIdentity();
+    id.name = display;
+  }
 } else {
   id = generateIdentity();
-  console.error(`Generated a new identity for "${user}" (private keys stay here).`);
-}
-// Display name lives in the identity (local only); backfill for older files too.
-if (!id.name) {
-  id.name = user;
-  writeFileSync(idPath, JSON.stringify(id, null, 2) + "\n");
+  id.name = display;
 }
 
-const contactsPath = join(dir, "contacts.json");
-if (!existsSync(contactsPath)) {
-  writeFileSync(contactsPath, JSON.stringify({ me: id.signPub, contacts: [] }, null, 2) + "\n");
-}
-
-// Claim a handle in the registry (idempotent for one you already own).
 const client = createMailboxClient(url, id, () => Date.now());
 try {
   if (!id.handle) {
@@ -64,17 +61,28 @@ try {
     }
     if (!claimed) throw new Error("couldn't find a free handle after several tries");
     id.handle = claimed;
-    writeFileSync(idPath, JSON.stringify(id, null, 2) + "\n");
   } else {
     await client.registerHandle(id.handle); // re-assert ownership
   }
+
+  // Persist under the handle-keyed directory.
+  const dir = join(ROOT, "users", id.handle);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "identity.json"), JSON.stringify(id, null, 2) + "\n");
+  const contactsPath = join(dir, "contacts.json");
+  if (!existing) {
+    writeFileSync(contactsPath, JSON.stringify({ me: id.signPub, contacts: [] }, null, 2) + "\n");
+  }
+  setCurrentUser(ROOT, id.handle);
+
   console.error("\n──────────────────────────────────────────────");
-  console.error("Your code — give it to anyone who wants to message you. They say:");
-  console.error(`  write ${user[0].toUpperCase() + user.slice(1)} at <this code>: hi\n`);
+  console.error(`Your code — give it to anyone who wants to message you. They say:`);
+  console.error(`  write ${display} at <this code>: hi\n`);
   console.log(id.handle);
   console.error("──────────────────────────────────────────────");
 } catch (e) {
   console.error(`\nCouldn't reach the registry (${(e as Error).message}).`);
-  console.error("Your identity is saved; re-run this once you're online to claim a handle.");
+  console.error("No handle claimed — re-run this once you're online. (A handle is");
+  console.error("required: it's the key your identity is stored under.)");
   process.exit(1);
 }
