@@ -10,9 +10,22 @@ export interface Env {
   DB: D1Like;
 }
 
+// Retention windows for the daily cron sweep (see wrangler.toml [triggers]).
+// Read mail lingers a week as a re-fetch grace; anything (read or not) older
+// than a month is dropped, which also bounds never-drained spam.
+const READ_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const UNREAD_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
 export default {
   fetch(request: Request, env: Env, ctx: unknown): Response | Promise<Response> {
     const app = createApp({ store: d1Store(env.DB), now: () => Date.now() });
     return app.fetch(request, env as unknown as Record<string, unknown>, ctx);
+  },
+
+  // Cloudflare Cron Trigger: prune old mail so the mailbox can't grow without
+  // bound. Idempotent and safe to run as often as the schedule fires.
+  async scheduled(_event: unknown, env: Env, _ctx: unknown): Promise<void> {
+    const now = Date.now();
+    await d1Store(env.DB).purge(now - READ_TTL_MS, now - UNREAD_TTL_MS);
   },
 };
