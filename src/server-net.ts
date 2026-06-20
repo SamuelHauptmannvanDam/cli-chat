@@ -182,8 +182,19 @@ server.registerTool(
   },
   async ({ name }) => {
     if (S) {
+      let changed = false;
+      if (name && name.trim() && S.me.name !== name.trim()) {
+        S.me.name = name.trim(); // let the user (re)set their display name
+        changed = true;
+      } else if (!S.me.name) {
+        S.me.name = S.user; // backfill from the folder name for older identities
+        changed = true;
+      }
       if (!S.me.handle) {
         S.me.handle = await claimHandle(S.ctx.client);
+        changed = true;
+      }
+      if (changed) {
         writeFileSync(
           join(ROOT, "users", S.user, "identity.json"),
           JSON.stringify(S.me, null, 2) + "\n",
@@ -192,7 +203,7 @@ server.registerTool(
       return ok({
         ok: true,
         created: false,
-        name: S.user,
+        name: S.me.name,
         handle: S.me.handle,
         fullKey: encodeKey(S.me.signPub, S.me.boxPub),
         note: "You already have an account — this is your code to share.",
@@ -205,7 +216,8 @@ server.registerTool(
     mkdirSync(userDir, { recursive: true });
     const idPath = join(userDir, "identity.json");
     const id = existsSync(idPath) ? loadIdentity(idPath) : generateIdentity();
-    if (!existsSync(idPath)) writeFileSync(idPath, JSON.stringify(id, null, 2) + "\n");
+    if (!id.name) id.name = who; // display label lives in the identity itself
+    writeFileSync(idPath, JSON.stringify(id, null, 2) + "\n");
 
     const contactsPath = join(userDir, "contacts.json");
     if (!existsSync(contactsPath)) {
@@ -221,7 +233,7 @@ server.registerTool(
     return ok({
       ok: true,
       created: true,
-      name: who,
+      name: S.me.name,
       handle: S.me.handle,
       fullKey: encodeKey(S.me.signPub, S.me.boxPub),
       note: `Account ready. Share this 6-character code so people can message you: ${S.me.handle}`,
@@ -285,7 +297,7 @@ server.registerTool(
   async () =>
     S
       ? ok({
-          name: S.user,
+          name: S.me.name ?? S.user,
           handle: S.me.handle ?? null,
           note: S.me.handle ? undefined : "No handle yet — call create_account to claim one.",
           fullKey: encodeKey(S.me.signPub, S.me.boxPub),

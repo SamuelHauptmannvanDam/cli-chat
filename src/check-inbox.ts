@@ -85,9 +85,22 @@ try {
     now,
   };
 
+  // Who this device represents — handed to the agent (not the user) as context
+  // so it knows whose messenger it is. Display name lives in the identity now.
+  const whoami =
+    `You are acting as the messenger for ${me.name ?? user}` +
+    (me.handle ? ` (their code is ${me.handle})` : "") + ".";
+
   await sync(ctx);
   const unread = unreadFor(cache, me.signPub);
-  if (unread.length === 0) process.exit(0);
+  if (unread.length === 0) {
+    // No mail. On session open, still give the agent its identity (agent-only,
+    // no user-facing systemMessage). On per-turn checks, stay silent.
+    if (hookEventName === "SessionStart") {
+      console.log(JSON.stringify({ hookSpecificOutput: { hookEventName, additionalContext: whoami } }));
+    }
+    process.exit(0);
+  }
 
   const out: string[] = [`[inbox] ${unread.length} new message${unread.length > 1 ? "s" : ""}:`];
   for (const m of unread) {
@@ -107,6 +120,8 @@ try {
       hookSpecificOutput: {
         hookEventName,
         additionalContext:
+          whoami +
+          `\n\n` +
           text +
           `\n\n(These were auto-read on open and shown to the user IN FULL above, ` +
           `already marked read. Do NOT call messages_available/read_message for ` +
