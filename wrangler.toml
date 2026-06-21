@@ -2,9 +2,23 @@
 # Deploy path (not part of the local test suite):
 #   1. npx wrangler d1 create cli-chat
 #      → copy the database_id into [[d1_databases]] below.
-#   2. npx wrangler d1 execute cli-chat --file server-mailbox/schema.sql
+#   2. npx wrangler d1 execute cli-chat --remote --file server-mailbox/schema.sql
 #   3. npx wrangler deploy
 # Point the client at the deployed URL via MESSENGER_MAILBOX_URL.
+#
+# UPGRADING AN EXISTING D1 (admission control, v0.4.7+): schema.sql is written
+# for a FRESH database — re-running it on a DB created before `received_at`
+# existed fails at `idx_admission` ("no such column: received_at"), because
+# `CREATE TABLE IF NOT EXISTS messages` is a no-op on the existing table. D1 has
+# no `ADD COLUMN IF NOT EXISTS`, so there's no purely-idempotent SQL fix. Since
+# there are no users yet, the clean path is to RECREATE the DB:
+#   npx wrangler d1 execute cli-chat --remote --command \
+#     "DROP TABLE IF EXISTS messages; DROP TABLE IF EXISTS known; DROP TABLE IF EXISTS handles"
+#   npx wrangler d1 execute cli-chat --remote --file server-mailbox/schema.sql
+# To PRESERVE existing mail instead, add the column first, then apply schema.sql:
+#   npx wrangler d1 execute cli-chat --remote --command \
+#     "ALTER TABLE messages ADD COLUMN received_at INTEGER"
+# (The node/dev driver self-heals this automatically; only D1 needs the step.)
 
 # Worker name = first segment of the URL: mailbox.<account-subdomain>.workers.dev
 # (the D1 database below keeps its own name, "cli-chat", and its data.)
