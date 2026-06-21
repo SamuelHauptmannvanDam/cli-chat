@@ -1,6 +1,6 @@
 {
   "name": "cli-chat-mcp",
-  "version": "0.4.4",
+  "version": "0.4.5",
   "type": "module",
   "description": "Headless cross-CLI messenger for coding agents (MCP)",
   "bin": {
@@ -24,7 +24,6 @@
     "test:mcp": "node test/e2e/live-net-mcp.ts",
     "test:push": "node test/e2e/live-push.ts",
     "init": "node src/init-identity.ts",
-    "migrate": "node src/migrate.ts",
     "install-clis": "node src/install.ts",
     "add-contact": "node src/add-contact.ts",
     "mailbox": "node server-mailbox/node.ts",

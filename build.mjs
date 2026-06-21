@@ -22,7 +22,6 @@ const entries = [
   "install", // wires the server into each detected CLI
   "init-identity", // one-shot identity creation
   "add-contact", // CLI contact add
-  "migrate", // legacy layout migration
 ];
 
 await build({
