@@ -147,9 +147,7 @@ Point clients at it with `MESSENGER_MAILBOX_URL=https://…`.
   people you message see "You (handle)" instead of a key prefix and can save you
   automatically. `MESSENGER_USER`
   accepts a handle, a display name, or a `signPub` and resolves to the right
-  identity. Upgrading from the older name-keyed layout? Run `npm run migrate`
-  (it claims a handle for any identity missing one, renames the dirs, and fixes
-  `.current`). After migrating, restart any running CLI so its server reloads.
+  identity.
 - **Secrets:** `users/*/identity.json` holds private keys and is gitignored; only
   public keys ever leave your machine.
 - The deployed mailbox is currently open (no API token) — it only holds
