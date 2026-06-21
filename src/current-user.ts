@@ -52,6 +52,13 @@ function resolveDir(sel: string): string | null {
   return null;
 }
 
+// Map any selector (handle | display name | signPub | literal dir) to the
+// on-disk directory that holds it, or null if nothing matches. Exposed so
+// create_account can adopt an existing identity instead of minting a duplicate.
+export function resolveIdentity(sel: string): string | null {
+  return resolveDir(sel);
+}
+
 export function currentUser(): string | null {
   const env = process.env.MESSENGER_USER?.trim();
   if (env) return resolveDir(env) ?? env; // unresolved → return raw (boots no-account)
