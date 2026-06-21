@@ -1,11 +1,17 @@
 {
+  "env": {
+    "MCP_TOOL_TIMEOUT": "600000"
+  },
   "permissions": {
     "allow": [
+      "mcp__cli-chat__create_account",
       "mcp__cli-chat__send_message",
       "mcp__cli-chat__messages_available",
+      "mcp__cli-chat__watch",
       "mcp__cli-chat__read_message",
       "mcp__cli-chat__draft_reply",
       "mcp__cli-chat__add_contact",
+      "mcp__cli-chat__list_contacts",
       "mcp__cli-chat__my_key"
     ]
   },

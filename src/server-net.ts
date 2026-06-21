@@ -38,11 +38,23 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // How long a single `watch` long-poll blocks before returning `idle`. The MCP
 // client (Claude Code) normally aborts a tool call after ~60s, but we emit a
-// progress notification on every inner tick — clients that honor MCP progress
-// reset their timeout on each one, so the call can safely outlive 60s. Keep the
-// window modest anyway: while watch blocks, the agent can't process the user's
-// next message (incl. "stop") until it returns. Override via MESSENGER_WATCH_MS.
-const WATCH_MS = Number(process.env.MESSENGER_WATCH_MS ?? 50_000);
+// progress notification on every inner tick (see WATCH_PING_MS) — clients that
+// honor MCP progress reset their timeout on each one, so the call can safely
+// outlive 60s. While watch blocks, the agent can't process the user's next
+// message (incl. "stop") until it returns, but an aborted call returns at once.
+//
+// Override with MESSENGER_WATCH_MS. We parse defensively: an unset, empty, or
+// non-numeric value (e.g. a Windows shell that doesn't expand the "${VAR:-…}"
+// default form in .mcp.json) falls back to DEFAULT_WATCH_MS instead of silently
+// becoming 0/NaN — the bug behind "watch re-fires every ~minute" on Windows.
+const DEFAULT_WATCH_MS = 550_000; // ~9.2 min
+const parsedWatchMs = Number(process.env.MESSENGER_WATCH_MS);
+const WATCH_MS = Number.isFinite(parsedWatchMs) && parsedWatchMs > 0 ? parsedWatchMs : DEFAULT_WATCH_MS;
+// How often the watch loop wakes to re-check the local cache, send the client
+// keepalive ping, and (every WATCH_SYNC_MS) re-drain the mailbox as a network
+// backstop for when push (the warmer WebSocket) is off or blocked.
+const WATCH_PING_MS = 3_000;
+const WATCH_SYNC_MS = 15_000;
 
 await initCrypto();
 
@@ -193,7 +205,7 @@ Bob.").
 
 Always keep the human in control of what's sent.`;
 
-const server = new McpServer({ name: "cli-chat", version: "0.4.0" }, { instructions: INSTRUCTIONS });
+const server = new McpServer({ name: "cli-chat", version: "0.4.1" }, { instructions: INSTRUCTIONS });
 const ok = (data: unknown) => ({
   content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }],
 });
@@ -444,9 +456,10 @@ server.registerTool(
     const progressToken = extra?._meta?.progressToken;
     let ticks = 0;
     // The background warmer (PUSH.md) drains new mail into the cache via push, so
-    // this loop just watches the LOCAL cache (cheap, ~1s granularity) rather than
-    // hitting the network every tick. A periodic sync is kept as a backstop for
-    // when push is off/unavailable (MESSENGER_PUSH=0 or the socket is down).
+    // each tick just reads the LOCAL cache (cheap, no network). As a backstop for
+    // when push is off/unavailable (MESSENGER_PUSH=0, or the WebSocket is blocked
+    // by a firewall/proxy — common on Windows), we ALSO re-drain the mailbox over
+    // the network every WATCH_SYNC_MS so mail still surfaces within a single call.
     await sync(S.ctx); // initial catch-up
     let sinceSync = 0;
     for (;;) {
@@ -484,7 +497,15 @@ server.registerTool(
           params: { progressToken, progress: ++ticks },
         });
       }
-      await sleep(3_000);
+      await sleep(WATCH_PING_MS);
+      // Network backstop: when push didn't deliver (warmer off or socket blocked),
+      // re-drain the mailbox periodically so mail surfaces within THIS call instead
+      // of only on the next re-invocation. The next loop turn reads it from cache.
+      sinceSync += WATCH_PING_MS;
+      if (sinceSync >= WATCH_SYNC_MS) {
+        sinceSync = 0;
+        await sync(S.ctx);
+      }
     }
   },
 );
