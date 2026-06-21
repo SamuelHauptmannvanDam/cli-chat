@@ -156,3 +156,9 @@ Point clients at it with `MESSENGER_MAILBOX_URL=https://…`.
   for a small trusted group; add a token / rate-limiting before wider use.
 - One identity per machine for now (no recovery-passphrase yet, so you can't move
   an identity to another device).
+
+## License
+Source-available under the [PolyForm Noncommercial 1.0.0](./LICENSE) license: the
+code is public so anyone can audit the end-to-end encryption, and it's free for
+personal and other non-commercial use. Commercial use is reserved — reach out if
+you'd like a commercial license.
