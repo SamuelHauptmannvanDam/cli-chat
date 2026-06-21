@@ -18,6 +18,9 @@ export interface AppDeps {
   // stored, so a transport can wake live subscribers. Omitted on the Node runner
   // (no Durable Objects); injected on Workers. Must not throw / block delivery.
   notify?: (recipient: string) => void;
+  // New-sender throttle caps (see admission control below). Override per-app
+  // (tests pin small values); otherwise env, then the defaults.
+  limits?: { unknownPairHourly?: number; unknownRecipientHourly?: number };
 }
 
 // Abuse limits. These are short text ciphertexts, so the caps are generous yet
@@ -26,9 +29,29 @@ export interface AppDeps {
 const MAX_REQUEST_BYTES = 64 * 1024;
 const MAX_BODY_BYTES = 16 * 1024;
 
+// New-sender admission window + default caps (PLAN open Q#7). "Unknown" = a
+// sender the recipient has never written to; once the recipient replies they're
+// known and exempt. The per-pair cap stops one stranger flooding; the per-
+// recipient cap is the Sybil backstop (many fresh keys still hit one ceiling).
+const ADMISSION_WINDOW_MS = 60 * 60 * 1000; // rolling hour
+const DEFAULT_UNKNOWN_PAIR_HOURLY = 5;
+const DEFAULT_UNKNOWN_RECIPIENT_HOURLY = 30;
+function envInt(name: string): number | undefined {
+  const n = Number(process.env[name]);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
 export function createApp(deps: AppDeps): Hono {
   const app = new Hono();
   const { store, now, notify } = deps;
+  const unknownPairHourly =
+    deps.limits?.unknownPairHourly ??
+    envInt("MAILBOX_UNKNOWN_PAIR_HOURLY") ??
+    DEFAULT_UNKNOWN_PAIR_HOURLY;
+  const unknownRecipientHourly =
+    deps.limits?.unknownRecipientHourly ??
+    envInt("MAILBOX_UNKNOWN_RECIPIENT_HOURLY") ??
+    DEFAULT_UNKNOWN_RECIPIENT_HOURLY;
 
   app.get("/health", (c) => c.json({ ok: true }));
 
@@ -70,15 +93,31 @@ export function createApp(deps: AppDeps): Hono {
     if (!(await store.isRegistered(msg.recipient)))
       return c.json({ error: "unknown recipient" }, 404);
 
-    await store.put({
-      id: msg.id,
-      recipient: msg.recipient,
-      sender: msg.sender,
-      body: msg.body,
-      tags: msg.tags ?? null,
-      created_at: msg.created_at,
-      in_reply_to: msg.in_reply_to ?? null,
-    });
+    // New-sender admission (PLAN open Q#7). A sender the recipient has never
+    // written to is throttled; replying to someone (or messaging them first)
+    // makes them known and exempt. Counts run on the SERVER's receive time, so a
+    // sender can't back-date created_at to slip the rolling window.
+    const receivedAt = now();
+    if (!(await store.isKnownSender(msg.recipient, msg.sender))) {
+      const since = receivedAt - ADMISSION_WINDOW_MS;
+      if ((await store.countRecentFromPair(msg.recipient, msg.sender, since)) >= unknownPairHourly)
+        return c.json({ error: "rate limited: too many new messages to this recipient" }, 429);
+      if ((await store.countRecentUnknown(msg.recipient, since)) >= unknownRecipientHourly)
+        return c.json({ error: "rate limited: recipient is receiving too much new mail" }, 429);
+    }
+
+    await store.put(
+      {
+        id: msg.id,
+        recipient: msg.recipient,
+        sender: msg.sender,
+        body: msg.body,
+        tags: msg.tags ?? null,
+        created_at: msg.created_at,
+        in_reply_to: msg.in_reply_to ?? null,
+      },
+      receivedAt,
+    );
     // Wake any live subscribers for this recipient (push). Best-effort.
     notify?.(msg.recipient);
     return c.json({ ok: true, id: msg.id });
