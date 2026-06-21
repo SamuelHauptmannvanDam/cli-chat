@@ -11,7 +11,7 @@
     "README.md"
   ],
   "engines": {
-    "node": ">=22.6.0"
+    "node": ">=20"
   },
   "scripts": {
     "build": "node build.mjs",
@@ -28,13 +28,14 @@
     "add-contact": "node src/add-contact.ts",
     "mailbox": "node server-mailbox/node.ts",
     "server": "node src/server-net.ts",
-    "deploy": "wrangler deploy"
+    "deploy": "npx wrangler deploy"
   },
   "dependencies": {
     "@hono/node-server": "^2.0.5",
     "@modelcontextprotocol/sdk": "^1.0.0",
     "hono": "^4.12.25",
     "libsodium-wrappers": "^0.8.4",
+    "node-sqlite3-wasm": "^0.8.58",
     "zod": "^3.23.8"
   },
   "devDependencies": {
