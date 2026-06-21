@@ -96,6 +96,20 @@ Refactor on **two conditions together**, never on the Node version alone:
 **What does NOT justify it:** performance. At this scale both shims are invisible
 next to the network round-trip — don't refactor for speed.
 
+### Worked example: when to set the floor to Node 22
+Node 22 unlocks only one thing here: the built-in global `WebSocket`. So a Node 22
+floor makes sense in exactly these cases:
+- **Node 20 hits end-of-life (~April 2026).** Set your floor to the oldest Node LTS
+  still in maintenance — when that's 22, bump `engines` to `>=22` purely for
+  lifecycle hygiene. `ws` keeps working on 22, so this is a zero-code change; you're
+  just dropping dead Node versions.
+- **You want to drop the `ws` dependency.** 22 is the minimum that allows the
+  `ws`→native swap above (plus the header→query auth rewrite).
+
+Caveat: a 22 floor does **nothing** for the cache (native SQLite needs **24**). So
+if you're raising the floor anyway, weigh going straight to 24 (covers both shims)
+vs. 22 (covers only `ws` / Node-20 EOL).
+
 ### Recommendation today
 - **SQLite:** defer. Only worth it once Node 24+ is a safe baseline *and* you hit
   real cross-process locking trouble. Then it's a clean one-file swap.
