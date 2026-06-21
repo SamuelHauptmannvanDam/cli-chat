@@ -95,6 +95,11 @@ Behavior (when to check, how to reply) is carried in the server's MCP
   Other CLIs check on their first turn (via the server instructions).
 - **On demand** — ask "any messages?" anytime, or have the agent `watch` to
   long-poll for new mail while you wait.
+- **Who it's from** — each message carries the sender's name + handle, so a
+  message from someone new reads as "Sam (dC0v6m)" and auto-saves them as a
+  contact (reply or "write Sam" just works after). Your own nickname for a saved
+  contact always wins on screen — their self-name only shows until you've named
+  them.
 
 ## Layout
 | Path | Role |
@@ -121,8 +126,11 @@ Point clients at it with `MESSENGER_MAILBOX_URL=https://…`.
 ## Notes
 - **Storage is keyed by handle, not name.** Each identity lives in
   `users/<handle>/` (your 6-char code), and the device default `users/.current`
-  holds that handle. Your name is a cosmetic `name` field inside `identity.json`
-  — local only, never sent to the server, and free to change. `MESSENGER_USER`
+  holds that handle. Your name is a `name` field inside `identity.json`, free to
+  change. It rides *inside* each message you send (sealed to the recipient, so the
+  server never sees it) as a self-introduction — your name + 6-char handle — so
+  people you message see "You (handle)" instead of a key prefix and can save you
+  automatically. `MESSENGER_USER`
   accepts a handle, a display name, or a `signPub` and resolves to the right
   identity. Upgrading from the older name-keyed layout? Run `npm run migrate`
   (it claims a handle for any identity missing one, renames the dirs, and fixes
