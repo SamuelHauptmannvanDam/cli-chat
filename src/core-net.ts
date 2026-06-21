@@ -9,8 +9,9 @@ import { writeFileSync } from "node:fs";
 import { getMessage, insertMessage, markRead, unreadFor, type MessageRow, type Mailbox } from "./db.ts";
 import {
   contactByKey,
-  displayNameByKey,
+  senderLabel,
   resolve,
+  type Contact,
   type ContactBook,
 } from "./contacts.ts";
 import { open, seal, type Identity } from "./crypto.ts";
@@ -29,29 +30,78 @@ export interface NetContext {
 
 // Save (or update) a contact in the book and persist it to disk if we know
 // where the book lives. Replaces any entry with the same local name or key.
+// `auto` marks a contact saved from a received self-introduction (their own name,
+// not a nick you chose); a manual save/rename leaves it off so the nick wins.
 export function rememberContact(
   ctx: NetContext,
-  c: { name: string; signPub: string; boxPub: string },
+  c: { name: string; signPub: string; boxPub: string; handle?: string; auto?: boolean },
 ): void {
   const id = c.name.toLowerCase();
   ctx.book.contacts = ctx.book.contacts.filter(
     (x) => x.id !== id && x.signPub !== c.signPub,
   );
-  ctx.book.contacts.push({ id, name: c.name, signPub: c.signPub, boxPub: c.boxPub });
+  const entry: Contact = { id, name: c.name, signPub: c.signPub, boxPub: c.boxPub };
+  if (c.handle) entry.handle = c.handle;
+  if (c.auto) entry.auto = true;
+  ctx.book.contacts.push(entry);
   if (ctx.contactsPath) {
     writeFileSync(ctx.contactsPath, JSON.stringify(ctx.book, null, 2) + "\n");
   }
 }
 
+// A message body packs a small self-introduction alongside the text, sealed to
+// the recipient so only they (not the mailbox) can read it: who sent it (their
+// chosen name + 6-char handle) and the X25519 key to reply to. This is what lets
+// a recipient SEE who an unknown sender is and reply without a prior contact.
+const ENVELOPE_V = 1;
+
+export function packBody(me: Identity, text: string): string {
+  const env: { v: number; text: string; name?: string; handle?: string; boxPub: string } = {
+    v: ENVELOPE_V,
+    text,
+    boxPub: me.boxPub, // reply key — lets a stranger be answered + auto-saved
+  };
+  if (me.name) env.name = me.name;
+  if (me.handle) env.handle = me.handle;
+  return JSON.stringify(env);
+}
+
+export interface Unpacked {
+  text: string;
+  name?: string;
+  handle?: string;
+  boxPub?: string;
+}
+
+// Inverse of packBody. Legacy/plain bodies (and the "[unable to decrypt]"
+// placeholder) aren't our JSON envelope, so they pass through as plain text with
+// no metadata — full back-compat with messages sent before this existed.
+export function unpackBody(plaintext: string): Unpacked {
+  try {
+    const o = JSON.parse(plaintext) as Record<string, unknown>;
+    if (o && typeof o === "object" && o.v === ENVELOPE_V && typeof o.text === "string") {
+      const str = (v: unknown) => (typeof v === "string" && v ? v : undefined);
+      return { text: o.text, name: str(o.name), handle: str(o.handle), boxPub: str(o.boxPub) };
+    }
+  } catch {
+    /* not our envelope — treat as a plain legacy body */
+  }
+  return { text: plaintext };
+}
+
 // Resolve a shared code — either a 6-char handle (looked up in the server
-// registry) or a long full key code — to a pair of public keys.
+// registry) or a long full key code — to a pair of public keys. When the code
+// itself was a handle, return it so we can save it on the contact.
 async function resolveCode(
   ctx: NetContext,
   code: string,
-): Promise<{ signPub: string; boxPub: string } | null> {
+): Promise<{ signPub: string; boxPub: string; handle?: string } | null> {
   const full = parseKey(code);
   if (full) return full;
-  if (isHandle(code)) return await ctx.client.resolveHandle(code.trim());
+  if (isHandle(code)) {
+    const keys = await ctx.client.resolveHandle(code.trim());
+    return keys ? { ...keys, handle: code.trim() } : null;
+  }
   return null;
 }
 
@@ -67,7 +117,7 @@ export async function addContact(
   if (!parseKey(args.key) && !isHandle(args.key)) return { ok: false, reason: "bad_key" };
   const keys = await resolveCode(ctx, args.key);
   if (!keys) return { ok: false, reason: "not_found" };
-  rememberContact(ctx, { name: args.name, signPub: keys.signPub, boxPub: keys.boxPub });
+  rememberContact(ctx, { name: args.name, signPub: keys.signPub, boxPub: keys.boxPub, handle: keys.handle });
   return { ok: true, name: args.name };
 }
 
@@ -78,17 +128,33 @@ export async function sync(ctx: NetContext): Promise<number> {
   let added = 0;
   for (const b of blobs) {
     if (getMessage(ctx.cache, b.id)) continue;
-    let body: string;
+    let plain: string;
     try {
-      body = open(b.body, ctx.me.boxPub, ctx.me.boxSec);
+      plain = open(b.body, ctx.me.boxPub, ctx.me.boxSec);
     } catch {
-      body = "[unable to decrypt — not sealed to this identity]";
+      plain = "[unable to decrypt — not sealed to this identity]";
+    }
+    // Split the text from the sender's self-introduction. Only the text is cached;
+    // the identity feeds the contact book.
+    const env = unpackBody(plain);
+    // Auto-save a genuinely new sender from the keys they introduced themselves
+    // with, so "write <name>" works next time and a reply can be sealed. NEVER
+    // clobber someone you already know — your nick for them wins.
+    if (env.boxPub && b.sender && !contactByKey(ctx.book, b.sender)) {
+      const name = env.name || env.handle || `${b.sender.slice(0, 8)}…`;
+      rememberContact(ctx, {
+        name,
+        signPub: b.sender,
+        boxPub: env.boxPub,
+        handle: env.handle,
+        auto: true,
+      });
     }
     const row: MessageRow = {
       id: b.id,
       recipient: ctx.me.signPub,
       sender: b.sender,
-      body,
+      body: env.text,
       tags: b.tags,
       created_at: b.created_at,
       fetched_at: ctx.now(),
@@ -120,7 +186,7 @@ async function sendSealed(
     id: randomUUID(),
     recipient: to.signPub,
     sender: ctx.me.signPub,
-    body: seal(body, to.boxPub),
+    body: seal(packBody(ctx.me, body), to.boxPub),
     tags: null,
     created_at: ctx.now(),
     in_reply_to,
@@ -145,7 +211,7 @@ export async function sendMessage(
         return { ok: false, reason: "bad_key", query: args.to };
       const keys = await resolveCode(ctx, args.key);
       if (!keys) return { ok: false, reason: "bad_key", query: args.to };
-      rememberContact(ctx, { name: args.to, signPub: keys.signPub, boxPub: keys.boxPub });
+      rememberContact(ctx, { name: args.to, signPub: keys.signPub, boxPub: keys.boxPub, handle: keys.handle });
       const id = await sendSealed(ctx, { name: args.to, ...keys }, args.body, null);
       return { ok: true, id, to: { name: args.to, signPub: keys.signPub }, saved: true };
     }
@@ -178,7 +244,7 @@ export async function messagesAvailable(ctx: NetContext): Promise<AvailableResul
     count: rows.length,
     messages: rows.map((m) => ({
       id: m.id,
-      from: displayNameByKey(ctx.book, m.sender),
+      from: senderLabel(ctx.book, m.sender),
       preview: m.body.length > 200 ? m.body.slice(0, 197) + "..." : m.body,
       at: m.created_at,
     })),
@@ -203,7 +269,7 @@ export async function readMessage(ctx: NetContext, args: { id?: string }): Promi
   return {
     ok: true,
     id: row.id,
-    from: displayNameByKey(ctx.book, row.sender),
+    from: senderLabel(ctx.book, row.sender),
     body: row.body,
     at: row.created_at,
     in_reply_to: row.in_reply_to,

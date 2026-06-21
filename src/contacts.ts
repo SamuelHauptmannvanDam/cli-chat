@@ -6,10 +6,14 @@ import { readFileSync } from "node:fs";
 
 export interface Contact {
   id: string; // the recipient user id used by the mailbox (Phase 0)
-  name: string; // display name, e.g. "Niels"
+  name: string; // YOUR nickname for them — what you see in the terminal, e.g. "Niels"
   aliases?: string[]; // alternative spellings the resolver also matches
   signPub?: string; // Phase 1: contact's Ed25519 address (mailbox key)
   boxPub?: string; // Phase 1: contact's X25519 key we seal messages to
+  handle?: string; // their shareable 6-char code, when known (carried in their messages)
+  auto?: boolean; // saved automatically from a received self-introduction, NOT a
+  // user-chosen nick. While true, `name` is just what they call themselves, so we
+  // show "name (handle)"; renaming them (a real nick) clears this and shows the nick.
 }
 
 export interface ContactBook {
@@ -65,6 +69,18 @@ export function displayName(book: ContactBook, id: string): string {
 export function displayNameByKey(book: ContactBook, signPub: string): string {
   const c = book.contacts.find((c) => c.signPub === signPub);
   return c?.name ?? `${signPub.slice(0, 8)}…`;
+}
+
+// How a SENDER is shown in the terminal. Your nickname always wins: once you
+// have a contact for them, that's all you see — there's a difference between
+// what they call themselves and what YOU call them. Only an auto-saved stranger
+// (no nick chosen yet) is shown as "name (handle)" so you know who they are and
+// can recognise their code; a truly unknown sender falls back to a key prefix.
+export function senderLabel(book: ContactBook, signPub: string): string {
+  const c = contactByKey(book, signPub);
+  if (!c) return `${signPub.slice(0, 8)}…`;
+  if (c.auto && c.handle) return `${c.name} (${c.handle})`;
+  return c.name;
 }
 
 export function contactByKey(book: ContactBook, signPub: string): Contact | undefined {

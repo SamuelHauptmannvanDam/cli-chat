@@ -14,7 +14,7 @@ import { randomBytes } from "node:crypto";
 import { userInfo } from "node:os";
 import { initCrypto, generateIdentity } from "./crypto.ts";
 import { loadIdentity } from "./identity.ts";
-import { loadContacts } from "./contacts.ts";
+import { loadContacts, senderLabel } from "./contacts.ts";
 import { openMailbox, unreadFor, markRead } from "./db.ts";
 import { createMailboxClient, type MailboxClient } from "./mailbox-client.ts";
 import { encodeKey, randomHandle } from "./key-code.ts";
@@ -120,12 +120,15 @@ async function claimHandle(client: MailboxClient): Promise<string> {
 const INSTRUCTIONS = `You are the user's personal CLI messenger, backed by the cli-chat MCP server.
 
 GETTING STARTED: a tool returning \`no_account\` means this device has no account
-yet. Just fix it automatically — call \`create_account\` (pass name=their name if
-the user gave one, otherwise let it default to the OS login name), then retry
-whatever they were doing. You don't need to ask permission for this. If the user
-explicitly asks to be set up ("set me up as Sam"), do the same. After creating,
-report the new 6-char code in one line so they can share it. If they already have
-an account, \`create_account\` just returns their existing code.
+yet. Fix it automatically — call \`create_account\`, then retry whatever they were
+doing. You don't need to ask permission. The user's NAME travels with every
+message they send (it's what recipients see), so it's worth getting right: if the
+user already told you their name, pass it; otherwise ask once, conversationally,
+"what should I call you?" and pass that. Only if they don't answer, let it default
+to the OS login name. After creating, report the new 6-char code in one line so
+they can share it. If they already have an account, \`create_account\` just returns
+their existing code — and passing a name updates it (use this when the user later
+says "call me X" or "change my name to X").
 
 AT THE START OF A SESSION: a startup hook may inject an inbox notice telling you
 how many messages are waiting and who they're from — but NOT the bodies (those
@@ -169,8 +172,17 @@ chat, so when mail arrives READ IT OUT IN FULL automatically (sender + body,
 straight into the chat) and offer to reply — do NOT ask "want me to read it?"
 here; that ask is only for the passive inbox notice.
 
+SENDER IDENTITY: each message carries the sender's own name + 6-char handle, so a
+message from someone NEW shows as "Sam (dC0v6m)" instead of a key prefix, and they
+are AUTO-SAVED to the address book — so a plain "write Sam" works afterwards and
+you can reply right away (no need to ask for their code). But YOUR nickname always
+wins: once the user has saved or renamed a contact, you refer to them by that nick
+in the terminal, never by what they call themselves. There's a real difference
+between their own name and the user's nick for them. To rename, see RENAMING.
+
 OTHER: \`add_contact\` saves a person from their code; \`list_contacts\` shows the
-user's saved address book; \`my_key\` returns the user's own 6-char code to share.
+user's saved address book (with each contact's handle); \`my_key\` returns the
+user's own 6-char code to share.
 
 RENAMING: when the user says "rename Niels to Bob" (or "call Niels something
 else"), call \`list_contacts\`, take that contact's \`fullKey\`, then call
@@ -181,7 +193,7 @@ Bob.").
 
 Always keep the human in control of what's sent.`;
 
-const server = new McpServer({ name: "cli-chat", version: "0.2.0" }, { instructions: INSTRUCTIONS });
+const server = new McpServer({ name: "cli-chat", version: "0.4.0" }, { instructions: INSTRUCTIONS });
 const ok = (data: unknown) => ({
   content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }],
 });
@@ -196,20 +208,27 @@ const noAccount = () =>
 server.registerTool(
   "create_account",
   {
-    title: "Create your account and get your 6-char code",
+    title: "Create your account / set your display name",
     description:
       "Set up the USER'S OWN identity on this device: generate their keypair " +
       "(private keys never leave the machine), claim a short 6-character code " +
       "(their 'number') in the registry, and return it to share. Use when the " +
       "user wants to get set up / join / get their code, or when another tool " +
-      "reported `no_account`. Idempotent: if they already have an account it just " +
-      "returns their existing code. (This is for the user themselves — to save " +
-      "OTHER people, use add_contact.)",
+      "reported `no_account`. Their `name` travels with every message they send " +
+      "(it's what recipients see), so set a real one: ask 'what should I call " +
+      "you?' if you don't know it. Idempotent and doubles as a renamer — if they " +
+      "already have an account, calling it returns their existing code, and " +
+      "passing `name` UPDATES their display name (use for 'call me X'). (This is " +
+      "for the user themselves — to save OTHER people, use add_contact.)",
     inputSchema: {
       name: z
         .string()
         .optional()
-        .describe("What to call this user, e.g. 'Sam'. Defaults to the OS login name."),
+        .describe(
+          "The user's own display name, e.g. 'Sam' — what people see when they " +
+            "message. On an existing account this updates it. Defaults to the OS " +
+            "login name only if you can't get a real one.",
+        ),
     },
   },
   async ({ name }) => {
@@ -300,19 +319,20 @@ server.registerTool(
     description:
       "Seal a message and post it to the hosted mailbox. Normally pass `to` = a " +
       "known contact name; matching is partial, so a short name like 'Niels' " +
-      "resolves a saved 'Niels - bankdata'. To message someone NEW, the user " +
-      "gives you their key code (a long string of letters and numbers) — pass it " +
-      "as `key` and put their name in `to`; they'll be saved as a contact so next " +
-      "time just use the name. Returns the resolved contact; `no_contact` means " +
-      "nothing matched (offer to add by code), `ambiguous` returns the candidates " +
-      "to disambiguate.",
+      "resolves a saved 'Niels - bankdata'. Anyone who has ALREADY messaged the " +
+      "user is auto-saved, so you can usually just use their name — no code " +
+      "needed. Only supply `key` for someone BRAND new who hasn't messaged first: " +
+      "the user gives their 6-char handle or long key code; pass it as `key` with " +
+      "their name in `to`, and they'll be saved so next time the name alone works. " +
+      "Returns the resolved contact; `no_contact` means nothing matched (offer to " +
+      "add by code), `ambiguous` returns the candidates to disambiguate.",
     inputSchema: {
       to: z.string().describe("Contact name, e.g. 'Sam'"),
       body: z.string().describe("The message text (encrypted end-to-end)"),
       key: z
         .string()
         .optional()
-        .describe("Key code for a new person (long letters+numbers); saves them under `to`"),
+        .describe("6-char handle or long key code for a NEW person; saves them under `to`"),
     },
   },
   async ({ to, body, key }) => (S ? ok(await sendMessage(S.ctx, { to, body, key })) : noAccount()),
@@ -330,10 +350,14 @@ server.registerTool(
       "book is upserted by key, not name), so there's no duplicate. To rename " +
       "(e.g. 'rename Niels to Bob'), first call `list_contacts`, copy that " +
       "contact's `fullKey`, then call this with name=the new name and key=that " +
-      "fullKey. No need to ask the user for a code — it's already saved.",
+      "fullKey. No need to ask the user for a code — it's already saved. The name " +
+      "you set is the user's own nickname for them and always wins on screen over " +
+      "whatever that person calls themselves.",
     inputSchema: {
-      name: z.string().describe("What to call them, e.g. 'Sam'"),
-      key: z.string().describe("Their key code (a long string of letters and numbers)"),
+      name: z.string().describe("Your nickname for them, e.g. 'Sam'"),
+      key: z
+        .string()
+        .describe("Their 6-char handle, or a long full key code (letters and numbers)"),
     },
   },
   async ({ name, key }) => (S ? ok(await addContact(S.ctx, { name, key })) : noAccount()),
@@ -365,9 +389,10 @@ server.registerTool(
   {
     title: "List my saved contacts",
     description:
-      "Return all people the user has saved, with the name to address them by, " +
-      "any aliases, and their shareable key. Use when the user asks 'who are my " +
-      "contacts?', 'who can I message?', or 'show my address book'.",
+      "Return all people the user has saved, each with the nickname to address " +
+      "them by, any aliases, their 6-char handle (when known), and their shareable " +
+      "full key. Use when the user asks 'who are my contacts?', 'who can I " +
+      "message?', or 'show my address book'.",
     inputSchema: {},
   },
   async () =>
@@ -377,6 +402,7 @@ server.registerTool(
           contacts: S.book.contacts.map((c) => ({
             name: c.name,
             aliases: c.aliases ?? [],
+            handle: c.handle ?? null,
             fullKey: c.signPub && c.boxPub ? encodeKey(c.signPub, c.boxPub) : null,
           })),
         })
@@ -389,7 +415,9 @@ server.registerTool(
     title: "Check for waiting messages",
     description:
       "Proactive inbox signal. Pulls and decrypts any new mail, then returns the " +
-      "count and previews of unread messages. Call this when the CLI opens.",
+      "count and previews of unread messages. Each `from` is the user's nickname " +
+      "for the sender, or 'Name (handle)' for someone new (who is auto-saved on " +
+      "arrival). Call this when the CLI opens.",
     inputSchema: {},
   },
   async () => (S ? ok(await messagesAvailable(S.ctx)) : noAccount()),
@@ -404,7 +432,9 @@ server.registerTool(
       "marked read) or report idle if none arrived. This is the building block of " +
       "a watch loop: after it returns, call it AGAIN to keep watching, and " +
       "repeat until the user says to stop. On an idle return, re-call SILENTLY — " +
-      "print nothing to the user; only speak when mail actually arrives. Use when " +
+      "print nothing to the user; only speak when mail actually arrives. Each " +
+      "returned `from` is the user's nickname for the sender, or 'Name (handle)' " +
+      "for someone new (auto-saved on arrival, so you can reply by name). Use when " +
       "the user asks to watch for / wait for / keep an eye out for messages.",
     inputSchema: {},
   },
@@ -427,7 +457,7 @@ server.registerTool(
           markRead(S!.cache, m.id, now());
           return {
             id: m.id,
-            from: (S!.book.contacts.find((c) => c.signPub === m.sender)?.name ?? m.sender),
+            from: senderLabel(S!.book, m.sender),
             body: m.body,
             at: m.created_at,
             in_reply_to: m.in_reply_to,
@@ -463,7 +493,9 @@ server.registerTool(
   "read_message",
   {
     title: "Read a waiting message",
-    description: "Read a decrypted message by id (or oldest unread). Marks it read.",
+    description:
+      "Read a decrypted message by id (or oldest unread). Marks it read. `from` is " +
+      "the user's nickname for the sender, or 'Name (handle)' for someone new.",
     inputSchema: { id: z.string().optional().describe("Message id; omit for oldest unread") },
   },
   async ({ id }) => (S ? ok(await readMessage(S.ctx, { id })) : noAccount()),
@@ -474,8 +506,11 @@ server.registerTool(
   {
     title: "Send an encrypted reply",
     description:
-      "Reply to a message, sealed and threaded. Draft it yourself; if it needs a " +
-      "fact you lack (the human's availability, a decision), ask the human first.",
+      "Reply to a message, sealed and threaded. Works even if the sender wasn't a " +
+      "saved contact — their message carried a reply key, so they were auto-saved " +
+      "and can be answered directly. Draft it yourself; if it needs a fact you " +
+      "lack (the human's availability, a decision), ask the human first. " +
+      "(`no_keys` only happens for legacy messages sent without a reply key.)",
     inputSchema: {
       in_reply_to: z.string().describe("Id of the message being replied to"),
       body: z.string().describe("The reply text"),
