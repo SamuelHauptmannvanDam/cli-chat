@@ -315,7 +315,7 @@ describe("sender identity", () => {
 });
 
 describe("crypto boundaries", () => {
-  test("a message sealed to the wrong identity surfaces as undecryptable, not a crash", async () => {
+  test("a message sealed to the wrong identity is skipped, not surfaced or crashed", async () => {
     // Alice sends to Bob's signPub address but seals to a DIFFERENT box key.
     const aliceId = generateIdentity();
     const bobId = generateIdentity();
@@ -327,8 +327,10 @@ describe("crypto boundaries", () => {
     await regSelf(bob); // registered recipient; the seal, not the address, is wrong
 
     await sendMessage(alice, { to: "Bob", body: "you can't read this" });
+    // A sealed box never becomes readable later, so an undecryptable blob is
+    // dropped rather than cached as a phantom "[unable to decrypt]" message — and
+    // draining it must not throw.
     const avail = await messagesAvailable(bob);
-    assert.equal(avail.count, 1);
-    assert.match(avail.messages[0].preview, /unable to decrypt/);
+    assert.equal(avail.count, 0);
   });
 });

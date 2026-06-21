@@ -10,12 +10,12 @@
 // rather than minting a second one.
 
 import { mkdirSync, writeFileSync } from "node:fs";
-import { randomBytes } from "node:crypto";
 import { userInfo } from "node:os";
 import { initCrypto, generateIdentity, type Identity } from "./crypto.ts";
 import { loadIdentity } from "./identity.ts";
+import { saveContacts } from "./contacts.ts";
 import { createMailboxClient } from "./mailbox-client.ts";
-import { randomHandle } from "./key-code.ts";
+import { claimHandle } from "./provision.ts";
 import { currentUser, setCurrentUser } from "./current-user.ts";
 import { usersDir, userDir, identityFile, contactsFile } from "./paths.ts";
 import { resolveMailboxUrl } from "./config.ts";
@@ -52,13 +52,7 @@ if (existingDir) {
 const client = createMailboxClient(url, id, () => Date.now());
 try {
   if (!id.handle) {
-    let claimed: string | null = null;
-    for (let i = 0; i < 8 && !claimed; i++) {
-      const candidate = randomHandle(randomBytes(8));
-      if ((await client.registerHandle(candidate)) === "ok") claimed = candidate;
-    }
-    if (!claimed) throw new Error("couldn't find a free handle after several tries");
-    id.handle = claimed;
+    id.handle = await claimHandle(client);
   } else {
     await client.registerHandle(id.handle); // re-assert ownership
   }
@@ -67,10 +61,7 @@ try {
   mkdirSync(userDir(id.handle), { recursive: true });
   writeFileSync(identityFile(id.handle), JSON.stringify(id, null, 2) + "\n");
   if (!existing) {
-    writeFileSync(
-      contactsFile(id.handle),
-      JSON.stringify({ me: id.signPub, contacts: [] }, null, 2) + "\n",
-    );
+    saveContacts(contactsFile(id.handle), { me: id.signPub, contacts: [] });
   }
   setCurrentUser(id.handle);
 

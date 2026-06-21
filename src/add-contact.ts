@@ -5,10 +5,10 @@
 //   export MESSENGER_USER=sam
 //   node src/add-contact.ts Alice <signPub> <boxPub>
 
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { initCrypto } from "./crypto.ts";
 import { loadIdentity } from "./identity.ts";
-import type { ContactBook } from "./contacts.ts";
+import { saveContacts, type ContactBook } from "./contacts.ts";
 import { currentUser } from "./current-user.ts";
 import { identityFile, contactsFile } from "./paths.ts";
 
@@ -47,6 +47,6 @@ const id = name.toLowerCase();
 // Replace any existing entry with the same local name or same key.
 book.contacts = book.contacts.filter((c) => c.id !== id && c.signPub !== signPub);
 book.contacts.push({ id, name, signPub, boxPub });
-writeFileSync(contactsPath, JSON.stringify(book, null, 2) + "\n");
+saveContacts(contactsPath, book);
 
 console.log(`Added "${name}". You can now message them:  write ${name}: <your message>`);

@@ -194,8 +194,8 @@ messages(
   rejected). `src/setup-identities.ts` bootstraps keys + exchanges public keys.
 - Client (`src/core-net.ts`) seals on send, drains + decrypts into a local inbox
   cache so read/preview keep their Phase 0 feel. MCP server: `src/server-net.ts`.
-- Verified by `npm run test:net` (in-process) and `npm run test:net:mcp` (real
-  MCP processes + running mailbox).
+- Verified by `npm run test:e2e` (in-process) and `npm run test:mcp` (real
+  MCP processes + running mailbox). (Scripts since renamed from `test:net`/`test:net:mcp`.)
 - **DEPLOYED LIVE** (2026-06-15) to Cloudflare Workers + D1:
   `https://mailbox.cli-chat-mcp.workers.dev`. Full
   encrypted round-trip verified against the public URL.
