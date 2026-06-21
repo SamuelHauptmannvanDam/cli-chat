@@ -112,6 +112,18 @@ test("countRecentUnknown excludes senders the recipient has replied to", () => {
   assert.equal(store.countRecentUnknown("bob", 0), 1); // only carol remains
 });
 
+test("countRecentSentToNew counts a sender's cold outreach (people who don't know them)", () => {
+  const store = nodeSqliteStore(":memory:");
+  store.put(wire({ id: "a", sender: "spammer", recipient: "r1" }), 1000);
+  store.put(wire({ id: "b", sender: "spammer", recipient: "r2" }), 1000);
+  assert.equal(store.countRecentSentToNew("spammer", 0), 2);
+  // r1 writes back → spammer is now known to r1 → that send no longer counts cold.
+  store.put(wire({ id: "c", sender: "r1", recipient: "spammer" }), 1500);
+  assert.equal(store.countRecentSentToNew("spammer", 0), 1); // only the r2 send is still cold
+  // Window is by server receive time (both sends landed at 1000).
+  assert.equal(store.countRecentSentToNew("spammer", 1200), 0);
+});
+
 test("purge drops read mail past the read window and anything past the age window", () => {
   const DAY = 24 * 60 * 60 * 1000;
   const now = 100 * DAY;

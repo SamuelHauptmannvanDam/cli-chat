@@ -59,6 +59,9 @@ export interface Store {
   // How many messages from ALL not-yet-known senders the recipient has received
   // since `since` — the Sybil backstop (many fresh keys, one ceiling).
   countRecentUnknown(recipient: string, since: number): number | Promise<number>;
+  // How many messages this sender has sent since `since` to recipients who don't
+  // yet know them (cold outreach) — bounds one identity's total spray reach.
+  countRecentSentToNew(sender: string, since: number): number | Promise<number>;
 }
 
 export function nodeSqliteStore(path: string): Store {
@@ -203,6 +206,21 @@ export function nodeSqliteStore(path: string): Store {
              )`,
         )
         .get(recipient, since) as { n: number };
+      return Number(r?.n ?? 0);
+    },
+
+    countRecentSentToNew(sender, since) {
+      // Cold outreach: this sender's messages to recipients who have NOT written
+      // back (recipient doesn't "know" the sender), within the window.
+      const r = db
+        .prepare(
+          `SELECT COUNT(*) AS n FROM messages m
+           WHERE m.sender = ? AND m.received_at >= ?
+             AND NOT EXISTS (
+               SELECT 1 FROM known k WHERE k.owner = m.recipient AND k.peer = m.sender
+             )`,
+        )
+        .get(sender, since) as { n: number };
       return Number(r?.n ?? 0);
     },
   };

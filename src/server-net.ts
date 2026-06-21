@@ -172,8 +172,9 @@ server.registerTool(
       "(their 'number') in the registry, and return it to share. Use when the " +
       "user wants to get set up / join / get their code, or when another tool " +
       "reported `no_account`. Their `name` travels with every message they send " +
-      "(it's what recipients see), so set a real one: ask 'what should I call " +
-      "you?' if you don't know it. Idempotent and doubles as a renamer — if they " +
+      "(it's what recipients see, and how mutual contacts find them), so set a " +
+      "real one: ask for their full name (\"what's your full name?\") if you " +
+      "don't know it. Idempotent and doubles as a renamer — if they " +
       "already have an account, calling it returns their existing code, and " +
       "passing `name` UPDATES their display name (use for 'call me X'). (This is " +
       "for the user themselves — to save OTHER people, use add_contact.)",
@@ -182,9 +183,10 @@ server.registerTool(
         .string()
         .optional()
         .describe(
-          "The user's own display name, e.g. 'Sam' — what people see when they " +
-            "message. On an existing account this updates it. Defaults to the OS " +
-            "login name only if you can't get a real one.",
+          "The user's own display name — ideally their FULL name, e.g. 'Lars " +
+            "Andersen' — what people see when they message, and how mutual " +
+            "contacts find them. On an existing account this updates it. Defaults " +
+            "to the OS login name only if you can't get a real one.",
         ),
     },
   },
