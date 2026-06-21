@@ -71,8 +71,16 @@ export function makeContext(
   };
 }
 
+// Claim a handle for ctx.me, the way a real account does at setup. The mailbox
+// now rejects mail to never-registered keys, so fixtures that receive must do
+// this. The handle is derived from the key so repeated calls don't collide.
+export async function regSelf(ctx: NetContext): Promise<void> {
+  await ctx.client.registerHandle(ctx.me.signPub.slice(0, 6));
+}
+
 // Convenience: two mutual contacts on the same mailbox, each with the other in
-// their book under a display name.
+// their book under a display name. Both are registered (real accounts always
+// are), so either can receive mail.
 export async function twoUsers(
   baseUrl: string,
   aName = "Alice",
@@ -87,5 +95,7 @@ export async function twoUsers(
   const b = makeContext(baseUrl, bId, [
     { id: aName.toLowerCase(), name: aName, signPub: aId.signPub, boxPub: aId.boxPub },
   ]);
+  await regSelf(a);
+  await regSelf(b);
   return { a, b, aId, bId };
 }

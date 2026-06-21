@@ -15,7 +15,7 @@ import {
   sync,
 } from "../../src/core-net.ts";
 import { generateIdentity } from "../../src/crypto.ts";
-import { startMailbox, makeContext, twoUsers, now, type Mailbox } from "../helpers.ts";
+import { startMailbox, makeContext, twoUsers, regSelf, now, type Mailbox } from "../helpers.ts";
 
 let mb: Mailbox;
 before(async () => {
@@ -110,6 +110,7 @@ describe("onboarding by code", () => {
     const alice = makeContext(mb.baseUrl, generateIdentity());
     const bobId = generateIdentity();
     const bob = makeContext(mb.baseUrl, bobId);
+    await regSelf(bob); // Bob is a real account → has a handle on file
     const { encodeKey } = await import("../../src/key-code.ts");
     const code = encodeKey(bobId.signPub, bobId.boxPub);
 
@@ -188,6 +189,7 @@ describe("reply failures", () => {
       // Bob knows the stranger's keys well enough to receive, but we omit them
       // from his book so the reply lookup fails.
     ]);
+    await regSelf(bob); // Bob is a real account → registered recipient
     // Stranger needs Bob in their book to send.
     stranger.book.contacts.push({ id: "bob", name: "Bob", signPub: bobId.signPub, boxPub: bobId.boxPub });
     const sent = await sendMessage(stranger, { to: "Bob", body: "who am I?" });
@@ -208,6 +210,7 @@ describe("crypto boundaries", () => {
       { id: "bob", name: "Bob", signPub: bobId.signPub, boxPub: wrongBox.boxPub },
     ]);
     const bob = makeContext(mb.baseUrl, bobId);
+    await regSelf(bob); // registered recipient; the seal, not the address, is wrong
 
     await sendMessage(alice, { to: "Bob", body: "you can't read this" });
     const avail = await messagesAvailable(bob);

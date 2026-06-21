@@ -33,6 +33,12 @@ export interface Store {
   ): "ok" | "taken" | Promise<"ok" | "taken">;
   // Directory: look up a handle's keys.
   resolveHandle(handle: string): HandleRecord | null | Promise<HandleRecord | null>;
+  // Has anyone claimed a handle for this signPub? Every real account registers
+  // one, so this gates mail to unknown/never-registered recipient keys.
+  isRegistered(signPub: string): boolean | Promise<boolean>;
+  // Retention sweep: delete already-read mail fetched before `readBefore`, and
+  // ANY mail created before `unreadBefore`. Returns the row count deleted.
+  purge(readBefore: number, unreadBefore: number): number | Promise<number>;
 }
 
 export function nodeSqliteStore(path: string): Store {
@@ -49,12 +55,14 @@ export function nodeSqliteStore(path: string): Store {
       in_reply_to TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_recipient ON messages (recipient, fetched_at);
+    CREATE INDEX IF NOT EXISTS idx_created ON messages (created_at);
     CREATE TABLE IF NOT EXISTS handles (
       handle      TEXT PRIMARY KEY,
       signPub     TEXT NOT NULL,
       boxPub      TEXT NOT NULL,
       created_at  INTEGER NOT NULL
     );
+    CREATE INDEX IF NOT EXISTS idx_handles_signpub ON handles (signPub);
   `);
 
   return {
@@ -106,6 +114,20 @@ export function nodeSqliteStore(path: string): Store {
           | HandleRecord
           | undefined) ?? null
       );
+    },
+
+    isRegistered(signPub) {
+      return !!db.prepare(`SELECT 1 FROM handles WHERE signPub = ? LIMIT 1`).get(signPub);
+    },
+
+    purge(readBefore, unreadBefore) {
+      const res = db
+        .prepare(
+          `DELETE FROM messages
+           WHERE (fetched_at IS NOT NULL AND fetched_at < ?) OR created_at < ?`,
+        )
+        .run(readBefore, unreadBefore);
+      return Number(res.changes ?? 0);
     },
   };
 }

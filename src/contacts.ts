@@ -31,18 +31,26 @@ export type ResolveResult =
   | { status: "none"; query: string }
   | { status: "ambiguous"; query: string; candidates: Contact[] };
 
-// Map a name → a specific contact. Phase 0 is exact (case-insensitive) only;
-// ambiguity and "did you mean X connected to Y?" land in Phase 2/3.
+// Map a name → a specific contact. Exact (case-insensitive) match wins outright;
+// only when nothing matches exactly do we fall back to a substring/prefix scan,
+// so "Niels" still finds the saved "Niels - bankdata". The fallback returns
+// `ambiguous` when more than one contact contains the query, so the caller can
+// ask which one rather than guessing.
 export function resolve(book: ContactBook, query: string): ResolveResult {
   const q = query.trim().toLowerCase();
-  const matches = book.contacts.filter((c) => {
-    const names = [c.name, ...(c.aliases ?? [])].map((n) => n.toLowerCase());
-    return names.includes(q);
-  });
+  const namesOf = (c: Contact) => [c.name, ...(c.aliases ?? [])].map((n) => n.toLowerCase());
 
-  if (matches.length === 1) return { status: "resolved", contact: matches[0] };
-  if (matches.length === 0) return { status: "none", query };
-  return { status: "ambiguous", query, candidates: matches };
+  const exact = book.contacts.filter((c) => namesOf(c).includes(q));
+  if (exact.length === 1) return { status: "resolved", contact: exact[0] };
+  if (exact.length > 1) return { status: "ambiguous", query, candidates: exact };
+
+  // No exact hit — try a looser substring match (skip empty queries, which
+  // would "contain" into every contact).
+  if (!q) return { status: "none", query };
+  const fuzzy = book.contacts.filter((c) => namesOf(c).some((n) => n.includes(q)));
+  if (fuzzy.length === 1) return { status: "resolved", contact: fuzzy[0] };
+  if (fuzzy.length > 1) return { status: "ambiguous", query, candidates: fuzzy };
+  return { status: "none", query };
 }
 
 // Reverse lookup: given a sender id, what do we call them? Falls back to the

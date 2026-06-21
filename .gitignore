@@ -7,3 +7,6 @@ mailbox-server.db-*
 users/
 .wrangler/
 *.log
+
+# build output
+dist/

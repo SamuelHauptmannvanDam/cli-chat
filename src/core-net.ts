@@ -6,8 +6,7 @@
 
 import { randomUUID } from "node:crypto";
 import { writeFileSync } from "node:fs";
-import type { DatabaseSync } from "node:sqlite";
-import { getMessage, insertMessage, markRead, unreadFor, type MessageRow } from "./db.ts";
+import { getMessage, insertMessage, markRead, unreadFor, type MessageRow, type Mailbox } from "./db.ts";
 import {
   contactByKey,
   displayNameByKey,
@@ -22,7 +21,7 @@ import type { WireMessage } from "./identity.ts";
 export interface NetContext {
   me: Identity;
   book: ContactBook;
-  cache: DatabaseSync; // local decrypted inbox
+  cache: Mailbox; // local decrypted inbox
   client: MailboxClient; // hosted mailbox
   now: () => number;
   contactsPath?: string; // where to persist the book when a contact is added

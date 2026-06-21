@@ -77,5 +77,24 @@ export function d1Store(db: D1Like): Store {
         .bind(handle)
         .first()) as HandleRecord | null;
     },
+
+    async isRegistered(signPub: string): Promise<boolean> {
+      const row = await db
+        .prepare(`SELECT 1 FROM handles WHERE signPub = ? LIMIT 1`)
+        .bind(signPub)
+        .first();
+      return row != null;
+    },
+
+    async purge(readBefore: number, unreadBefore: number): Promise<number> {
+      const res = (await db
+        .prepare(
+          `DELETE FROM messages
+           WHERE (fetched_at IS NOT NULL AND fetched_at < ?) OR created_at < ?`,
+        )
+        .bind(readBefore, unreadBefore)
+        .run()) as { meta?: { changes?: number } };
+      return Number(res?.meta?.changes ?? 0);
+    },
   };
 }
