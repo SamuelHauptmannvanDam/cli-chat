@@ -18,7 +18,7 @@ import { loadContacts } from "./contacts.ts";
 import { openMailbox, unreadFor, markRead } from "./db.ts";
 import { createMailboxClient, type MailboxClient } from "./mailbox-client.ts";
 import { encodeKey, randomHandle } from "./key-code.ts";
-import { currentUser, setCurrentUser } from "./current-user.ts";
+import { currentUser, setCurrentUser, resolveIdentity } from "./current-user.ts";
 import { userDir as userDirOf, identityFile, contactsFile, inboxFile } from "./paths.ts";
 import { resolveMailboxUrl } from "./config.ts";
 import { startWarmer } from "./warmer.ts";
@@ -52,7 +52,22 @@ function buildSession(user: string) {
   const contactsPath = contactsFile(user);
   const me = loadIdentity(identityFile(user));
   const book = loadContacts(contactsPath);
-  const cache = openMailbox(inboxFile(user));
+  // The inbox cache is best-effort: NEVER let a transient open failure collapse
+  // the session. The wasm SQLite VFS can refuse a cross-process open when another
+  // live session of the SAME identity already holds the file; that used to throw,
+  // get swallowed at boot (S=null), surface as a false `no_account`, and make the
+  // agent mint a DUPLICATE identity. Identity is what matters here — fall back to a
+  // temporary in-memory cache so the session still loads and reports the real code.
+  let cache;
+  try {
+    cache = openMailbox(inboxFile(user));
+  } catch (e) {
+    console.error(
+      `Inbox cache for "${user}" is busy (${(e as Error).message}); ` +
+        `using a temporary in-memory cache for this session (another session may have it open).`,
+    );
+    cache = openMailbox(":memory:");
+  }
   const ctx: NetContext = {
     me,
     book,
@@ -226,6 +241,29 @@ server.registerTool(
     // Display name is cosmetic; the identity is keyed on disk by its handle.
     const display =
       (name ?? process.env.MESSENGER_USER ?? userInfo().username ?? "me").trim() || "me";
+
+    // Idempotency guard: if a selector (the requested name or the MESSENGER_USER
+    // pin) already names an identity on disk, ADOPT it instead of minting a fresh
+    // handle. Without this, a boot where buildSession failed — or a name pin that
+    // didn't resolve at startup — silently spawns a duplicate account.
+    const pin = process.env.MESSENGER_USER?.trim();
+    for (const sel of [name?.trim(), pin].filter((s): s is string => !!s)) {
+      const dir = resolveIdentity(sel);
+      if (dir) {
+        S = buildSession(dir);
+        if (!pin) setCurrentUser(dir); // don't stomp another session's default
+        ensureWarmer();
+        return ok({
+          ok: true,
+          created: false,
+          name: S.me.name,
+          handle: S.me.handle,
+          fullKey: encodeKey(S.me.signPub, S.me.boxPub),
+          note: "You already have an account — this is your code to share.",
+        });
+      }
+    }
+
     const id = generateIdentity();
     id.name = display;
     // Claim the handle FIRST — it's the directory key, and an account isn't
@@ -238,7 +276,9 @@ server.registerTool(
       contactsFile(id.handle),
       JSON.stringify({ me: id.signPub, contacts: [] }, null, 2) + "\n",
     );
-    setCurrentUser(id.handle);
+    // Only become the device default when not explicitly pinned via MESSENGER_USER;
+    // otherwise a second identity's setup would clobber the first session's .current.
+    if (!process.env.MESSENGER_USER?.trim()) setCurrentUser(id.handle);
     S = buildSession(id.handle);
     ensureWarmer(); // start push delivery now that an account exists
     return ok({
