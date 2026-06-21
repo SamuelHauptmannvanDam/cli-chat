@@ -42,7 +42,7 @@ test("unpackBody passes a legacy plain body straight through", () => {
 test("unpackBody treats unrelated JSON as plain text (not an envelope)", () => {
   const notOurs = JSON.stringify({ hello: "world" });
   assert.equal(unpackBody(notOurs).text, notOurs);
-  // The decrypt-failure placeholder must also pass through untouched.
-  const fail = "[unable to decrypt — not sealed to this identity]";
-  assert.equal(unpackBody(fail).text, fail);
+  // Any non-envelope string passes through untouched (e.g. a bracketed status line).
+  const bracketed = "[some bracketed text — not our envelope]";
+  assert.equal(unpackBody(bracketed).text, bracketed);
 });

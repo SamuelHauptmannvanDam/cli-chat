@@ -5,10 +5,10 @@
 // the server only ever holds ciphertext.
 
 import { randomUUID } from "node:crypto";
-import { writeFileSync } from "node:fs";
 import { getMessage, insertMessage, markRead, unreadFor, type MessageRow, type Mailbox } from "./db.ts";
 import {
   contactByKey,
+  saveContacts,
   senderLabel,
   resolve,
   type Contact,
@@ -44,9 +44,7 @@ export function rememberContact(
   if (c.handle) entry.handle = c.handle;
   if (c.auto) entry.auto = true;
   ctx.book.contacts.push(entry);
-  if (ctx.contactsPath) {
-    writeFileSync(ctx.contactsPath, JSON.stringify(ctx.book, null, 2) + "\n");
-  }
+  if (ctx.contactsPath) saveContacts(ctx.contactsPath, ctx.book);
 }
 
 // A message body packs a small self-introduction alongside the text, sealed to
@@ -73,9 +71,9 @@ export interface Unpacked {
   boxPub?: string;
 }
 
-// Inverse of packBody. Legacy/plain bodies (and the "[unable to decrypt]"
-// placeholder) aren't our JSON envelope, so they pass through as plain text with
-// no metadata — full back-compat with messages sent before this existed.
+// Inverse of packBody. Legacy/plain bodies aren't our JSON envelope, so they pass
+// through as plain text with no metadata — full back-compat with messages sent
+// before this existed.
 export function unpackBody(plaintext: string): Unpacked {
   try {
     const o = JSON.parse(plaintext) as Record<string, unknown>;
@@ -132,7 +130,12 @@ export async function sync(ctx: NetContext): Promise<number> {
     try {
       plain = open(b.body, ctx.me.boxPub, ctx.me.boxSec);
     } catch {
-      plain = "[unable to decrypt — not sealed to this identity]";
+      // Undecryptable for us (sealed to a different identity / wrong key). A sealed
+      // box never becomes readable later, so don't cache it as a phantom message
+      // that would surface to the user as content — skip it. (The server already
+      // marked it fetched on drain, so it won't be re-pulled.)
+      console.error(`sync: skipping a blob that won't decrypt (id ${b.id}).`);
+      continue;
     }
     // Split the text from the sender's self-introduction. Only the text is cached;
     // the identity feeds the contact book.
@@ -155,9 +158,7 @@ export async function sync(ctx: NetContext): Promise<number> {
       // existed). Backfill ONLY the handle from their new-style envelope —
       // never touch name/nick/auto, so "your nick wins" still holds.
       known.handle = env.handle;
-      if (ctx.contactsPath) {
-        writeFileSync(ctx.contactsPath, JSON.stringify(ctx.book, null, 2) + "\n");
-      }
+      if (ctx.contactsPath) saveContacts(ctx.contactsPath, ctx.book);
     }
     const row: MessageRow = {
       id: b.id,
@@ -239,6 +240,32 @@ export async function sendMessage(
 
   const id = await sendSealed(ctx, { name: c.name, signPub: c.signPub, boxPub: c.boxPub }, args.body, null);
   return { ok: true, id, to: { name: c.name, signPub: c.signPub } };
+}
+
+export interface InboxMessage {
+  id: string;
+  from: string;
+  body: string;
+  at: number;
+  in_reply_to: string | null;
+}
+
+// Take every currently-unread message, marking each read, with the FULL body —
+// the receive shape the live `watch` loop hands straight to the user. Kept here
+// (not inlined in the watch tool) so it shares the sender-labelling and read
+// semantics with the rest of the receive path instead of the tool reaching into
+// the cache directly.
+export function takeUnread(ctx: NetContext): InboxMessage[] {
+  return unreadFor(ctx.cache, ctx.me.signPub).map((m) => {
+    markRead(ctx.cache, m.id, ctx.now());
+    return {
+      id: m.id,
+      from: senderLabel(ctx.book, m.sender),
+      body: m.body,
+      at: m.created_at,
+      in_reply_to: m.in_reply_to,
+    };
+  });
 }
 
 export interface AvailableResult {
