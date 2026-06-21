@@ -21,7 +21,11 @@ export interface HandleRecord {
 }
 
 export interface Store {
-  put(m: WireMessage): void | Promise<void>;
+  // `receivedAt` is the SERVER's receive time, stamped on insert and used by the
+  // anti-spam counts below — never the client's `created_at` (which a sender
+  // controls and could back-date to dodge the window). Defaults to created_at
+  // for direct callers/tests that don't exercise admission.
+  put(m: WireMessage, receivedAt?: number): void | Promise<void>;
   summary(recipient: string): MailSummary[] | Promise<MailSummary[]>;
   drain(recipient: string, now: number): WireMessage[] | Promise<WireMessage[]>;
   // Directory: claim a handle for a key (idempotent for the same owner).
@@ -39,6 +43,22 @@ export interface Store {
   // Retention sweep: delete already-read mail fetched before `readBefore`, and
   // ANY mail created before `unreadBefore`. Returns the row count deleted.
   purge(readBefore: number, unreadBefore: number): number | Promise<number>;
+
+  // --- Anti-spam admission (PLAN open Q#7) ----------------------------------
+  // A sender is "known" to a recipient once that recipient has sent them at
+  // least one message (recorded on put). Known senders bypass new-sender
+  // throttling; unknown ones are bounded by the two rolling-window counts below.
+  isKnownSender(recipient: string, sender: string): boolean | Promise<boolean>;
+  // How many messages this (unknown) sender has landed for the recipient with a
+  // receive time at/after `since` — the per-pair flood limit.
+  countRecentFromPair(
+    recipient: string,
+    sender: string,
+    since: number,
+  ): number | Promise<number>;
+  // How many messages from ALL not-yet-known senders the recipient has received
+  // since `since` — the Sybil backstop (many fresh keys, one ceiling).
+  countRecentUnknown(recipient: string, since: number): number | Promise<number>;
 }
 
 export function nodeSqliteStore(path: string): Store {
@@ -51,11 +71,13 @@ export function nodeSqliteStore(path: string): Store {
       body        TEXT NOT NULL,
       tags        TEXT,
       created_at  INTEGER NOT NULL,
+      received_at INTEGER,
       fetched_at  INTEGER,
       in_reply_to TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_recipient ON messages (recipient, fetched_at);
     CREATE INDEX IF NOT EXISTS idx_created ON messages (created_at);
+    CREATE INDEX IF NOT EXISTS idx_admission ON messages (recipient, sender, received_at);
     CREATE TABLE IF NOT EXISTS handles (
       handle      TEXT PRIMARY KEY,
       signPub     TEXT NOT NULL,
@@ -63,14 +85,36 @@ export function nodeSqliteStore(path: string): Store {
       created_at  INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_handles_signpub ON handles (signPub);
+    -- Directed "known pair" ledger: (owner, peer) means owner has sent ≥1
+    -- message to peer. Drives the new-sender exemption and survives the message
+    -- retention sweep, so a contact stays known after their mail is purged.
+    CREATE TABLE IF NOT EXISTS known (
+      owner       TEXT NOT NULL,
+      peer        TEXT NOT NULL,
+      created_at  INTEGER NOT NULL,
+      PRIMARY KEY (owner, peer)
+    );
   `);
+  // Self-heal a dev DB created before received_at existed (the CREATE above is a
+  // no-op on an existing table). Throws if the column is already there — fine.
+  try {
+    db.exec(`ALTER TABLE messages ADD COLUMN received_at INTEGER`);
+  } catch {
+    /* column already present */
+  }
 
   return {
-    put(m) {
+    put(m, receivedAt = m.created_at) {
       db.prepare(
-        `INSERT INTO messages (id, recipient, sender, body, tags, created_at, fetched_at, in_reply_to)
-         VALUES (?, ?, ?, ?, ?, ?, NULL, ?)`,
-      ).run(m.id, m.recipient, m.sender, m.body, m.tags, m.created_at, m.in_reply_to);
+        `INSERT INTO messages (id, recipient, sender, body, tags, created_at, received_at, fetched_at, in_reply_to)
+         VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?)`,
+      ).run(m.id, m.recipient, m.sender, m.body, m.tags, m.created_at, receivedAt, m.in_reply_to);
+      // The sender has now reached out to the recipient: record the directed
+      // pair so the recipient's reply is exempt from throttling forever (and so
+      // THIS sender becomes known once the recipient writes back).
+      db.prepare(
+        `INSERT OR IGNORE INTO known (owner, peer, created_at) VALUES (?, ?, ?)`,
+      ).run(m.sender, m.recipient, receivedAt);
     },
 
     summary(recipient) {
@@ -128,6 +172,35 @@ export function nodeSqliteStore(path: string): Store {
         )
         .run(readBefore, unreadBefore);
       return Number(res.changes ?? 0);
+    },
+
+    isKnownSender(recipient, sender) {
+      return !!db
+        .prepare(`SELECT 1 FROM known WHERE owner = ? AND peer = ? LIMIT 1`)
+        .get(recipient, sender);
+    },
+
+    countRecentFromPair(recipient, sender, since) {
+      const r = db
+        .prepare(
+          `SELECT COUNT(*) AS n FROM messages
+           WHERE recipient = ? AND sender = ? AND received_at >= ?`,
+        )
+        .get(recipient, sender, since) as { n: number };
+      return Number(r?.n ?? 0);
+    },
+
+    countRecentUnknown(recipient, since) {
+      const r = db
+        .prepare(
+          `SELECT COUNT(*) AS n FROM messages m
+           WHERE m.recipient = ? AND m.received_at >= ?
+             AND NOT EXISTS (
+               SELECT 1 FROM known k WHERE k.owner = m.recipient AND k.peer = m.sender
+             )`,
+        )
+        .get(recipient, since) as { n: number };
+      return Number(r?.n ?? 0);
     },
   };
 }

@@ -15,9 +15,9 @@ import {
 const book: ContactBook = {
   me: "me-key",
   contacts: [
-    { id: "niels", name: "Niels", signPub: "niels-sign", boxPub: "niels-box" },
-    { id: "sam", name: "Sam", aliases: ["Sammy", "Samuel"], signPub: "sam-sign", boxPub: "sam-box" },
-    { id: "sam2", name: "Sam", signPub: "sam2-sign", boxPub: "sam2-box" },
+    { name: "Niels", signPub: "niels-sign", boxPub: "niels-box" },
+    { name: "Sam", aliases: ["Sammy", "Samuel"], signPub: "sam-sign", boxPub: "sam-box" },
+    { name: "Sam", signPub: "sam2-sign", boxPub: "sam2-box" },
   ],
 };
 
@@ -30,7 +30,7 @@ test("resolve matches an exact name, case-insensitively", () => {
 test("resolve matches an alias", () => {
   const r = resolve(book, "samuel");
   assert.equal(r.status, "resolved");
-  assert.equal(r.status === "resolved" && r.contact.id, "sam");
+  assert.equal(r.status === "resolved" && r.contact.signPub, "sam-sign");
 });
 
 test("resolve reports none for an unknown name", () => {
@@ -48,32 +48,32 @@ test("resolve reports ambiguous when two contacts share a name", () => {
 test("resolve falls back to a substring match when nothing matches exactly", () => {
   const longBook: ContactBook = {
     me: "me-key",
-    contacts: [{ id: "niels", name: "Niels - bankdata", signPub: "niels-sign", boxPub: "niels-box" }],
+    contacts: [{ name: "Niels - bankdata", signPub: "niels-sign", boxPub: "niels-box" }],
   };
   const r = resolve(longBook, "niels");
   assert.equal(r.status, "resolved");
-  assert.equal(r.status === "resolved" && r.contact.id, "niels");
+  assert.equal(r.status === "resolved" && r.contact.signPub, "niels-sign");
 });
 
 test("resolve prefers an exact match over a substring match", () => {
   const mixedBook: ContactBook = {
     me: "me-key",
     contacts: [
-      { id: "sam", name: "Sam", signPub: "sam-sign", boxPub: "sam-box" },
-      { id: "sammy", name: "Sammy from work", signPub: "sammy-sign", boxPub: "sammy-box" },
+      { name: "Sam", signPub: "sam-sign", boxPub: "sam-box" },
+      { name: "Sammy from work", signPub: "sammy-sign", boxPub: "sammy-box" },
     ],
   };
   const r = resolve(mixedBook, "sam");
   assert.equal(r.status, "resolved");
-  assert.equal(r.status === "resolved" && r.contact.id, "sam");
+  assert.equal(r.status === "resolved" && r.contact.signPub, "sam-sign");
 });
 
 test("resolve reports ambiguous when a substring matches several contacts", () => {
   const dupeBook: ContactBook = {
     me: "me-key",
     contacts: [
-      { id: "n1", name: "Niels - bankdata", signPub: "n1-sign", boxPub: "n1-box" },
-      { id: "n2", name: "Niels Bohr", signPub: "n2-sign", boxPub: "n2-box" },
+      { name: "Niels - bankdata", signPub: "n1-sign", boxPub: "n1-box" },
+      { name: "Niels Bohr", signPub: "n2-sign", boxPub: "n2-box" },
     ],
   };
   const r = resolve(dupeBook, "niels");
@@ -96,11 +96,11 @@ test("senderLabel: nick wins, auto-saved shows name+handle, unknown shows prefix
     me: "me-key",
     contacts: [
       // A nick the user chose — shown plain, never their self-name or handle.
-      { id: "boss", name: "Boss", signPub: "alice-sign", boxPub: "a-box", handle: "alice1" },
+      { name: "Boss", signPub: "alice-sign", boxPub: "a-box", handle: "alice1" },
       // Auto-saved from a self-introduction — shown as "name (handle)".
-      { id: "mallory", name: "Mallory", signPub: "mal-sign", boxPub: "m-box", handle: "mal007", auto: true },
+      { name: "Mallory", signPub: "mal-sign", boxPub: "m-box", handle: "mal007", auto: true },
       // Auto-saved but no handle known — falls back to just the name.
-      { id: "nohandle", name: "Pat", signPub: "pat-sign", boxPub: "p-box", auto: true },
+      { name: "Pat", signPub: "pat-sign", boxPub: "p-box", auto: true },
     ],
   };
   assert.equal(senderLabel(labelBook, "alice-sign"), "Boss");

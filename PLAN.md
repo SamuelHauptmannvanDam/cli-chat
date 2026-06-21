@@ -240,7 +240,17 @@ messages(
 - Replaces poll-on-open as the primary signal; polling stays as fallback.
 
 ### Cross-cutting, tracked but unscheduled
-- Spam/abuse gating on "message anyone by name" (open Q #7).
+- Spam/abuse gating on "message anyone by name" (open Q #7). **Partly landed:**
+  server-side new-sender admission control. A sender the recipient has never
+  written to is "unknown" and rate-limited by two rolling-hour caps — per
+  `(sender→recipient)` pair (stops one stranger flooding) and per recipient
+  across all unknown senders (the Sybil backstop, since fresh keys are free).
+  Replying to someone (or messaging them first) makes them "known" and exempt,
+  tracked in a durable `known(owner, peer)` ledger and counted on the server's
+  receive clock so a sender can't back-date their way out of the window. Tunable
+  via `MAILBOX_UNKNOWN_PAIR_HOURLY` / `MAILBOX_UNKNOWN_RECIPIENT_HOURLY`. Still
+  open: explicit block/mute, handle rotation, and surfacing unknown mail as an
+  accept/ignore "request" rather than silently throttling at the edge.
 - Key discovery & trust between users (open Q #2).
 - Consent boundaries on what the agent may auto-send (open Q #5).
 
