@@ -21,6 +21,7 @@ import { encodeKey, randomHandle } from "./key-code.ts";
 import { currentUser, setCurrentUser } from "./current-user.ts";
 import { userDir as userDirOf, identityFile, contactsFile, inboxFile } from "./paths.ts";
 import { resolveMailboxUrl } from "./config.ts";
+import { startWarmer } from "./warmer.ts";
 import {
   addContact,
   draftReply,
@@ -72,6 +73,21 @@ if (existing) {
     console.error(`Found user "${existing}" but couldn't load identity: ${(e as Error).message}`);
   }
 }
+
+// Background push warmer (PUSH.md): a WebSocket to the inbox Durable Object that
+// drains new mail into the cache without occupying the agent's turn. Runs for the
+// active session; restarted when create_account establishes one. Opt out with
+// MESSENGER_PUSH=0 (falls back to the on-open / per-prompt hook + watch tool).
+let stopWarmer: (() => void) | null = null;
+function ensureWarmer(): void {
+  if (process.env.MESSENGER_PUSH === "0") return;
+  if (stopWarmer) {
+    stopWarmer();
+    stopWarmer = null;
+  }
+  if (S) stopWarmer = startWarmer(S.ctx, { mailboxUrl, now });
+}
+ensureWarmer();
 
 // Claim a free 6-char handle in the registry (retries on collision).
 async function claimHandle(client: MailboxClient): Promise<string> {
@@ -224,6 +240,7 @@ server.registerTool(
     );
     setCurrentUser(id.handle);
     S = buildSession(id.handle);
+    ensureWarmer(); // start push delivery now that an account exists
     return ok({
       ok: true,
       created: true,
@@ -355,9 +372,14 @@ server.registerTool(
     const deadline = now() + WATCH_MS;
     const progressToken = extra?._meta?.progressToken;
     let ticks = 0;
+    // The background warmer (PUSH.md) drains new mail into the cache via push, so
+    // this loop just watches the LOCAL cache (cheap, ~1s granularity) rather than
+    // hitting the network every tick. A periodic sync is kept as a backstop for
+    // when push is off/unavailable (MESSENGER_PUSH=0 or the socket is down).
+    await sync(S.ctx); // initial catch-up
+    let sinceSync = 0;
     for (;;) {
       if (extra?.signal?.aborted) return ok({ status: "idle", count: 0, note: "Watch cancelled." });
-      await sync(S.ctx);
       const rows = unreadFor(S.cache, S.me.signPub);
       if (rows.length > 0) {
         const messages = rows.map((m) => {
