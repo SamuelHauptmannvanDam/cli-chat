@@ -1,5 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { DatabaseSync } from "node:sqlite";
+import { mkdtempSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { nodeSqliteStore } from "../../server-mailbox/store.ts";
 import type { WireMessage } from "../../src/identity.ts";
 
@@ -131,4 +135,32 @@ test("purge drops read mail past the read window and anything past the age windo
     (s.summary("bob") as any[]).map((m) => m.id),
     ["unread-new"],
   );
+});
+
+test("opening a legacy DB (no received_at) self-heals before indexing admission", () => {
+  const dir = mkdtempSync(join(tmpdir(), "cli-chat-store-"));
+  const path = join(dir, "legacy.db");
+  try {
+    // Seed the pre-received_at schema a deployed/old DB would have.
+    const seed = new DatabaseSync(path);
+    seed.exec(`
+      CREATE TABLE messages (
+        id TEXT PRIMARY KEY, recipient TEXT NOT NULL, sender TEXT NOT NULL,
+        body TEXT NOT NULL, tags TEXT, created_at INTEGER NOT NULL,
+        fetched_at INTEGER, in_reply_to TEXT
+      );
+      INSERT INTO messages (id, recipient, sender, body, created_at)
+      VALUES ('old', 'bob', 'alice', 'ciphertext', 1000);
+    `);
+    seed.close();
+
+    // Opening must NOT throw at idx_admission, and admission must work afterward.
+    const store = nodeSqliteStore(path);
+    store.put(wire({ id: "new", sender: "carol", recipient: "bob" }), 2000);
+    assert.equal(store.countRecentFromPair("bob", "carol", 0), 1);
+    // The pre-existing row had no received_at, so it's not counted by receive time.
+    assert.equal(store.countRecentFromPair("bob", "alice", 0), 0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

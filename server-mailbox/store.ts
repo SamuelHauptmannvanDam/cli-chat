@@ -77,7 +77,6 @@ export function nodeSqliteStore(path: string): Store {
     );
     CREATE INDEX IF NOT EXISTS idx_recipient ON messages (recipient, fetched_at);
     CREATE INDEX IF NOT EXISTS idx_created ON messages (created_at);
-    CREATE INDEX IF NOT EXISTS idx_admission ON messages (recipient, sender, received_at);
     CREATE TABLE IF NOT EXISTS handles (
       handle      TEXT PRIMARY KEY,
       signPub     TEXT NOT NULL,
@@ -97,11 +96,15 @@ export function nodeSqliteStore(path: string): Store {
   `);
   // Self-heal a dev DB created before received_at existed (the CREATE above is a
   // no-op on an existing table). Throws if the column is already there — fine.
+  // MUST run before idx_admission below, which indexes received_at and would
+  // otherwise fail to create on a pre-received_at table.
   try {
     db.exec(`ALTER TABLE messages ADD COLUMN received_at INTEGER`);
   } catch {
     /* column already present */
   }
+  // Created after the column is guaranteed to exist (fresh or self-healed).
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_admission ON messages (recipient, sender, received_at)`);
 
   return {
     put(m, receivedAt = m.created_at) {
