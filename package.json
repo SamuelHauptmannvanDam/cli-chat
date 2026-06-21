@@ -11,7 +11,7 @@
     "README.md"
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "scripts": {
     "build": "node build.mjs",
@@ -36,11 +36,9 @@
     "hono": "^4.12.25",
     "libsodium-wrappers": "^0.8.4",
     "node-sqlite3-wasm": "^0.8.58",
-    "ws": "^8.21.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
-    "@types/ws": "^8.18.1",
     "esbuild": "^0.28.1"
   },
   "allowScripts": {

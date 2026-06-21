@@ -56,8 +56,12 @@ async function handleConnect(request: Request, env: Env): Promise<Response> {
   if (request.headers.get("Upgrade") !== "websocket")
     return new Response("expected websocket upgrade", { status: 426 });
 
+  // Auth (same Ed25519 canonical string as the HTTP routes) may arrive as headers
+  // OR in the query string — the native WebSocket client can't set headers, so it
+  // signs into the query. Header wins if both are present.
+  const url = new URL(request.url);
   const auth = await verifyRequest(
-    (h) => request.headers.get(h),
+    (h) => request.headers.get(h) ?? url.searchParams.get(h),
     "GET",
     "/connect",
     "",
