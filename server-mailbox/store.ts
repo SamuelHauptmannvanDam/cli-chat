@@ -133,16 +133,18 @@ export function nodeSqliteStore(path: string): Store {
     },
 
     drain(recipient, now) {
+      // Mark-and-return in ONE atomic statement: a message that arrives between
+      // a separate SELECT and UPDATE can't get marked fetched but not returned
+      // (lost mail). Rows are MARKED, not deleted, so they keep counting toward
+      // the anti-spam window (received_at is untouched). RETURNING has no ORDER
+      // BY, so sort by created_at after.
       const rows = db
         .prepare(
-          `SELECT id, recipient, sender, body, tags, created_at, in_reply_to
-           FROM messages WHERE recipient = ? AND fetched_at IS NULL ORDER BY created_at ASC`,
+          `UPDATE messages SET fetched_at = ? WHERE recipient = ? AND fetched_at IS NULL
+           RETURNING id, recipient, sender, body, tags, created_at, in_reply_to`,
         )
-        .all(recipient) as unknown as WireMessage[];
-      if (rows.length) {
-        const stmt = db.prepare(`UPDATE messages SET fetched_at = ? WHERE id = ?`);
-        for (const r of rows) stmt.run(now, r.id);
-      }
+        .all(now, recipient) as unknown as WireMessage[];
+      rows.sort((a, b) => a.created_at - b.created_at);
       return rows;
     },
 

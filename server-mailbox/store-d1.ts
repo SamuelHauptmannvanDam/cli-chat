@@ -47,17 +47,20 @@ export function d1Store(db: D1Like): Store {
     },
 
     async drain(recipient: string, now: number): Promise<WireMessage[]> {
+      // One atomic mark-and-return (see node store): avoids the SELECT-then-UPDATE
+      // race that could mark a just-arrived message fetched without delivering it,
+      // and collapses N per-row updates into a single statement (stays under the
+      // Workers subrequest cap on large drains). Rows are marked, not deleted, so
+      // the anti-spam counts are unaffected. RETURNING is unordered → sort after.
       const { results } = await db
         .prepare(
-          `SELECT id, recipient, sender, body, tags, created_at, in_reply_to FROM messages
-           WHERE recipient = ? AND fetched_at IS NULL ORDER BY created_at ASC`,
+          `UPDATE messages SET fetched_at = ? WHERE recipient = ? AND fetched_at IS NULL
+           RETURNING id, recipient, sender, body, tags, created_at, in_reply_to`,
         )
-        .bind(recipient)
+        .bind(now, recipient)
         .all();
       const rows = results as WireMessage[];
-      for (const r of rows) {
-        await db.prepare(`UPDATE messages SET fetched_at = ? WHERE id = ?`).bind(now, r.id).run();
-      }
+      rows.sort((a, b) => Number(a.created_at) - Number(b.created_at));
       return rows;
     },
 
