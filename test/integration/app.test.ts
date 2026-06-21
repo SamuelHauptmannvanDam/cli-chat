@@ -15,8 +15,8 @@ before(async () => {
   await initCrypto();
 });
 
-function freshApp() {
-  return createApp({ store: nodeSqliteStore(":memory:"), now: () => NOW });
+function freshApp(limits?: { unknownPairHourly?: number; unknownRecipientHourly?: number }) {
+  return createApp({ store: nodeSqliteStore(":memory:"), now: () => NOW, limits });
 }
 
 // Signed request against app.fetch. path is both the URL path and the value
@@ -166,6 +166,61 @@ test("POST /messages with an oversize body is rejected 413", async () => {
   const res = await signedRequest(app, alice, "POST", "/messages", msg);
   assert.equal(res.status, 413);
   assert.match((await res.json()).error, /too large/);
+});
+
+// A sealed-ish message blob from `from` to `to`, signed by `from`.
+function msgFrom(from: Identity, to: Identity, id: string) {
+  return JSON.stringify({
+    id,
+    recipient: to.signPub,
+    sender: from.signPub,
+    body: "c2VhbGVk",
+    tags: null,
+    created_at: NOW,
+    in_reply_to: null,
+  });
+}
+
+test("an unknown sender is throttled past the per-pair hourly cap", async () => {
+  const app = freshApp({ unknownPairHourly: 2 });
+  const alice = generateIdentity();
+  const bob = generateIdentity();
+  await register(app, bob, "bobcap");
+  const send = (n: number) => signedRequest(app, alice, "POST", "/messages", msgFrom(alice, bob, `m-${n}`));
+  assert.equal((await send(1)).status, 200);
+  assert.equal((await send(2)).status, 200);
+  const blocked = await send(3); // Alice is unknown to Bob and over the cap
+  assert.equal(blocked.status, 429);
+  assert.match((await blocked.json()).error, /rate limited/);
+});
+
+test("a sender the recipient wrote to first is exempt from throttling", async () => {
+  const app = freshApp({ unknownPairHourly: 1 });
+  const alice = generateIdentity();
+  const bob = generateIdentity();
+  await register(app, alice, "alicex"); // Alice must be a valid recipient too
+  await register(app, bob, "bobxxx");
+  // Bob writes to Alice first → Alice becomes "known" to Bob.
+  assert.equal((await signedRequest(app, bob, "POST", "/messages", msgFrom(bob, alice, "b-0"))).status, 200);
+  // Now Alice can write to Bob past the (cap=1) unknown limit — she's known.
+  assert.equal((await signedRequest(app, alice, "POST", "/messages", msgFrom(alice, bob, "a-1"))).status, 200);
+  assert.equal((await signedRequest(app, alice, "POST", "/messages", msgFrom(alice, bob, "a-2"))).status, 200);
+  assert.equal((await signedRequest(app, alice, "POST", "/messages", msgFrom(alice, bob, "a-3"))).status, 200);
+});
+
+test("the per-recipient backstop caps a Sybil spray from many fresh keys", async () => {
+  const app = freshApp({ unknownPairHourly: 5, unknownRecipientHourly: 2 });
+  const bob = generateIdentity();
+  await register(app, bob, "bobsyb");
+  // Each message comes from a brand-new key, so the per-pair cap never trips —
+  // only the per-recipient unknown backstop can stop this.
+  const spray = (n: number) => {
+    const stranger = generateIdentity();
+    return signedRequest(app, stranger, "POST", "/messages", msgFrom(stranger, bob, `s-${n}`));
+  };
+  assert.equal((await spray(1)).status, 200);
+  assert.equal((await spray(2)).status, 200);
+  assert.equal((await spray(3)).status, 429); // 3rd distinct stranger this hour
 });
 
 test("register then resolve a handle round-trips public keys", async () => {

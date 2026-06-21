@@ -5,7 +5,8 @@
 import { readFileSync, writeFileSync, renameSync } from "node:fs";
 
 export interface Contact {
-  id: string; // the recipient user id used by the mailbox (Phase 0)
+  // signPub (below) is the sole identity — there is no separate id. `name` is just
+  // a label and may repeat: two different people can both be "Sam", told apart by key.
   name: string; // YOUR nickname for them — what you see in the terminal, e.g. "Niels"
   aliases?: string[]; // alternative spellings the resolver also matches
   signPub?: string; // Phase 1: contact's Ed25519 address (mailbox key)

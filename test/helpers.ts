@@ -51,7 +51,7 @@ export async function startMailbox(clock: () => number = now): Promise<Mailbox> 
 }
 
 export function publicOf(id: Identity): Contact {
-  return { id: "", name: "", signPub: id.signPub, boxPub: id.boxPub };
+  return { name: "", signPub: id.signPub, boxPub: id.boxPub };
 }
 
 // Build a NetContext for `me`, knowing the given contacts, talking to `baseUrl`.
@@ -90,10 +90,10 @@ export async function twoUsers(
   const aId = generateIdentity();
   const bId = generateIdentity();
   const a = makeContext(baseUrl, aId, [
-    { id: bName.toLowerCase(), name: bName, signPub: bId.signPub, boxPub: bId.boxPub },
+    { name: bName, signPub: bId.signPub, boxPub: bId.boxPub },
   ]);
   const b = makeContext(baseUrl, bId, [
-    { id: aName.toLowerCase(), name: aName, signPub: aId.signPub, boxPub: aId.boxPub },
+    { name: aName, signPub: aId.signPub, boxPub: aId.boxPub },
   ]);
   await regSelf(a);
   await regSelf(b);

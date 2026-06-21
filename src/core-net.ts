@@ -5,6 +5,7 @@
 // the server only ever holds ciphertext.
 
 import { randomUUID } from "node:crypto";
+import { readFileSync, writeFileSync, renameSync } from "node:fs";
 import { getMessage, insertMessage, markRead, unreadFor, type MessageRow, type Mailbox } from "./db.ts";
 import {
   contactByKey,
@@ -29,18 +30,17 @@ export interface NetContext {
 }
 
 // Save (or update) a contact in the book and persist it to disk if we know
-// where the book lives. Replaces any entry with the same local name or key.
+// where the book lives. signPub is the sole identity: we upsert on the key, so
+// re-saving the same person replaces them while two different people may share a
+// name (the resolver tells them apart, returning `ambiguous` on a name clash).
 // `auto` marks a contact saved from a received self-introduction (their own name,
 // not a nick you chose); a manual save/rename leaves it off so the nick wins.
 export function rememberContact(
   ctx: NetContext,
   c: { name: string; signPub: string; boxPub: string; handle?: string; auto?: boolean },
 ): void {
-  const id = c.name.toLowerCase();
-  ctx.book.contacts = ctx.book.contacts.filter(
-    (x) => x.id !== id && x.signPub !== c.signPub,
-  );
-  const entry: Contact = { id, name: c.name, signPub: c.signPub, boxPub: c.boxPub };
+  ctx.book.contacts = ctx.book.contacts.filter((x) => x.signPub !== c.signPub);
+  const entry: Contact = { name: c.name, signPub: c.signPub, boxPub: c.boxPub };
   if (c.handle) entry.handle = c.handle;
   if (c.auto) entry.auto = true;
   ctx.book.contacts.push(entry);
@@ -266,6 +266,68 @@ export function takeUnread(ctx: NetContext): InboxMessage[] {
       in_reply_to: m.in_reply_to,
     };
   });
+}
+
+// ---- pending snapshot: the warmer→hook channel (PUSH.md / db.ts cross-process) ----
+// The session hook can't safely open inbox.db while the warmer holds it (the wasm
+// driver's cross-process lock — the old "mail never surfaced" bug). So the warmer
+// (sole writer) mirrors current unread mail here, already decrypted, and the hook
+// just reads it. Read-state stays in SQLite; a message is marked read ONLY once the
+// hook acks it (writePendingAck → refreshPending), never at queue time — so `watch`
+// and messages_available aren't starved, and nothing is lost if the hook never runs.
+
+export interface PendingSnapshot {
+  writtenAt: number;
+  messages: InboxMessage[];
+}
+
+function writeJsonAtomic(path: string, value: unknown): void {
+  const tmp = `${path}.${process.pid}.tmp`;
+  writeFileSync(tmp, JSON.stringify(value, null, 2) + "\n");
+  renameSync(tmp, path);
+}
+
+// Hook side: the ids it has already surfaced (so it doesn't re-announce them in the
+// window before the warmer applies the ack). Missing/corrupt file → none.
+export function readAck(ackPath: string): string[] {
+  try {
+    const ids = JSON.parse(readFileSync(ackPath, "utf8"));
+    return Array.isArray(ids) ? (ids as string[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+// Hook side: read the warmer's snapshot (null when absent/corrupt → fall back to a
+// direct drain, which is safe precisely because no warmer is holding the file).
+export function readPending(pendingPath: string): PendingSnapshot | null {
+  try {
+    const snap = JSON.parse(readFileSync(pendingPath, "utf8")) as PendingSnapshot;
+    if (snap && Array.isArray(snap.messages) && typeof snap.writtenAt === "number") return snap;
+  } catch {
+    /* missing/corrupt — caller falls back */
+  }
+  return null;
+}
+
+// Hook side: record the ids surfaced this run (overwrite — always the current
+// pending set, so it never grows unbounded). The warmer applies it on its next tick.
+export function writePendingAck(ackPath: string, ids: string[]): void {
+  writeJsonAtomic(ackPath, ids);
+}
+
+// Warmer side: apply any ids the hook acked (mark them read so they drop out), then
+// mirror the remaining unread set to pendingPath. The ONLY writer of pendingPath.
+export function refreshPending(ctx: NetContext, pendingPath: string, ackPath: string): void {
+  for (const id of readAck(ackPath)) markRead(ctx.cache, id, ctx.now());
+  const messages: InboxMessage[] = unreadFor(ctx.cache, ctx.me.signPub).map((m) => ({
+    id: m.id,
+    from: senderLabel(ctx.book, m.sender),
+    body: m.body,
+    at: m.created_at,
+    in_reply_to: m.in_reply_to,
+  }));
+  writeJsonAtomic(pendingPath, { writtenAt: ctx.now(), messages } satisfies PendingSnapshot);
 }
 
 export interface AvailableResult {
