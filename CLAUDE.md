@@ -16,7 +16,9 @@ differ only in how it surfaces to the user:
 2. **Live `watch` (real-time).** When the user says "watch", you loop the `watch`
    tool; it holds one long call open and returns the instant mail arrives, which
    you read straight into the chat. One model turn per real message, ~none while
-   idle (the long hold is configured via `MCP_TOOL_TIMEOUT` in `.claude/settings.json`).
+   idle (the hold is a server-driven adaptive long-poll — ~9.2 min default via
+   `MESSENGER_WATCH_MS`, tunable per call with the `hold_seconds` param;
+   `MCP_TOOL_TIMEOUT` is only the client-side cap).
 
 ## At session start (announce mail, offer to read)
 A `SessionStart` hook checks for waiting mail. The **user is shown only a count

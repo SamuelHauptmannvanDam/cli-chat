@@ -10,18 +10,18 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { randomBytes } from "node:crypto";
 import { userInfo } from "node:os";
 import { initCrypto, generateIdentity } from "./crypto.ts";
 import { loadIdentity } from "./identity.ts";
-import { loadContacts, senderLabel } from "./contacts.ts";
-import { openMailbox, unreadFor, markRead } from "./db.ts";
-import { createMailboxClient, type MailboxClient } from "./mailbox-client.ts";
-import { encodeKey, randomHandle } from "./key-code.ts";
+import { loadContacts, saveContacts } from "./contacts.ts";
+import { openMailbox } from "./db.ts";
+import { createMailboxClient } from "./mailbox-client.ts";
+import { encodeKey } from "./key-code.ts";
 import { currentUser, setCurrentUser, resolveIdentity } from "./current-user.ts";
 import { userDir as userDirOf, identityFile, contactsFile, inboxFile } from "./paths.ts";
 import { resolveMailboxUrl } from "./config.ts";
 import { startWarmer } from "./warmer.ts";
+import { claimHandle } from "./provision.ts";
 import {
   addContact,
   draftReply,
@@ -29,6 +29,7 @@ import {
   readMessage,
   sendMessage,
   sync,
+  takeUnread,
   type NetContext,
 } from "./core-net.ts";
 
@@ -121,15 +122,6 @@ function ensureWarmer(): void {
 }
 ensureWarmer();
 
-// Claim a free 6-char handle in the registry (retries on collision).
-async function claimHandle(client: MailboxClient): Promise<string> {
-  for (let i = 0; i < 8; i++) {
-    const candidate = randomHandle(randomBytes(8));
-    if ((await client.registerHandle(candidate)) === "ok") return candidate;
-  }
-  throw new Error("couldn't find a free handle after several tries");
-}
-
 // Behavior travels WITH the server (MCP `instructions`, sent on connect) so it
 // works in any MCP-capable CLI — not just Claude Code's CLAUDE.md. Every major
 // agent CLI surfaces these instructions to its model.
@@ -213,7 +205,7 @@ Bob.").
 
 Always keep the human in control of what's sent.`;
 
-const server = new McpServer({ name: "cli-chat", version: "0.4.3" }, { instructions: INSTRUCTIONS });
+const server = new McpServer({ name: "cli-chat", version: "0.4.4" }, { instructions: INSTRUCTIONS });
 const ok = (data: unknown) => ({
   content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }],
 });
@@ -312,10 +304,7 @@ server.registerTool(
 
     mkdirSync(userDirOf(id.handle), { recursive: true });
     writeFileSync(identityFile(id.handle), JSON.stringify(id, null, 2) + "\n");
-    writeFileSync(
-      contactsFile(id.handle),
-      JSON.stringify({ me: id.signPub, contacts: [] }, null, 2) + "\n",
-    );
+    saveContacts(contactsFile(id.handle), { me: id.signPub, contacts: [] });
     // Only become the device default when not explicitly pinned via MESSENGER_USER;
     // otherwise a second identity's setup would clobber the first session's .current.
     if (!process.env.MESSENGER_USER?.trim()) setCurrentUser(id.handle);
@@ -494,18 +483,8 @@ server.registerTool(
     let sinceSync = 0;
     for (;;) {
       if (extra?.signal?.aborted) return ok({ status: "idle", count: 0, note: "Watch cancelled." });
-      const rows = unreadFor(S.cache, S.me.signPub);
-      if (rows.length > 0) {
-        const messages = rows.map((m) => {
-          markRead(S!.cache, m.id, now());
-          return {
-            id: m.id,
-            from: senderLabel(S!.book, m.sender),
-            body: m.body,
-            at: m.created_at,
-            in_reply_to: m.in_reply_to,
-          };
-        });
+      const messages = takeUnread(S.ctx);
+      if (messages.length > 0) {
         return ok({
           status: "messages",
           count: messages.length,

@@ -1,6 +1,8 @@
 # Push delivery spec — background WebSocket warmer
 
-Status: design. Supersedes the 3-second poll loop in `listen_for_messages`.
+Status: design — the background warmer and `watch` tool are now implemented (the
+desktop notification is opt-in via `MESSENGER_NOTIFY=1`, off by default).
+Supersedes the 3-second poll loop in `listen_for_messages`.
 
 ## Goal
 Deliver new mail to a user's machine **the instant it lands**, while the user keeps
@@ -19,13 +21,14 @@ problem, not the transport.
 
 Instead, do the receiving in the **MCP server process itself**, which is alive for
 the whole session and runs its own event loop independent of tool calls. It holds
-a WebSocket in the background, drains new mail into the local cache, and fires a
-desktop notification — all **without occupying the agent**. The agent stays free
+a WebSocket in the background, drains new mail into the local cache, and (opt-in
+via `MESSENGER_NOTIFY=1`) fires a desktop notification — all **without occupying
+the agent**. The agent stays free
 to chat. Messages then surface through the normal turn mechanisms:
 
 | Path | When it shows | Occupies agent? |
 |---|---|---|
-| Background warmer (WS in MCP server) | writes cache + desktop notify, **instant** | ❌ no |
+| Background warmer (WS in MCP server) | writes cache + desktop notify (opt-in `MESSENGER_NOTIFY=1`), **instant** | ❌ no |
 | `check-inbox` hook (on each prompt) | "📬 new from Sam — read it?" on your **next turn** | ❌ no |
 | `listen_for_messages` (now optional) | full body into context, instant | ✅ yes (opt-in only) |
 
@@ -43,7 +46,7 @@ sender ──POST /messages──▶ Worker ──┬─▶ D1 (source of truth,
                               recipient's MCP server (background WS)
                                               │ on wake → sync(ctx)  [existing pull]
                                               ▼
-                                    local cache (~/.cli-chat) + desktop notify
+                          local cache (~/.cli-chat) + desktop notify (opt-in: MESSENGER_NOTIFY=1)
                                               │
                                    surfaced on next turn (hook) / or watch tool
 ```
