@@ -1,65 +1,108 @@
-# Inbox cache backend — current choice & migration plan
+# Refactor plan: library shims → native Node APIs
 
-The **local inbox cache** (`src/db.ts`) — each user's on-disk store of decrypted
-recent messages — is deliberately swappable behind one type and six functions.
-This documents the current backend and how to migrate it later.
+Two places use a **third-party library instead of a native Node API**, on purpose,
+to keep the install floor at **Node 20** (broadest reach, no native build, no
+version traps). Both are isolated to a single file so they can be swapped to the
+native API later with no ripple. This documents each and **when it's worth doing**.
 
-## Current: `node-sqlite3-wasm` (Node 20+)
-Real SQLite compiled to WebAssembly. Chosen because the built-in `node:sqlite` is
-only usable **unflagged on Node 24+**, so `npx cli-chat-mcp` crashed with
-`ERR_UNKNOWN_BUILTIN_MODULE` on the Node 22 LTS line. WASM "just installs and
-runs" on Node 20+, every OS, with no native build.
+| Concern | Library now (Node 20+) | Native API | Native needs | Isolated to |
+|---|---|---|---|---|
+| Inbox cache (SQLite) | `node-sqlite3-wasm` | `node:sqlite` | **Node 24+** | `src/db.ts` |
+| WebSocket client (warmer) | `ws` | global `WebSocket` | **Node 22+** | `src/warmer.ts` |
 
-### What it cost us (vs native node:sqlite)
+---
+
+## 1. Inbox cache: `node-sqlite3-wasm` → `node:sqlite`
+Real SQLite in WebAssembly. Chosen because `node:sqlite` is only usable unflagged
+on **Node 24+**, so `npx cli-chat-mcp` crashed with `ERR_UNKNOWN_BUILTIN_MODULE`
+on the Node 22 LTS line. WASM "just installs and runs" on Node 20+, any OS, no
+native build.
+
+### Cost vs native (all negligible here except one)
 | Cost | Impact at our scale |
 |---|---|
-| Cross-process write locking is weaker (WASM VFS; WAL may not apply) | **The only real one** — server + hook both touch `~/.cli-chat`; concurrent writes could race. Rare (writes are short/infrequent), mitigable with atomic writes. |
-| ~1 MB wasm load + instantiate per process (~few ms) | Negligible |
-| Slightly slower per query | Invisible — network round-trip dominates 100–1000× |
-| +1 dependency (~1 MB), small memory bump, third-party (not Node core) | Minor |
+| Weaker cross-process write locking (WASM VFS; WAL may not apply) | **The only real one** — server warmer + hook both touch `~/.cli-chat`; concurrent writes could race. Rare/short writes; mitigable with atomic writes. |
+| ~1 MB wasm load + instantiate per process | Negligible (~few ms) |
+| Slightly slower per query | Invisible — network dominates 100–1000× |
+| +1 dep (~1 MB), small memory bump, third-party (not Node core) | Minor |
 
-Net: one mitigable tradeoff (locking) for "works for most users." See the cost
-discussion in chat / `PUSH.md` concurrency note.
-
-## The isolation that makes migration cheap
-Nothing outside `db.ts` imports a SQLite library. Consumers (`core-net.ts`,
-`server-net.ts`, `check-inbox.ts`, tests) use only:
-- the `Mailbox` type (`export type Mailbox = …`), and
-- `openMailbox · insertMessage · unreadFor · getMessage · markFetched · markRead`.
-
-So the backend lives behind one file + one type. `test/unit/db.test.ts` exercises
-that API directly, so it validates **any** backend unchanged — your regression
-guard for a swap.
-
-## Migration plan: WASM → native `node:sqlite` (when Node 24+ is a safe baseline)
-
-**When to do it:** once you're comfortable requiring Node 24+ (the whole user base
-on 24+). Gain: real WAL + OS-level cross-process locking (nicer for the push
-warmer + hook sharing the cache). Cost: reinstating the Node 24 floor — Node 20/22
-users break again.
-
-**Steps — all in `src/db.ts` unless noted:**
-1. Import: `import sqlite from "node-sqlite3-wasm"` → `import { DatabaseSync } from "node:sqlite"`.
+### Migration steps (all in `src/db.ts` unless noted)
+1. Import: `node-sqlite3-wasm` → `import { DatabaseSync } from "node:sqlite"`.
 2. `Mailbox` type: `InstanceType<typeof Database>` → `DatabaseSync`.
 3. Constructor: `new Database(path)` → `new DatabaseSync(path)`.
-4. Calls: array-param form → prepared/variadic form:
-   - `db.run(sql, [a, b])` → `db.prepare(sql).run(a, b)`
-   - `db.all(sql, [a])` → `db.prepare(sql).all(a)`
-   - `db.get(sql, [a])` → `db.prepare(sql).get(a)`
-5. `getMessage`: drop the `?? undefined` — native `get()` already returns `undefined` on a miss.
-6. `package.json`: `engines.node` `>=20` → `>=24`; remove the `node-sqlite3-wasm` dependency.
-7. `README.md`: bump the "Requirements" line back to Node 24+.
+4. Calls: array-param → prepared/variadic:
+   `db.run(sql, [a,b])` → `db.prepare(sql).run(a,b)`; same for `.all` / `.get`.
+5. `getMessage`: drop the `?? undefined` (native `get()` already returns `undefined`).
+6. `package.json`: `engines.node` → `>=24`; remove `node-sqlite3-wasm`.
+7. `README.md`: bump the Requirements line to Node 24+.
 
-**Verify:** `npm test` (db.test.ts + integration must stay green) and `npm run
-build`. No other source files change — that's the point of the abstraction.
+**Verify:** `npm test` (db.test.ts + integration must stay green — they exercise
+the public API, so they validate either backend) and `npm run build`. No other
+source file changes.
 
-## Optional: support both (auto-detect)
-If you want broad compatibility *and* native performance where available, `db.ts`
-can try `node:sqlite` and fall back to WASM:
-```ts
-let backend;
-try { backend = await import("node:sqlite"); }      // Node 24+
-catch { backend = await import("node-sqlite3-wasm"); } // everyone else
-```
-Wrap both behind the same `Mailbox` type + six functions. More code in `db.ts`,
-but still zero ripple elsewhere, and no Node floor above 20.
+**Gain:** real WAL + OS-level cross-process locking (nicer for warmer+hook sharing
+the cache). **Cost:** reinstating the Node 24 floor.
+
+---
+
+## 2. WebSocket client: `ws` → global `WebSocket`
+The push warmer (`src/warmer.ts`) needs a WebSocket *client*. Node has no global
+`WebSocket` until it landed experimentally in **Node 21** and on-by-default in
+**Node 22**. We use the `ws` package so the warmer runs on **Node 20+**.
+
+### ⚠️ This swap is NOT a drop-in — read before attempting
+The native global `WebSocket` is the browser/WHATWG API, which **cannot set custom
+request headers on the handshake.** Our `/connect` auth signs Ed25519 headers
+(`x-pubkey` / `x-timestamp` / `x-signature`) on the upgrade — `ws` supports that
+via `new WebSocket(url, { headers })`; the global API does **not**. So migrating to
+native also requires **moving the signed auth off headers** (e.g. into the URL
+query string) and updating the server's `/connect` verification to match. That's a
+client *and* server change, not a one-file swap — which is why `ws` is the more
+attractive default.
+
+### Migration steps (if you do it anyway)
+- **Server** (`server-mailbox/worker.ts` `handleConnect`): read `x-*` auth from
+  query params instead of headers; build the canonical string over the same
+  `(GET, /connect, ts, "")` and verify (`verify.ts` is reusable — just feed it the
+  query values). Keep header support too if you want a transition window.
+- **Client** (`src/warmer.ts`): replace `import WebSocket from "ws"` with the
+  global; put the signed params in the URL (`/connect?pubkey=…&ts=…&sig=…`);
+  translate the event API: `ws.on("open"/"message"/"close"/"error", …)` →
+  `addEventListener(...)`, and read frames from `event.data` (not the raw arg).
+- `package.json`: `engines.node` → `>=22`; remove `ws` + `@types/ws`.
+
+**Verify:** deploy the worker, then confirm the warmer connects and a sent message
+wakes it (watch the cache fill). `npm test` + `npm run build`.
+
+**Gain:** one fewer dependency. **Cost:** Node 22 floor **and** the header→query
+auth rewrite on both sides. Low payoff; see below.
+
+---
+
+## When does it make sense to do either?
+Refactor on **two conditions together**, never on the Node version alone:
+
+1. **The floor is safe to raise** — effectively your whole user base is already on
+   Node 24+ (cache) / Node 22+ (WebSocket). Until then, raising it just breaks
+   installs, which is exactly the bug we fixed.
+2. **There's a concrete payoff**, e.g.:
+   - **Dropping a dependency** for supply-chain / maintenance reasons (the library
+     goes unmaintained, gets a CVE, etc.).
+   - **node:sqlite specifically:** if the warmer + hook sharing the cache ever
+     causes *real* lock contention or corruption, native WAL is the proper fix.
+     (Watch for it; it's the one non-cosmetic reason.)
+   - You want zero third-party runtime deps as a principle.
+
+**What does NOT justify it:** performance. At this scale both shims are invisible
+next to the network round-trip — don't refactor for speed.
+
+### Recommendation today
+- **SQLite:** defer. Only worth it once Node 24+ is a safe baseline *and* you hit
+  real cross-process locking trouble. Then it's a clean one-file swap.
+- **WebSocket:** defer harder. Saving one small pure-JS dep isn't worth the
+  Node 22 floor **plus** rewriting auth from headers to query on both client and
+  server. Keep `ws` unless you're dropping deps as a hard policy.
+
+In short: both are deliberate, both are isolated, and **neither is worth doing
+soon.** Revisit when a Node baseline is guaranteed *and* a dependency becomes a
+liability — not before.
