@@ -269,6 +269,49 @@ describe("sender identity", () => {
     const avail = await messagesAvailable(bob);
     assert.equal(avail.messages[0].from, "Boss");
   });
+
+  test("a known contact missing a handle gets it backfilled, nick untouched", async () => {
+    const aliceId = generateIdentity();
+    const alice = makeContext(mb.baseUrl, aliceId);
+    alice.me.name = "Alice";
+    alice.me.handle = "alice1";
+    const bobId = generateIdentity();
+    // Bob saved Alice as "Boss" BEFORE self-introductions existed: a real nick,
+    // no handle on file. Her new-style envelope should fill the handle only.
+    const bob = makeContext(mb.baseUrl, bobId, [
+      { id: "boss", name: "Boss", signPub: aliceId.signPub, boxPub: aliceId.boxPub },
+    ]);
+    await regSelf(bob);
+    alice.book.contacts.push({ id: "bob", name: "Bob", signPub: bobId.signPub, boxPub: bobId.boxPub });
+
+    await sendMessage(alice, { to: "Bob", body: "ping" });
+    await sync(bob);
+
+    const saved = bob.book.contacts.find((c) => c.signPub === aliceId.signPub);
+    assert.equal(saved?.handle, "alice1"); // backfilled
+    assert.equal(saved?.name, "Boss"); // nick untouched
+    assert.equal(saved?.auto, undefined); // not flipped to an auto contact
+  });
+
+  test("an existing handle is never overwritten by a later envelope", async () => {
+    const aliceId = generateIdentity();
+    const alice = makeContext(mb.baseUrl, aliceId);
+    alice.me.name = "Alice";
+    alice.me.handle = "alice2";
+    const bobId = generateIdentity();
+    // Bob already has a handle on file for Alice; a new message must not clobber it.
+    const bob = makeContext(mb.baseUrl, bobId, [
+      { id: "boss", name: "Boss", signPub: aliceId.signPub, boxPub: aliceId.boxPub, handle: "OLD123" },
+    ]);
+    await regSelf(bob);
+    alice.book.contacts.push({ id: "bob", name: "Bob", signPub: bobId.signPub, boxPub: bobId.boxPub });
+
+    await sendMessage(alice, { to: "Bob", body: "ping" });
+    await sync(bob);
+
+    const saved = bob.book.contacts.find((c) => c.signPub === aliceId.signPub);
+    assert.equal(saved?.handle, "OLD123");
+  });
 });
 
 describe("crypto boundaries", () => {
