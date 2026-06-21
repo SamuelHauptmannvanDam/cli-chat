@@ -43,7 +43,7 @@ async function connect(label: string): Promise<Client> {
 
 async function call(client: Client, name: string, args: Record<string, unknown> = {}) {
   const res = await client.callTool({ name, arguments: args });
-  return JSON.parse((res.content as { text: string }[])[0].text);
+  return JSON.parse((res.content as { text: string }[])[0]!.text);
 }
 
 const sam = await connect("sam");

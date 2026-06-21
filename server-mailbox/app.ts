@@ -20,7 +20,18 @@ export interface AppDeps {
   notify?: (recipient: string) => void;
   // New-sender throttle caps (see admission control below). Override per-app
   // (tests pin small values); otherwise env, then the defaults.
-  limits?: { unknownPairHourly?: number; unknownRecipientHourly?: number };
+  limits?: {
+    unknownPairHourly?: number;
+    unknownRecipientHourly?: number;
+    unknownSenderDaily?: number;
+  };
+  // Optional edge rate-limiter (the Cloudflare Workers Rate Limiting binding on
+  // the deploy; absent on the Node runner). Given a bucket + key, returns true to
+  // ALLOW and false to 429. Fails OPEN by contract: a missing limiter (Node) or
+  // one that throws never blocks delivery — the admission caps are the real wall.
+  // Buckets: "resolve" (per-IP directory scraping), "post-ip" (per-IP send
+  // flood, checked before any crypto), "post-key" (per-sender send rate).
+  rateLimit?: (bucket: "resolve" | "post-ip" | "post-key", key: string) => Promise<boolean>;
 }
 
 // Abuse limits. These are short text ciphertexts, so the caps are generous yet
@@ -29,13 +40,18 @@ export interface AppDeps {
 const MAX_REQUEST_BYTES = 64 * 1024;
 const MAX_BODY_BYTES = 16 * 1024;
 
-// New-sender admission window + default caps (PLAN open Q#7). "Unknown" = a
-// sender the recipient has never written to; once the recipient replies they're
-// known and exempt. The per-pair cap stops one stranger flooding; the per-
-// recipient cap is the Sybil backstop (many fresh keys still hit one ceiling).
+// New-sender admission caps (PLAN open Q#7). "Unknown" = a sender the recipient
+// has never written to; once the recipient replies they're known and exempt.
+//   - pair (hourly):      stops ONE stranger flooding ONE recipient.
+//   - recipient (hourly): Sybil backstop — many fresh keys still hit one ceiling
+//                         per recipient (kept deliberately low for a public net).
+//   - sender (daily):     caps one identity's total COLD reach across everyone,
+//                         so a single key can't trickle-spray the whole network.
 const ADMISSION_WINDOW_MS = 60 * 60 * 1000; // rolling hour
+const ADMISSION_DAY_MS = 24 * 60 * 60 * 1000; // rolling day (sender daily cap)
 const DEFAULT_UNKNOWN_PAIR_HOURLY = 5;
-const DEFAULT_UNKNOWN_RECIPIENT_HOURLY = 30;
+const DEFAULT_UNKNOWN_RECIPIENT_HOURLY = 10;
+const DEFAULT_UNKNOWN_SENDER_DAILY = 50;
 function envInt(name: string): number | undefined {
   const n = Number(process.env[name]);
   return Number.isFinite(n) && n > 0 ? n : undefined;
@@ -43,7 +59,7 @@ function envInt(name: string): number | undefined {
 
 export function createApp(deps: AppDeps): Hono {
   const app = new Hono();
-  const { store, now, notify } = deps;
+  const { store, now, notify, rateLimit } = deps;
   const unknownPairHourly =
     deps.limits?.unknownPairHourly ??
     envInt("MAILBOX_UNKNOWN_PAIR_HOURLY") ??
@@ -52,10 +68,32 @@ export function createApp(deps: AppDeps): Hono {
     deps.limits?.unknownRecipientHourly ??
     envInt("MAILBOX_UNKNOWN_RECIPIENT_HOURLY") ??
     DEFAULT_UNKNOWN_RECIPIENT_HOURLY;
+  const unknownSenderDaily =
+    deps.limits?.unknownSenderDaily ??
+    envInt("MAILBOX_UNKNOWN_SENDER_DAILY") ??
+    DEFAULT_UNKNOWN_SENDER_DAILY;
+
+  // Edge rate-limit helper. The client IP is Cloudflare's CF-Connecting-IP on the
+  // deploy; absent locally → a shared "local" key (the limiter is usually absent
+  // there anyway). Fail-open: no limiter, or a limiter that throws, ALLOWS.
+  const clientIp = (c: { req: { header: (n: string) => string | undefined } }) =>
+    c.req.header("CF-Connecting-IP") ?? c.req.header("x-forwarded-for") ?? "local";
+  async function limited(bucket: "resolve" | "post-ip" | "post-key", key: string): Promise<boolean> {
+    if (!rateLimit) return false;
+    try {
+      return !(await rateLimit(bucket, key));
+    } catch {
+      return false; // never block on a limiter failure
+    }
+  }
 
   app.get("/health", (c) => c.json({ ok: true }));
 
   app.post("/messages", async (c) => {
+    // Coarse per-IP flood gate FIRST — before reading the body or spending any
+    // crypto — so a torrent of junk POSTs is dropped at the cheapest point.
+    if (await limited("post-ip", clientIp(c)))
+      return c.json({ error: "rate limited" }, 429);
     // Reject oversize bodies as cheaply as possible: trust Content-Length first
     // (avoids buffering the body), then re-check the bytes we actually read,
     // before spending any crypto on verification.
@@ -73,6 +111,12 @@ export function createApp(deps: AppDeps): Hono {
       now(),
     );
     if (!auth.ok) return c.json({ error: auth.reason }, 401);
+
+    // Per-identity send-rate gate, now that the signer is verified. Bounds how
+    // fast one key can post regardless of recipient (the daily cold-reach cap
+    // below is per-recipient-novelty; this is raw rate).
+    if (await limited("post-key", auth.pubkey))
+      return c.json({ error: "rate limited" }, 429);
 
     let msg: WireMessage;
     try {
@@ -104,6 +148,12 @@ export function createApp(deps: AppDeps): Hono {
         return c.json({ error: "rate limited: too many new messages to this recipient" }, 429);
       if ((await store.countRecentUnknown(msg.recipient, since)) >= unknownRecipientHourly)
         return c.json({ error: "rate limited: recipient is receiving too much new mail" }, 429);
+      // Daily cold-reach cap: how many people this sender has cold-messaged in the
+      // last day. Bounds one identity's total spray across the whole network,
+      // which the per-recipient caps (each scoped to one inbox) never could.
+      const sinceDay = receivedAt - ADMISSION_DAY_MS;
+      if ((await store.countRecentSentToNew(msg.sender, sinceDay)) >= unknownSenderDaily)
+        return c.json({ error: "rate limited: too many new people contacted today" }, 429);
     }
 
     await store.put(
@@ -161,8 +211,13 @@ export function createApp(deps: AppDeps): Hono {
     return c.json({ ok: true, handle: body.handle });
   });
 
-  // Resolve a handle → public keys. Public (these are public keys).
+  // Resolve a handle → public keys. Public (these are public keys), so the only
+  // guard is a per-IP rate limit: a scraper can't list the directory, but it's
+  // the one route that turns a handle into a messageable key, so throttling it
+  // is what caps directory harvesting (PLAN open Q#7). Checked before the lookup.
   app.get("/resolve/:handle", async (c) => {
+    if (await limited("resolve", clientIp(c)))
+      return c.json({ error: "rate limited" }, 429);
     const rec = await store.resolveHandle(c.req.param("handle"));
     if (!rec) return c.json({ error: "not found" }, 404);
     return c.json(rec);

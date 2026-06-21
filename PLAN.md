@@ -75,7 +75,9 @@
    Signal-style, Nostr-style relays)?
 2. **Identity** — how do two users discover and trust each other's keys / agent endpoints?
 3. **Graph sharing** — "search a friend's contacts" implies some shared/queryable graph.
-   What's exposed, and with what consent/privacy boundary?
+   What's exposed, and with what consent/privacy boundary? *(Proposed answer:
+   mutual-top-tier reciprocity — you traverse someone's contacts only if you're
+   each in the other's top ~125. See Phase 3.)*
 4. **Where the MCP runs** — always-on daemon vs. only-when-CLI-open. The proactive
    `messages_available` needs *something* to be reachable, or a fetch-on-open model.
 5. **Consent on auto-reply** — how much can the agent send without explicit confirmation?
@@ -230,27 +232,74 @@ messages(
 - Disambiguation when >1 candidate for a name.
 - Tagging improves future "which Tobias?" confidence.
 
-### Phase 3 — Social-graph fuzzy resolution
-- "Write Tobias" with no local Tobias → search friends-of-contacts → "Tobias connected to
-  Niels?" (§3.3). Needs the consent/privacy model for shared graph queries (open Q #3).
-- This is the privacy-heaviest feature — design the boundary before building.
+### Phase 2.5 — Relationship tiers (Dunbar layers)
+- Give each contact a **closeness tier** using the classic Dunbar layers — ~5
+  (inner clique) / 15 (close) / 50 (meaningful) / 150 (the outer "who you'd
+  recognise and stay in touch with" circle; we use **125** as the working cap).
+- **Explicit vs. inferred** is the design fork. Lean inferred-first: rank from
+  interaction history (frequency + recency + reciprocity), which we already have
+  the raw signal for — sends are observable, and the `received_at` column added
+  for spam admission is a ready clock. Let the user pin/override a few by hand
+  (their inner five), but don't make them sort 125 people.
+- A `Contact.tier` (or a derived score) is the one new field; everything below
+  reads it.
+- **What tiers unlock:**
+  - *Resolution tie-break* — "which Sam?" prefers a closer-tier Sam (feeds Phase
+    2 disambiguation).
+  - *Notification scope* — real-time `watch`/push for the inner tiers, quiet
+    on-keystroke for the long tail.
+  - *Spam admission* (already built) — auto-promote inner-tier contacts to
+    "known"; apply softer caps to known-but-distant ones. See open Q #7.
+
+### Phase 3 — Social-graph fuzzy resolution (mutual-top-tier gated)
+- "Write Lars" with no local Lars → look through **my network** for a Lars and
+  offer the best match: "You don't have a Lars. Niels has a Lars Andersen —
+  write him?" (§3.3). This is the feature that makes a flat address book feel
+  like a graph.
+- **Consent boundary (answers open Q #3): mutual-top-tier reciprocity.** You can
+  see/traverse someone's contacts only when **you are each in the other's top
+  ~125** — a symmetric, opt-in-by-relationship gate, not an open directory. No
+  one-way scraping: if Niels isn't in your circle (or you aren't in his), his
+  contacts stay invisible. Within that gate, discovery still respects the spam
+  caps (a found stranger is an *unknown* sender — first contact is a throttled
+  request, never a free channel).
+- **Full names are load-bearing here.** Network lookup matches a typed "Lars"
+  against contacts' names, so the self-introduced name that propagates between
+  agents should be a real full name — hence we ask the user for their full name
+  at setup. ("Your nick wins" still holds: I can locally call Lars Andersen
+  "Lars" while the graph knows his full name.)
+- Still the privacy-heaviest feature — settle the exact query mechanism before
+  building: does the server answer "any Lars in my top-tier's books?" (it would
+  then learn graph edges), or is it a signed peer-to-peer/encrypted query that
+  keeps the server blind? Decide the metadata trade-off explicitly.
+- This phase depends on **Phase 2.5** (tiers must exist to gate on them).
 
 ### Phase 4 — Real-time push
 - Durable Objects + WebSocket so messages surface while the CLI is already idle-open.
 - Replaces poll-on-open as the primary signal; polling stays as fallback.
 
 ### Cross-cutting, tracked but unscheduled
-- Spam/abuse gating on "message anyone by name" (open Q #7). **Partly landed:**
-  server-side new-sender admission control. A sender the recipient has never
-  written to is "unknown" and rate-limited by two rolling-hour caps — per
-  `(sender→recipient)` pair (stops one stranger flooding) and per recipient
-  across all unknown senders (the Sybil backstop, since fresh keys are free).
-  Replying to someone (or messaging them first) makes them "known" and exempt,
-  tracked in a durable `known(owner, peer)` ledger and counted on the server's
-  receive clock so a sender can't back-date their way out of the window. Tunable
-  via `MAILBOX_UNKNOWN_PAIR_HOURLY` / `MAILBOX_UNKNOWN_RECIPIENT_HOURLY`. Still
-  open: explicit block/mute, handle rotation, and surfacing unknown mail as an
-  accept/ignore "request" rather than silently throttling at the edge.
+- Spam/abuse gating on "message anyone by name" (open Q #7). **Largely landed**
+  as layered defense for a public launch:
+  - **New-sender admission** (`app.ts` + the `known` ledger). A sender the
+    recipient has never written to is "unknown" and bounded by three caps:
+    per-`(sender→recipient)` pair / hour (one stranger can't flood one inbox),
+    per-recipient / hour across all unknown senders (the Sybil backstop — fresh
+    keys are free, so this key-independent ceiling is the real wall), and
+    per-sender / day of *cold* outreach (bounds one identity's total spray
+    across the whole network — the thing the per-recipient caps can't see).
+    Replying makes a sender "known" and exempt; all counts use the server's
+    receive clock so created_at can't be back-dated to dodge the window. Tunable
+    via `MAILBOX_UNKNOWN_PAIR_HOURLY` / `_RECIPIENT_HOURLY` / `_SENDER_DAILY`.
+  - **Edge rate limits** (Cloudflare Rate Limiting bindings, `worker.ts` +
+    `wrangler.toml`): per-IP on `/resolve` (caps directory harvesting — the step
+    that would let an attacker build a whole-network target list), and per-IP +
+    per-sender-key on `POST /messages` (caps the raw flood / cost-DoS before the
+    admission logic runs). The app injects an optional limiter and **fails open**,
+    so the Node/dev path is unaffected.
+  - Still open: explicit block/mute, handle rotation (burn a leaked code), and
+    the structural upgrade — surfacing unknown mail as an accept/ignore
+    **request** the recipient must approve, rather than throttle-but-deliver.
 - Key discovery & trust between users (open Q #2).
 - Consent boundaries on what the agent may auto-send (open Q #5).
 

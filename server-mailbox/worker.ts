@@ -11,9 +11,36 @@ import { verifyRequest } from "./verify.ts";
 // can instantiate it (see wrangler.toml [[durable_objects.bindings]]).
 export { Inbox } from "./inbox-do.ts";
 
+// A Cloudflare Rate Limiting binding: `.limit({ key })` → `{ success }`.
+interface RateLimiter {
+  limit(opts: { key: string }): Promise<{ success: boolean }>;
+}
+
 export interface Env {
   DB: D1Like;
   INBOX: any; // DurableObjectNamespace (loose-typed to avoid workers-types dep)
+  // Edge rate limiters (wrangler.toml [[unsafe.bindings]]). Optional so a deploy
+  // without them configured still runs (the app fails open).
+  RESOLVE_LIMITER?: RateLimiter;
+  POST_IP_LIMITER?: RateLimiter;
+  POST_KEY_LIMITER?: RateLimiter;
+}
+
+// Map an app rate-limit bucket to its Cloudflare binding → "allow this request?".
+// A missing binding fails OPEN (allow), matching the app's contract so a
+// half-configured deploy never drops mail.
+function makeRateLimit(env: Env) {
+  const byBucket: Record<string, RateLimiter | undefined> = {
+    resolve: env.RESOLVE_LIMITER,
+    "post-ip": env.POST_IP_LIMITER,
+    "post-key": env.POST_KEY_LIMITER,
+  };
+  return async (bucket: "resolve" | "post-ip" | "post-key", key: string): Promise<boolean> => {
+    const limiter = byBucket[bucket];
+    if (!limiter) return true;
+    const { success } = await limiter.limit({ key });
+    return success;
+  };
 }
 
 // Retention windows for the daily cron sweep (see wrangler.toml [triggers]).
@@ -37,6 +64,7 @@ export default {
       // Fire-and-forget via waitUntil so it never delays the POST response, and
       // a missed wake is harmless (client has catch-up sync + fallback poll).
       notify: (recipient) => ctx.waitUntil(wake(env, recipient)),
+      rateLimit: makeRateLimit(env),
     });
     return app.fetch(request, env as unknown as Record<string, unknown>, ctx);
   },

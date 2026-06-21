@@ -76,6 +76,10 @@ if (!setUp) {
   }
   process.exit(0); // nothing more to do without an account
 }
+// `setUp` is only ever true when `user` is non-null (see the guard above), so
+// this never fires at runtime — it just narrows `user` to string for the rest
+// of the hook, which is all per-user path building from here down.
+if (!user) process.exit(0);
 
 // A pending.json older than this is treated as stale (warmer off/dead) → the hook
 // falls back to a direct drain. The warmer rewrites it on every drain (≤ its 60s
@@ -102,15 +106,16 @@ try {
   // their name now travels with every message they send, so it's worth having.
   const nudgeAsk = namePlaceholder && hookEventName === "SessionStart";
   const nameAskUser =
-    "👤 You haven't set a name yet — it's what people see when you message them. " +
-    "What should I call you?";
+    "👤 You haven't set a name yet — it's what people see when you message them, " +
+    "and how mutual contacts find you. What's your full name?";
   if (nudgeAsk) {
     whoami +=
       " The user has NOT set a display name (it's still a placeholder), so the " +
       "people they message see only a key prefix. Their name now travels with " +
-      "each message they send. Ask them once, conversationally, what you should " +
-      "call them, then call create_account with that name to set it. Don't nag if " +
-      "they decline.";
+      "each message they send. Ask them once, conversationally, for their FULL " +
+      "name (it's what recipients see and how mutual contacts find each other; a " +
+      "first name is fine if that's all they give), then call create_account with " +
+      "it to set it. Don't nag if they decline.";
   }
 
   // Gather waiting mail as {id, from, body}. Prefer the warmer's pending.json

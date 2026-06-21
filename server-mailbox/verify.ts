@@ -5,7 +5,9 @@
 
 import { canonical, MAX_SKEW_MS } from "../src/canonical.ts";
 
-function fromHex(hex: string): Uint8Array {
+// Return the non-shared-backed view (Uint8Array<ArrayBuffer>) so it satisfies
+// WebCrypto's BufferSource — the bare `Uint8Array` alias widens to ArrayBufferLike.
+function fromHex(hex: string): Uint8Array<ArrayBuffer> {
   if (hex.length % 2 !== 0) throw new Error("bad hex");
   const out = new Uint8Array(hex.length / 2);
   for (let i = 0; i < out.length; i++) out[i] = parseInt(hex.substr(i * 2, 2), 16);

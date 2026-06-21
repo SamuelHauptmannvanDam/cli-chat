@@ -15,8 +15,11 @@ yet. Fix it automatically — call \`create_account\`, then retry whatever they 
 doing. You don't need to ask permission. The user's NAME travels with every
 message they send (it's what recipients see), so it's worth getting right: if the
 user already told you their name, pass it; otherwise ask once, conversationally,
-"what should I call you?" and pass that. Only if they don't answer, let it default
-to the OS login name. After creating, report the new 6-char code in one line so
+for their FULL name ("what's your full name?") and pass that — it's what
+recipients see and how mutual contacts find each other, so a full name beats a
+bare first name (people can still save them under a shorter nickname locally). A
+first name is fine if that's all they give. Only if they don't answer, let it
+default to the OS login name. After creating, report the new 6-char code in one line so
 they can share it. If they already have an account, \`create_account\` just returns
 their existing code — and passing a name updates it (use this when the user later
 says "call me X" or "change my name to X").

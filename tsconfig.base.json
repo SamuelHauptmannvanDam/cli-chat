@@ -1,0 +1,30 @@
+{
+  // Shared compiler options for every project in this repo. Typecheck-only:
+  // esbuild (build.mjs) does the actual transpile/bundle, so tsc never emits.
+  // The leaf configs (tsconfig.json = Node, tsconfig.worker.json = Cloudflare)
+  // add only their runtime's `lib`/`types`, since the two have conflicting
+  // globals. Run both with `npm run typecheck`.
+  "compilerOptions": {
+    "target": "ES2023",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": true, // we import "./x.ts" explicitly
+    "verbatimModuleSyntax": true, // enforce explicit `import type` — matches esbuild
+    "isolatedModules": true, // each file transpiled alone, like esbuild does
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true, // don't typecheck deps' .d.ts — only our code
+    "noEmit": true,
+
+    // Robustness — the part that earns its keep. `strict` is the floor;
+    // the rest catch real bugs esbuild waves through.
+    "strict": true,
+    "noUncheckedIndexedAccess": true, // arr[i] is T | undefined
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitReturns": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true
+  }
+}

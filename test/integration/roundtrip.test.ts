@@ -33,10 +33,10 @@ describe("happy path: send → available → read → reply", () => {
 
     const avail = await messagesAvailable(bob);
     assert.equal(avail.count, 1);
-    assert.equal(avail.messages[0].from, "Alice");
-    assert.equal(avail.messages[0].preview, "LAN party Saturday?");
+    assert.equal(avail.messages[0]?.from, "Alice");
+    assert.equal(avail.messages[0]?.preview, "LAN party Saturday?");
 
-    const read = await readMessage(bob, { id: avail.messages[0].id });
+    const read = await readMessage(bob, { id: avail.messages[0]!.id });
     assert.ok(read.ok && read.body === "LAN party Saturday?");
     // Reading clears the inbox.
     assert.equal((await messagesAvailable(bob)).count, 0);
@@ -121,7 +121,7 @@ describe("onboarding by code", () => {
 
     const avail = await messagesAvailable(bob);
     assert.equal(avail.count, 1);
-    assert.equal(avail.messages[0].preview, "hi via code");
+    assert.equal(avail.messages[0]?.preview, "hi via code");
   });
 
   test("addContact resolves a registered handle to keys", async () => {
@@ -246,7 +246,7 @@ describe("sender identity", () => {
     await sendMessage(alice, { to: "Bob", body: "hi, new here" });
     const avail = await messagesAvailable(bob);
     assert.equal(avail.count, 1);
-    assert.equal(avail.messages[0].from, "Alice (alice1)");
+    assert.equal(avail.messages[0]?.from, "Alice (alice1)");
     // Auto-saved, so a bare "write Alice" works next.
     const sent = await sendMessage(bob, { to: "Alice", body: "welcome" });
     assert.ok(sent.ok && sent.to.name === "Alice");
@@ -267,7 +267,7 @@ describe("sender identity", () => {
 
     await sendMessage(alice, { to: "Bob", body: "report?" });
     const avail = await messagesAvailable(bob);
-    assert.equal(avail.messages[0].from, "Boss");
+    assert.equal(avail.messages[0]?.from, "Boss");
   });
 
   test("a known contact missing a handle gets it backfilled, nick untouched", async () => {
