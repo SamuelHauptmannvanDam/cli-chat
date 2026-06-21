@@ -8,44 +8,39 @@ remaining swap.
 | Concern | Now (Node 22) | Native API | Native needs | Isolated to | Status |
 |---|---|---|---|---|---|
 | WebSocket client (warmer) | native global `WebSocket` | — | Node 22 | `src/warmer.ts` | ✅ done |
-| Inbox cache (SQLite) | `node-sqlite3-wasm` | `node:sqlite` | **Node 24+** | `src/db.ts` | ⏳ deferred |
+| Inbox cache (SQLite) | `node-sqlite3-wasm` (Node 22/23) **+** `node:sqlite` (Node 24+) | dual-driver, auto-selected | — | `src/db.ts` | ✅ done |
 
 ---
 
-## Remaining: inbox cache `node-sqlite3-wasm` → `node:sqlite`
-Real SQLite in WebAssembly. Kept because `node:sqlite` is only usable unflagged on
-**Node 24+**, and our floor is 22. WASM runs on 22 with no native build.
+## Done: inbox cache → dual-driver (`node-sqlite3-wasm` + `node:sqlite`)
+The locking risk this doc flagged as "the only real one" **bit us**: the warmer
+holds the inbox open for the whole session, and `node-sqlite3-wasm`'s VFS can't
+share a file across processes — so the separate `check-inbox` hook process got
+`SQLITE_CANTOPEN`, exited silently, and never surfaced mail that arrived
+mid-session. Native WAL was indeed the proper fix.
 
-### Cost vs native (all negligible except one)
-| Cost | Impact at our scale |
-|---|---|
-| Weaker cross-process write locking (WASM VFS; WAL may not apply) | **The only real one** — server warmer + hook both touch `~/.cli-chat`; concurrent writes could race. Rare/short writes; mitigable with atomic writes. |
-| ~1 MB wasm load per process; slightly slower per query; +1 dep | Invisible — network dominates 100–1000× |
+But we did **not** raise the floor. Instead `src/db.ts` now picks a driver at
+runtime behind one `Store` interface, so the Node 22 base still works:
 
-### Migration steps (all in `src/db.ts` unless noted)
-1. Import: `node-sqlite3-wasm` → `import { DatabaseSync } from "node:sqlite"`.
-2. `Mailbox` type: `InstanceType<typeof Database>` → `DatabaseSync`.
-3. Constructor: `new Database(path)` → `new DatabaseSync(path)`.
-4. Calls: array-param → prepared/variadic: `db.run(sql, [a,b])` → `db.prepare(sql).run(a,b)` (same for `.all` / `.get`).
-5. `getMessage`: drop the `?? undefined` (native `get()` already returns `undefined`).
-6. `package.json`: `engines.node` `>=22` → `>=24`; remove `node-sqlite3-wasm`.
-7. `README.md`: bump the Requirements line to Node 24+.
+| Driver | When | Behaviour |
+|---|---|---|
+| `node:sqlite` (native) | Node **24+** (or `MESSENGER_DB_DRIVER=native`) | One persistent **WAL** handle. Native locking lets the server *and* the hook open the same file at once. The clean fix. |
+| `node-sqlite3-wasm` | Node **22/23** (or `MESSENGER_DB_DRIVER=wasm`) | **open → use → close per op** + bounded retry, so no process hogs the file and the hook interleaves. `:memory:` keeps one handle (can't reopen per-op). |
 
-**Verify:** `npm test` (db.test.ts + integration exercise the public API, so they
-validate either backend) and `npm run build`. No other source file changes.
+Driver selection is by Node major version; `MESSENGER_DB_DRIVER=wasm|native`
+forces one (used to test both paths). Everything above `db.ts` — the helpers,
+`core-net.ts`, the warmer, the watch loop, the hook — is unchanged: they all go
+through `openMailbox()` and `.run/.all/.get`.
 
-### When does it make sense?
-Do it only when **both** are true:
-1. **Node 24+ is a safe baseline** — effectively your whole user base is on 24+.
-   Until then, raising the floor just breaks installs.
-2. **There's a concrete payoff:** dropping the `node-sqlite3-wasm` dependency
-   (supply-chain/maintenance), or — the one non-cosmetic reason — if the warmer +
-   hook sharing the cache ever causes *real* cross-process lock contention, native
-   WAL is the proper fix. Watch for it.
+**Verified:** `npm test` 96/96 on both drivers; a 12-way concurrent cross-process
+stress test passes on both (no `CANTOPEN`); live push e2e against the hosted
+worker passes.
 
-**Not** for speed — invisible at this scale. **Recommendation:** defer until Node
-24 is guaranteed *and* a dependency/locking issue actually bites. Then it's a clean
-one-file swap.
+### Future cleanup (optional, not urgent)
+When Node 24+ is a safe baseline for the whole user base, the wasm branch +
+`node-sqlite3-wasm` dependency can simply be deleted, leaving `NativeStore` as the
+only path and bumping `engines.node` to `>=24`. No call-site changes — just drop
+the fallback. Until then, keep both.
 
 ---
 
