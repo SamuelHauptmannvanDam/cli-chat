@@ -68,13 +68,6 @@ export function resolve(book: ContactBook, query: string): ResolveResult {
   return { status: "none", query };
 }
 
-// Reverse lookup: given a sender id, what do we call them? Falls back to the
-// raw id when they aren't in the book.
-export function displayName(book: ContactBook, id: string): string {
-  const c = book.contacts.find((c) => c.id === id);
-  return c?.name ?? id;
-}
-
 // Phase 1 reverse lookup keyed by Ed25519 address. Falls back to a short prefix
 // of the key for unknown senders.
 export function displayNameByKey(book: ContactBook, signPub: string): string {
