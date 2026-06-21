@@ -279,6 +279,12 @@ export function takeUnread(ctx: NetContext): InboxMessage[] {
 export interface PendingSnapshot {
   writtenAt: number;
   messages: InboxMessage[];
+  // false → this is only the boot seed (mirrored from the local cache before the
+  // warmer's first network drain), so it may be missing mail that's already on the
+  // server. true → written after a real `sync`, so it reflects the server. The
+  // SessionStart hook waits for a `synced` snapshot to avoid the cold-open race
+  // where it reads the seed and shows "no mail" for something already waiting.
+  synced?: boolean;
 }
 
 function writeJsonAtomic(path: string, value: unknown): void {
@@ -318,7 +324,12 @@ export function writePendingAck(ackPath: string, ids: string[]): void {
 
 // Warmer side: apply any ids the hook acked (mark them read so they drop out), then
 // mirror the remaining unread set to pendingPath. The ONLY writer of pendingPath.
-export function refreshPending(ctx: NetContext, pendingPath: string, ackPath: string): void {
+export function refreshPending(
+  ctx: NetContext,
+  pendingPath: string,
+  ackPath: string,
+  synced = true,
+): void {
   for (const id of readAck(ackPath)) markRead(ctx.cache, id, ctx.now());
   const messages: InboxMessage[] = unreadFor(ctx.cache, ctx.me.signPub).map((m) => ({
     id: m.id,
@@ -327,7 +338,7 @@ export function refreshPending(ctx: NetContext, pendingPath: string, ackPath: st
     at: m.created_at,
     in_reply_to: m.in_reply_to,
   }));
-  writeJsonAtomic(pendingPath, { writtenAt: ctx.now(), messages } satisfies PendingSnapshot);
+  writeJsonAtomic(pendingPath, { writtenAt: ctx.now(), messages, synced } satisfies PendingSnapshot);
 }
 
 export interface AvailableResult {
