@@ -162,6 +162,49 @@ messages(
 - The social graph / "search a friend's contacts" — the one feature that pulls toward a
   smarter, more privacy-fraught server. Out of v1.
 
+### Capacity & scaling (analysed 2026-06-21)
+
+**The bottleneck is D1 writes.** The Worker edge auto-scales and the per-recipient
+push DOs shard naturally — neither caps us. Everything funnels through one shared D1
+database, and SQLite is single-writer, so total throughput is bounded by that one
+database's write rate.
+
+**Cost per message ≈ 3 row-writes:** `INSERT` on send + mark-read on drain + the
+eventual retention `DELETE`. (Cloudflare bills *rows written*, not statements — so
+batching the drain into one `UPDATE … RETURNING` is a correctness/subrequest win, **not**
+a capacity one. The `known`-ledger insert is `INSERT OR IGNORE`, ~free after first
+contact.) Reads are plentiful and never bind.
+
+At **10 messages/day/user** (≈25–30 row-writes/user/day):
+
+| Tier | Limiting factor | Users @ 10 msg/day |
+|---|---|---|
+| **Free** | 100k rows-written/day (Workers 100k req/day is similar) | **~3,000–5,000** |
+| **Paid ($5/mo), within included bundles** | 10M req/mo (~333k/day) binds before the 50M writes/mo bundle | **~20,000** (soft — overage is cheap) |
+| **Hard architectural ceiling** | single shared D1, writes serialised at peak | **~50,000–100,000** |
+
+The first two rows are *billing* limits (you pay past them). The third is the real wall and
+is plan-independent.
+
+**Levers (in priority order):**
+1. **Batch the drain** — ✅ done (0.4.8). Atomic `UPDATE … RETURNING`; robustness + stays
+   under the Workers 50-subrequest cap on large drains. No capacity change.
+2. **Delete-on-drain** — ❌ rejected. Would cut a write/message (free → ~5–7.5k) but the
+   admission filter counts message rows in the 1-hour window; deleting on drain lets a
+   flooder past any actively-draining (watch-mode) recipient. The write you'd save is
+   re-spent on separate spam bookkeeping anyway, so the gain is illusory once the throttle
+   is preserved.
+3. **Shard storage into the per-recipient Inbox DO** — the path past ~100k. The DO already
+   exists per user and has its own SQLite, so writes would shard per recipient and the
+   shared-D1 wall disappears. Big change: splits the data model (the handle directory stays
+   global), reimplements the store as DO RPC, moves retention to DO alarms, and loses the
+   local `node:sqlite` test path (needs workerd/Miniflare). Defer until actually near the wall.
+
+*Caveats:* estimates from architecture + published limits, not load tests. D1's sustained
+write QPS isn't a hard published number (treat ~50–100k as an order of magnitude), and
+DO-SQLite free allotments are assumed ~same order as D1 — confirm against current Cloudflare
+pricing before betting on a number.
+
 ---
 
 ## 7. Decisions (locked 2026-06-12)
