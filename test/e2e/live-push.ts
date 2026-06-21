@@ -80,15 +80,15 @@ assert.ok(sent.ok, `send should succeed: ${JSON.stringify(sent)}`);
 await sync(nielsCtx);
 let nUnread = unreadFor(nielsCtx.cache, niels.signPub);
 assert.equal(nUnread.length, 1, "Niels should have exactly 1 message");
-assert.equal(nUnread[0].body, "yo, e2e test 1", "body should round-trip decrypted");
-console.log(`  ✓ Niels received: "${nUnread[0].body}"`);
+assert.equal(nUnread[0]!.body, "yo, e2e test 1", "body should round-trip decrypted");
+console.log(`  ✓ Niels received: "${nUnread[0]!.body}"`);
 
-await draftReply(nielsCtx, { in_reply_to: nUnread[0].id, body: "got it — replying" });
+await draftReply(nielsCtx, { in_reply_to: nUnread[0]!.id, body: "got it — replying" });
 await sync(samCtx);
 const sUnread = unreadFor(samCtx.cache, sam.signPub);
 assert.equal(sUnread.length, 1, "Sam should receive the reply");
-assert.equal(sUnread[0].body, "got it — replying");
-console.log(`  ✓ Sam received reply: "${sUnread[0].body}"`);
+assert.equal(sUnread[0]!.body, "got it — replying");
+console.log(`  ✓ Sam received reply: "${sUnread[0]!.body}"`);
 
 // ---- 2. push delivery (warmer + /connect + wake) ---------------------------
 console.log("\n[2] push delivery (warmer + /connect + wake)");

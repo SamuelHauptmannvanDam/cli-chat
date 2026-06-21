@@ -1,0 +1,22 @@
+{
+  // Cloudflare Workers project: the deploy target (worker.ts), its Durable
+  // Object, and the D1 store adapter. Cloudflare globals only — no Node types,
+  // since the runtime globals (Request/Response/caches/crypto) differ. app.ts
+  // and verify.ts are runtime-agnostic and also checked by tsconfig.json.
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023"],
+    // nodejs_compat is enabled in wrangler.toml, so the Worker runtime really
+    // does expose `process` and node: builtins — hence both type sets. (Type-only
+    // imports of Node-backed modules like store.ts/identity.ts are erased by
+    // esbuild anyway; node types just let tsc resolve them while checking.)
+    "types": ["@cloudflare/workers-types", "node"]
+  },
+  "include": [
+    "server-mailbox/app.ts",
+    "server-mailbox/verify.ts",
+    "server-mailbox/worker.ts",
+    "server-mailbox/inbox-do.ts",
+    "server-mailbox/store-d1.ts"
+  ]
+}

@@ -15,7 +15,8 @@
   },
   "scripts": {
     "build": "node build.mjs",
-    "prepublishOnly": "node build.mjs",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.worker.json",
+    "prepublishOnly": "npm run typecheck && node build.mjs",
     "test": "node --test \"test/unit/*.test.ts\" \"test/integration/*.test.ts\"",
     "test:unit": "node --test \"test/unit/*.test.ts\"",
     "test:integration": "node --test \"test/integration/*.test.ts\"",
@@ -39,7 +40,10 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
-    "esbuild": "^0.28.1"
+    "@cloudflare/workers-types": "^4.20260621.1",
+    "@types/node": "^26.0.0",
+    "esbuild": "^0.28.1",
+    "typescript": "^6.0.3"
   },
   "allowScripts": {
     "esbuild@0.28.1": true

@@ -70,7 +70,7 @@ export function currentUser(): string | null {
   }
 
   const dirs = identityDirs();
-  if (dirs.length === 1) return dirs[0];
+  if (dirs.length === 1) return dirs[0] ?? null;
   return null;
 }
 

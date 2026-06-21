@@ -76,6 +76,10 @@ if (!setUp) {
   }
   process.exit(0); // nothing more to do without an account
 }
+// `setUp` is only ever true when `user` is non-null (see the guard above), so
+// this never fires at runtime — it just narrows `user` to string for the rest
+// of the hook, which is all per-user path building from here down.
+if (!user) process.exit(0);
 
 // A pending.json older than this is treated as stale (warmer off/dead) → the hook
 // falls back to a direct drain. The warmer rewrites it on every drain (≤ its 60s
