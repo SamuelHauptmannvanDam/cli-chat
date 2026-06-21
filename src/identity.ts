@@ -1,5 +1,5 @@
 // Loads a user's private identity (both keypairs) from disk. Secrets stay
-// local and are never sent anywhere; only PublicKeys travel (into contacts).
+// local and are never sent anywhere; only the public keys travel (into contacts).
 
 import { readFileSync } from "node:fs";
 import type { Identity } from "./crypto.ts";

@@ -71,8 +71,11 @@ test("markFetched only sets fetched_at the first time (COALESCE)", () => {
   assert.equal(getMessage(db, "m1")?.fetched_at, 100);
 });
 
-test("inserting a duplicate id throws (primary key)", () => {
+test("inserting a duplicate id is a no-op, keeping the first row (INSERT OR IGNORE)", () => {
+  // The warmer and watch loop can both drain + insert the same id concurrently,
+  // so a duplicate must be ignored rather than throw a PRIMARY KEY error.
   const db = openMailbox(":memory:");
   insertMessage(db, row());
-  assert.throws(() => insertMessage(db, row()));
+  assert.doesNotThrow(() => insertMessage(db, row({ body: "second" })));
+  assert.equal(getMessage(db, "m1")?.body, "hello"); // first write wins, untouched
 });

@@ -63,7 +63,7 @@ they want it read; they reply the same way.
 ## Develop from a clone
 ```bash
 npm install
-npm test          # unit + integration (92 checks): encryption, server-only-ciphertext, spoofing
+npm test          # unit + integration: encryption, server-only-ciphertext, spoofing
 npm run test:mcp  # real MCP server processes against the live cloud mailbox
 npm run build     # bundle src/ → dist/ (what gets published)
 ```
@@ -87,10 +87,14 @@ Behavior (when to check, how to reply) is carried in the server's MCP
 - **`watch`** is a cross-CLI watch loop: it holds one tool call open for up to
   `MESSENGER_WATCH_MS` (default ~9.2 min), reading the local cache every 3s and
   re-draining the mailbox every 15s as a network backstop, then returns any new
-  mail (marking it read) so the agent re-calls to keep watching. It needs no OS
-  service and works in any MCP CLI. To live the full window it relies on the
-  client honoring MCP progress pings (it sends one every 3s); a client that caps
-  tool calls regardless will return sooner and just re-call more often.
+  mail (marking it read) so the agent re-calls to keep watching. It accepts an
+  optional `hold_seconds` (clamped to [2s, `MESSENGER_WATCH_MS`]) so the loop can
+  hold short (~5s while the user is actively chatting), back off to 15/30/60s when
+  idle, or be omitted for the ~9.2 min default. It needs no OS service and works
+  in any MCP CLI. To live the full window it relies on the client honoring MCP
+  progress pings (it sends one every 3s); a client that caps tool calls regardless
+  (the `MCP_TOOL_TIMEOUT` client-side cap) will return sooner and just re-call more
+  often.
 
 ## Receiving: two hands-free modes (no OS notifications)
 Mail is always drained into a local cache in the background by the push warmer
@@ -101,9 +105,10 @@ Mail is always drained into a local cache in the background by the push warmer
   the agent until you say "read it". No polling, no background model activity.
 - **Live `watch` (real-time)** — say "watch" and the agent loops the `watch` tool;
   it holds one long call open and reads new mail into the chat the instant it
-  arrives. One model turn per real message, ~none while idle. Set
-  `MCP_TOOL_TIMEOUT` high (see `.claude/settings.json`) so the client lets the call
-  hold the full window instead of re-firing every ~minute.
+  arrives. One model turn per real message, ~none while idle. The hold length is
+  server-driven (`MESSENGER_WATCH_MS`, per-call `hold_seconds`); keep the
+  `MCP_TOOL_TIMEOUT` client-side cap high (see `.claude/settings.json`) so the
+  client lets the call hold the full window instead of re-firing every ~minute.
 - **On demand** — or just ask "any messages?" anytime.
 - **Who it's from** — each message carries the sender's name + handle, so a
   message from someone new reads as "Sam (dC0v6m)" and auto-saves them as a
@@ -121,8 +126,8 @@ Mail is always drained into a local cache in the background by the push warmer
 | `src/mailbox-client.ts` | signed HTTP client |
 | `src/init-identity.ts` · `install.ts` · `add-contact.ts` | onboarding helpers |
 | `src/check-inbox.ts` | on-open read (SessionStart hook) |
-| `server-mailbox/` | the Hono mailbox: `app.ts`, `node.ts` (local), `worker.ts`+`wrangler.toml` (Cloudflare/D1), `store*.ts`, `verify.ts`, `schema.sql` |
-| `test/live-net.ts` · `live-net-mcp.ts` | in-process + real-MCP tests |
+| `server-mailbox/` | the Hono mailbox: `app.ts`, `node.ts` (local), `worker.ts`+`wrangler.toml` (Cloudflare/D1), `inbox-do.ts` (Inbox Durable Object — push fan-out), `store.ts`·`store-d1.ts`, `verify.ts`, `schema.sql` |
+| `test/unit/` · `test/integration/` · `test/e2e/` | unit + integration + real-MCP/push tests (`live-net.ts`, `live-net-mcp.ts`, `live-push.ts`) |
 
 ## Deploy your own mailbox (optional)
 The mailbox is already deployed. To run your own:

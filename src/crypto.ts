@@ -31,12 +31,6 @@ export interface Identity {
   name?: string; // human display label — local only, never sent to the server
 }
 
-// Public half of an identity — what lives in a contact book.
-export interface PublicKeys {
-  signPub: string;
-  boxPub: string;
-}
-
 export function generateIdentity(): Identity {
   const box = s.crypto_box_keypair();
   const sign = s.crypto_sign_keypair();

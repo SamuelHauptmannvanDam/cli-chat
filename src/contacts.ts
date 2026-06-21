@@ -2,7 +2,7 @@
 // resolver. No social graph, no learned tags yet (Phase 2/3). Resolution is
 // case-insensitive match against the contact's name and any aliases.
 
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync, renameSync } from "node:fs";
 
 export interface Contact {
   id: string; // the recipient user id used by the mailbox (Phase 0)
@@ -28,6 +28,17 @@ export function loadContacts(path: string): ContactBook {
     throw new Error(`Invalid contact book at ${path}: needs { me, contacts[] }`);
   }
   return book;
+}
+
+// Persist the book atomically: write a sibling temp file, then rename it over the
+// target (atomic on POSIX). The book is written by more than one process — the MCP
+// server's push warmer AND the per-prompt session hook both sync() and can auto-save
+// a newly-seen sender — so a plain full-file writeFileSync from each could interleave
+// and truncate it. Temp-write + rename means a reader always sees a complete file.
+export function saveContacts(path: string, book: ContactBook): void {
+  const tmp = `${path}.${process.pid}.tmp`;
+  writeFileSync(tmp, JSON.stringify(book, null, 2) + "\n");
+  renameSync(tmp, path);
 }
 
 export type ResolveResult =
