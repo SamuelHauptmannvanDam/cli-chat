@@ -64,15 +64,25 @@ recipients see). If they don't have one set, the session-start hook will prompt
 you to ask "what should I call you?"; pass their answer to `create_account` to set
 it. The same call updates the name later if they say "call me X".
 
-## Watch mode (hands-free)
+## Watch mode (hands-free, adaptive)
 When the user says "watch" (or "watch for messages", "keep an eye out"), call the
-`watch` tool. It long-polls ~50s and returns any new mail; after it returns —
-messages or idle — call it AGAIN, looping until the user says stop. On an idle
-return, re-call **silently** — print nothing (no "still watching" heartbeat);
-only speak when mail actually arrives. This is the opt-in hands-free mode, so when
-mail arrives **read it out in full automatically** (sender + body) and offer to
-reply — do NOT ask "want me to read it?" here (that ask is only for the passive
-on-open notice). Keep the loop going so the user can just chat as messages land.
+`watch` tool in an **adaptive loop**. Each call long-polls for up to its
+`hold_seconds` and returns any new mail; after it returns — messages or idle —
+call it AGAIN, looping until the user says stop. On an idle return, re-call
+**silently** — print nothing (no "still watching" heartbeat); only speak when mail
+actually arrives. This is the opt-in hands-free mode, so when mail arrives **read
+it out in full automatically** (sender + body) and offer to reply — do NOT ask
+"want me to read it?" here (that ask is only for the passive on-open notice).
+
+**Stay responsive — pick `hold_seconds` adaptively.** The user can keep chatting
+while you watch, but anything they type only reaches you when the current call
+returns. So while they're actively chatting, pass `hold_seconds: 5` — they type,
+the call returns idle within ~5s, you **send their message, then re-watch** (no
+long queue). After several quiet idle returns with no user activity, **back off**
+(`hold_seconds` 15 → 30 → 60) to stay token-cheap while idle; snap back to `5` the
+instant they type or mail lands. Omit `hold_seconds` for the server's long default.
+This is a plain tool-loop, so it works in **any** MCP client — no host-specific
+features (subagents, background tasks, hooks) required.
 
 ## Replying — the important part
 Draft a reply that fits the message and **send it** with `draft_reply`

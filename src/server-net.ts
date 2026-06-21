@@ -55,6 +55,10 @@ const WATCH_MS = Number.isFinite(parsedWatchMs) && parsedWatchMs > 0 ? parsedWat
 // backstop for when push (the warmer WebSocket) is off or blocked.
 const WATCH_PING_MS = 3_000;
 const WATCH_SYNC_MS = 15_000;
+// Floor for a caller-requested adaptive hold (see the watch tool's `hold_seconds`).
+// WATCH_MS stays the ceiling: a caller can ask for a SHORTER hold to stay
+// responsive while the user is actively chatting, never a longer one.
+const WATCH_MIN_MS = 2_000;
 
 await initCrypto();
 
@@ -175,14 +179,18 @@ MESSAGING SOMEONE NEW: people share a short 6-character code. When the user says
 key="AbC123". It saves them, so next time just "write Sam".
 
 WATCHING: when the user says "watch" (or "watch for"/"wait for"/"listen for"/
-"keep an eye out for" messages), call \`watch\`. It blocks up to ~50s and returns
-any new mail (already marked read). After it returns — whether it found messages
-or was idle — call it AGAIN to keep watching, and keep looping until the user
-tells you to stop. On an idle return, re-call SILENTLY: print nothing to the user
-(no "still watching" heartbeat). In watch mode the user has opted into hands-free
-chat, so when mail arrives READ IT OUT IN FULL automatically (sender + body,
-straight into the chat) and offer to reply — do NOT ask "want me to read it?"
-here; that ask is only for the passive inbox notice.
+"keep an eye out for" messages), call \`watch\` in an ADAPTIVE loop. Each call
+blocks up to \`hold_seconds\` and returns any new mail (already marked read). After
+it returns — messages or idle — call it AGAIN, looping until the user says stop.
+Pass hold_seconds=5 while the user is actively chatting so anything they type is
+handled within seconds instead of queuing behind a long poll: they type, the call
+returns idle, you send their message, then re-watch. After several quiet idle
+returns, BACK OFF (hold_seconds 15→30→60) to stay token-cheap; snap back to 5 the
+moment they type or mail arrives. On an idle return, re-call SILENTLY: print
+nothing (no "still watching" heartbeat). In watch mode the user has opted into
+hands-free chat, so when mail arrives READ IT OUT IN FULL automatically (sender +
+body) and offer to reply — do NOT ask "want me to read it?" here; that ask is only
+for the passive inbox notice.
 
 SENDER IDENTITY: each message carries the sender's own name + 6-char handle, so a
 message from someone NEW shows as "Sam (dC0v6m)" instead of a key prefix, and they
@@ -205,7 +213,7 @@ Bob.").
 
 Always keep the human in control of what's sent.`;
 
-const server = new McpServer({ name: "cli-chat", version: "0.4.1" }, { instructions: INSTRUCTIONS });
+const server = new McpServer({ name: "cli-chat", version: "0.4.2" }, { instructions: INSTRUCTIONS });
 const ok = (data: unknown) => ({
   content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }],
 });
@@ -438,21 +446,43 @@ server.registerTool(
 server.registerTool(
   "watch",
   {
-    title: "Watch for incoming messages (long-poll loop)",
+    title: "Watch for incoming messages (adaptive long-poll loop)",
     description:
-      "Block for up to ~50 seconds waiting for new mail, then return it (already " +
-      "marked read) or report idle if none arrived. This is the building block of " +
-      "a watch loop: after it returns, call it AGAIN to keep watching, and " +
-      "repeat until the user says to stop. On an idle return, re-call SILENTLY — " +
-      "print nothing to the user; only speak when mail actually arrives. Each " +
-      "returned `from` is the user's nickname for the sender, or 'Name (handle)' " +
-      "for someone new (auto-saved on arrival, so you can reply by name). Use when " +
-      "the user asks to watch for / wait for / keep an eye out for messages.",
-    inputSchema: {},
+      "Block waiting for new mail, then return it (already marked read) or report " +
+      "idle if none arrived. This is the building block of a watch loop: after it " +
+      "returns, call it AGAIN to keep watching, until the user says to stop. On an " +
+      "idle return, re-call SILENTLY — print nothing; only speak when mail arrives.\n\n" +
+      "ADAPTIVE HOLD (keeps you responsive to the user while watching): pass " +
+      "`hold_seconds` to choose how long THIS call blocks. While the user is " +
+      "actively chatting, use a SHORT hold (~5) so anything they type is handled " +
+      "within a few seconds instead of queuing behind a long poll — type, the call " +
+      "returns idle, you send their message, then re-watch. After several idle " +
+      "returns with no user activity, BACK OFF to longer holds (e.g. 15, then 30, " +
+      "60…) to stay token-cheap while idle; reset to ~5 the moment the user types " +
+      "or mail arrives. Omit `hold_seconds` to use the server's long default. This " +
+      "is universal — it works in any MCP client, no host-specific features.\n\n" +
+      "Each returned `from` is the user's nickname for the sender, or 'Name " +
+      "(handle)' for someone new (auto-saved on arrival, so you can reply by name). " +
+      "Use when the user asks to watch for / wait for / keep an eye out for messages.",
+    inputSchema: {
+      hold_seconds: z
+        .number()
+        .optional()
+        .describe(
+          "How long THIS call blocks before returning idle. Use ~5 while the user " +
+            "is actively chatting (responsive), backing off (15/30/60…) when idle. " +
+            "Clamped to [2s, server max]; omit for the long default.",
+        ),
+    },
   },
-  async (_args, extra) => {
+  async ({ hold_seconds }, extra) => {
     if (!S) return noAccount();
-    const deadline = now() + WATCH_MS;
+    const requestedMs = Number(hold_seconds) * 1000;
+    const holdMs =
+      Number.isFinite(requestedMs) && requestedMs > 0
+        ? Math.min(Math.max(requestedMs, WATCH_MIN_MS), WATCH_MS)
+        : WATCH_MS;
+    const deadline = now() + holdMs;
     const progressToken = extra?._meta?.progressToken;
     let ticks = 0;
     // The background warmer (PUSH.md) drains new mail into the cache via push, so
@@ -487,7 +517,7 @@ server.registerTool(
         return ok({
           status: "idle",
           count: 0,
-          note: "No new messages. Silently call watch again to keep watching — do NOT print anything to the user on idle (no heartbeat); only speak when mail actually arrives or the user is done.",
+          note: "No new messages. Silently call watch again to keep watching — do NOT print anything to the user on idle (no heartbeat); only speak when mail actually arrives or the user is done. If the user has been quiet, raise hold_seconds (e.g. 15/30/60) to stay cheap; drop back to ~5 the instant they type or mail lands.",
         });
       }
       // Keep the client's request timeout alive across long idle windows.
