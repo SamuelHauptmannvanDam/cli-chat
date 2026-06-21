@@ -9,8 +9,12 @@
 // works both as `node dist/<x>.js` and as a directly-executed command.
 
 import { build } from "esbuild";
-import { chmodSync } from "node:fs";
+import { chmodSync, rmSync } from "node:fs";
 import { join } from "node:path";
+
+// Wipe stale output first — esbuild doesn't clear outdir, so a renamed/deleted
+// entry (e.g. an old watch.js) would otherwise linger and get published.
+rmSync("dist", { recursive: true, force: true });
 
 const entries = [
   "server-net", // the MCP server (the `cli-chat` bin)
