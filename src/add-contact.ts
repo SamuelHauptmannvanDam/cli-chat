@@ -6,14 +6,13 @@
 //   node src/add-contact.ts Alice <signPub> <boxPub>
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
 import { initCrypto } from "./crypto.ts";
 import { loadIdentity } from "./identity.ts";
 import type { ContactBook } from "./contacts.ts";
 import { currentUser } from "./current-user.ts";
+import { identityFile, contactsFile } from "./paths.ts";
 
-const ROOT = resolve(import.meta.dirname, "..");
-const user = currentUser(ROOT);
+const user = currentUser();
 if (!user) {
   console.error("No identity on this device. Run `npm run init`, or set MESSENGER_USER.");
   process.exit(1);
@@ -31,15 +30,14 @@ if (!isHex64(signPub) || !isHex64(boxPub)) {
 }
 
 await initCrypto();
-const dir = join(ROOT, "users", user);
-const idPath = join(dir, "identity.json");
+const idPath = identityFile(user);
 if (!existsSync(idPath)) {
   console.error(`No identity yet for "${user}". Run:  node src/init-identity.ts`);
   process.exit(1);
 }
 const me = loadIdentity(idPath);
 
-const contactsPath = join(dir, "contacts.json");
+const contactsPath = contactsFile(user);
 const book: ContactBook = existsSync(contactsPath)
   ? (JSON.parse(readFileSync(contactsPath, "utf8")) as ContactBook)
   : { me: me.signPub, contacts: [] };

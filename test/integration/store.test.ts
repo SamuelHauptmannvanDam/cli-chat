@@ -67,3 +67,35 @@ test("resolveHandle returns null for an unknown handle", () => {
   const store = nodeSqliteStore(":memory:");
   assert.equal(store.resolveHandle("ghost1"), null);
 });
+
+test("isRegistered is true only for a key with a claimed handle", () => {
+  const store = nodeSqliteStore(":memory:");
+  store.registerHandle("abc123", "alice-sign", "alice-box", 1);
+  assert.equal(store.isRegistered("alice-sign"), true);
+  assert.equal(store.isRegistered("nobody-sign"), false);
+});
+
+test("purge drops read mail past the read window and anything past the age window", () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const now = 100 * DAY;
+  const s = nodeSqliteStore(":memory:");
+
+  // read-stale: fetched 10d ago → past the 7d read window → deleted.
+  s.put(wire({ id: "read-stale", created_at: now - 20 * DAY }));
+  s.drain("bob", now - 10 * DAY);
+  // read-fresh: fetched 1d ago → within the read window → kept.
+  s.put(wire({ id: "read-fresh", created_at: now - 5 * DAY }));
+  s.drain("bob", now - 1 * DAY);
+  // unread-old: 40d old, never fetched → past the 30d age window → deleted.
+  s.put(wire({ id: "unread-old", created_at: now - 40 * DAY }));
+  // unread-new: 2d old, never fetched → kept.
+  s.put(wire({ id: "unread-new", created_at: now - 2 * DAY }));
+
+  const deleted = s.purge(now - 7 * DAY, now - 30 * DAY);
+  assert.equal(deleted, 2); // read-stale + unread-old
+  // Only the in-window unread message is still waiting for bob.
+  assert.deepEqual(
+    (s.summary("bob") as any[]).map((m) => m.id),
+    ["unread-new"],
+  );
+});

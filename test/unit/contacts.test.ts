@@ -45,6 +45,47 @@ test("resolve reports ambiguous when two contacts share a name", () => {
   assert.equal(r.status === "ambiguous" && r.candidates.length, 2);
 });
 
+test("resolve falls back to a substring match when nothing matches exactly", () => {
+  const longBook: ContactBook = {
+    me: "me-key",
+    contacts: [{ id: "niels", name: "Niels - bankdata", signPub: "niels-sign", boxPub: "niels-box" }],
+  };
+  const r = resolve(longBook, "niels");
+  assert.equal(r.status, "resolved");
+  assert.equal(r.status === "resolved" && r.contact.id, "niels");
+});
+
+test("resolve prefers an exact match over a substring match", () => {
+  const mixedBook: ContactBook = {
+    me: "me-key",
+    contacts: [
+      { id: "sam", name: "Sam", signPub: "sam-sign", boxPub: "sam-box" },
+      { id: "sammy", name: "Sammy from work", signPub: "sammy-sign", boxPub: "sammy-box" },
+    ],
+  };
+  const r = resolve(mixedBook, "sam");
+  assert.equal(r.status, "resolved");
+  assert.equal(r.status === "resolved" && r.contact.id, "sam");
+});
+
+test("resolve reports ambiguous when a substring matches several contacts", () => {
+  const dupeBook: ContactBook = {
+    me: "me-key",
+    contacts: [
+      { id: "n1", name: "Niels - bankdata", signPub: "n1-sign", boxPub: "n1-box" },
+      { id: "n2", name: "Niels Bohr", signPub: "n2-sign", boxPub: "n2-box" },
+    ],
+  };
+  const r = resolve(dupeBook, "niels");
+  assert.equal(r.status, "ambiguous");
+  assert.equal(r.status === "ambiguous" && r.candidates.length, 2);
+});
+
+test("resolve reports none for an empty query rather than matching everyone", () => {
+  const r = resolve(book, "   ");
+  assert.equal(r.status, "none");
+});
+
 test("displayName reverse-maps an id, falling back to the raw id", () => {
   assert.equal(displayName(book, "niels"), "Niels");
   assert.equal(displayName(book, "ghost"), "ghost");

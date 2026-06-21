@@ -1,10 +1,21 @@
 {
-  "name": "cli-chat",
-  "version": "0.2.0",
-  "private": true,
+  "name": "cli-chat-mcp",
+  "version": "0.3.0",
   "type": "module",
   "description": "Headless cross-CLI messenger for coding agents (MCP)",
+  "bin": {
+    "cli-chat": "dist/server-net.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
+    "build": "node build.mjs",
+    "prepublishOnly": "node build.mjs",
     "test": "node --test \"test/unit/*.test.ts\" \"test/integration/*.test.ts\"",
     "test:unit": "node --test \"test/unit/*.test.ts\"",
     "test:integration": "node --test \"test/integration/*.test.ts\"",
@@ -12,18 +23,25 @@
     "test:e2e": "node test/e2e/live-net.ts",
     "test:mcp": "node test/e2e/live-net-mcp.ts",
     "init": "node src/init-identity.ts",
+    "migrate": "node src/migrate.ts",
     "install-clis": "node src/install.ts",
     "add-contact": "node src/add-contact.ts",
-    "watch": "node src/watch.ts",
     "mailbox": "node server-mailbox/node.ts",
     "server": "node src/server-net.ts",
-    "deploy": "wrangler deploy"
+    "deploy": "npx wrangler deploy"
   },
   "dependencies": {
     "@hono/node-server": "^2.0.5",
     "@modelcontextprotocol/sdk": "^1.0.0",
     "hono": "^4.12.25",
     "libsodium-wrappers": "^0.8.4",
+    "node-sqlite3-wasm": "^0.8.58",
     "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.1"
+  },
+  "allowScripts": {
+    "esbuild@0.28.1": true
   }
 }

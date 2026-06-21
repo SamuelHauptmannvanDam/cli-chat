@@ -9,9 +9,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { userInfo } from "node:os";
 import { initCrypto, generateIdentity } from "./crypto.ts";
@@ -20,8 +18,10 @@ import { loadContacts } from "./contacts.ts";
 import { openMailbox, unreadFor, markRead } from "./db.ts";
 import { createMailboxClient, type MailboxClient } from "./mailbox-client.ts";
 import { encodeKey, randomHandle } from "./key-code.ts";
-import { enableService, disableService, statusService } from "./service.ts";
 import { currentUser, setCurrentUser } from "./current-user.ts";
+import { userDir as userDirOf, identityFile, contactsFile, inboxFile } from "./paths.ts";
+import { resolveMailboxUrl } from "./config.ts";
+import { startWarmer } from "./warmer.ts";
 import {
   addContact,
   draftReply,
@@ -32,21 +32,27 @@ import {
   type NetContext,
 } from "./core-net.ts";
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const mailboxUrl = process.env.MESSENGER_MAILBOX_URL ?? "http://localhost:8787";
+const mailboxUrl = resolveMailboxUrl();
 const now = () => Date.now();
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// How long a single `watch` long-poll blocks before returning `idle`. The MCP
+// client (Claude Code) normally aborts a tool call after ~60s, but we emit a
+// progress notification on every inner tick — clients that honor MCP progress
+// reset their timeout on each one, so the call can safely outlive 60s. Keep the
+// window modest anyway: while watch blocks, the agent can't process the user's
+// next message (incl. "stop") until it returns. Override via MESSENGER_WATCH_MS.
+const WATCH_MS = Number(process.env.MESSENGER_WATCH_MS ?? 50_000);
 
 await initCrypto();
 
 // A resolved identity + everything bound to it. Built lazily so the server can
 // start with no account and create one on demand (create_account).
 function buildSession(user: string) {
-  const userDir = join(ROOT, "users", user);
-  const contactsPath = join(userDir, "contacts.json");
-  const me = loadIdentity(join(userDir, "identity.json"));
+  const contactsPath = contactsFile(user);
+  const me = loadIdentity(identityFile(user));
   const book = loadContacts(contactsPath);
-  const cache = openMailbox(join(userDir, "inbox.db"));
+  const cache = openMailbox(inboxFile(user));
   const ctx: NetContext = {
     me,
     book,
@@ -55,17 +61,11 @@ function buildSession(user: string) {
     now,
     contactsPath,
   };
-  const serviceOpts = {
-    user,
-    mailboxUrl,
-    watchPath: join(ROOT, "src", "watch.ts"),
-    nodePath: process.execPath,
-  };
-  return { user, me, book, cache, ctx, serviceOpts };
+  return { user, me, book, cache, ctx };
 }
 
 let S: ReturnType<typeof buildSession> | null = null;
-const existing = currentUser(ROOT);
+const existing = currentUser();
 if (existing) {
   try {
     S = buildSession(existing);
@@ -73,6 +73,21 @@ if (existing) {
     console.error(`Found user "${existing}" but couldn't load identity: ${(e as Error).message}`);
   }
 }
+
+// Background push warmer (PUSH.md): a WebSocket to the inbox Durable Object that
+// drains new mail into the cache without occupying the agent's turn. Runs for the
+// active session; restarted when create_account establishes one. Opt out with
+// MESSENGER_PUSH=0 (falls back to the on-open / per-prompt hook + watch tool).
+let stopWarmer: (() => void) | null = null;
+function ensureWarmer(): void {
+  if (process.env.MESSENGER_PUSH === "0") return;
+  if (stopWarmer) {
+    stopWarmer();
+    stopWarmer = null;
+  }
+  if (S) stopWarmer = startWarmer(S.ctx, { mailboxUrl, now });
+}
+ensureWarmer();
 
 // Claim a free 6-char handle in the registry (retries on collision).
 async function claimHandle(client: MailboxClient): Promise<string> {
@@ -96,17 +111,20 @@ explicitly asks to be set up ("set me up as Sam"), do the same. After creating,
 report the new 6-char code in one line so they can share it. If they already have
 an account, \`create_account\` just returns their existing code.
 
-AT THE START OF A SESSION: if your host already injected an \`[inbox] …\` block
-(a startup hook fetched and displayed the waiting mail), do NOT repeat it or
-re-fetch it — just act on the user's next input. Otherwise call
-\`messages_available\`, and for anything waiting call \`read_message\` and read it
-out in full ONCE. Never re-print messages the host already showed, and never ask
-"want me to read it?" or "want to reply?".
+AT THE START OF A SESSION: a startup hook may inject an inbox notice telling you
+how many messages are waiting and who they're from — but NOT the bodies (those
+are given to you privately, hidden from the user). Do NOT print the bodies. Just
+tell the user how many are waiting and from whom, then ASK if they want them read
+("1 new message from Sam — want me to read it?"). Only when the user says yes
+(e.g. "read it", "go on", "yes") do you print the message in full. Also, once per
+session, you may add a short suggestion that they can have you watch for incoming
+messages live with the \`watch\` tool. If no hook ran, call \`messages_available\`
+to get the count and offer the same way.
 
-REPLYING: when the user's input answers a shown message (e.g. "reply not much",
-"tell him yes", or just "not much"), send it immediately with \`draft_reply\`
-(in_reply_to = that message's id) and confirm in one line. Only pause to ask if
-you're missing a fact you can't infer.
+REPLYING: when the user's input answers a message they've had read out (e.g.
+"reply not much", "tell him yes", or just "not much"), send it immediately with
+\`draft_reply\` (in_reply_to = that message's id) and confirm in one line. Only
+pause to ask if you're missing a fact you can't infer.
 
 REPLYING: draft a reply and send it with \`draft_reply\` (in_reply_to = the
 message id). Don't ask "want me to send this?" — just send, then say what you
@@ -115,27 +133,25 @@ availability, a yes/no decision, a preference), ask that one question first, the
 send once they answer. Never invent the answer.
 
 SENDING by name: when the user says "write <name>: ..." call \`send_message\`
-right away, then report what you sent. Only stop if it returns no_contact or
-ambiguous.
+right away, then report what you sent. The resolver already matches partial names
+(so "Niels" finds a saved "Niels - bankdata"). It only returns no_contact when
+nothing matches at all — then offer to add them by code. It returns ambiguous
+with a list of candidates when several match — name them and ask which; don't
+guess.
 
 MESSAGING SOMEONE NEW: people share a short 6-character code. When the user says
 "write Sam at AbC123: hey", call \`send_message\` with to="Sam", body=the message,
 key="AbC123". It saves them, so next time just "write Sam".
 
-LISTENING: when the user asks you to "wait for", "watch for", "listen for", or
-"keep an eye out for" incoming messages, call \`listen_for_messages\`. It blocks
-up to ~25s and returns any new mail (already marked read). After it returns —
-whether it found messages or was idle — call it AGAIN to keep listening, and keep
-looping until the user tells you to stop. Report each message as it arrives and
-offer to reply. This is intentionally NOT silent: each return is a turn the user
-sees.
-
-AUTOMATIC DELIVERY: new mail already surfaces in-chat — on session start and,
-where the host supports it, each time the user sends a message. Do NOT
-proactively offer background notifications. Only call \`enable_auto_delivery\` if
-the user EXPLICITLY asks to be alerted while no CLI is open (it's a background
-watcher with opt-in desktop notifications). \`disable_auto_delivery\` /
-\`delivery_status\` manage it.
+WATCHING: when the user says "watch" (or "watch for"/"wait for"/"listen for"/
+"keep an eye out for" messages), call \`watch\`. It blocks up to ~50s and returns
+any new mail (already marked read). After it returns — whether it found messages
+or was idle — call it AGAIN to keep watching, and keep looping until the user
+tells you to stop. On an idle return, re-call SILENTLY: print nothing to the user
+(no "still watching" heartbeat). In watch mode the user has opted into hands-free
+chat, so when mail arrives READ IT OUT IN FULL automatically (sender + body,
+straight into the chat) and offer to reply — do NOT ask "want me to read it?"
+here; that ask is only for the passive inbox notice.
 
 OTHER: \`add_contact\` saves a person from their code; \`list_contacts\` shows the
 user's saved address book; \`my_key\` returns the user's own 6-char code to share.
@@ -182,46 +198,53 @@ server.registerTool(
   },
   async ({ name }) => {
     if (S) {
+      let changed = false;
+      if (name && name.trim() && S.me.name !== name.trim()) {
+        S.me.name = name.trim(); // let the user (re)set their display name
+        changed = true;
+      } else if (!S.me.name) {
+        S.me.name = S.user; // backfill from the folder name for older identities
+        changed = true;
+      }
       if (!S.me.handle) {
         S.me.handle = await claimHandle(S.ctx.client);
-        writeFileSync(
-          join(ROOT, "users", S.user, "identity.json"),
-          JSON.stringify(S.me, null, 2) + "\n",
-        );
+        changed = true;
+      }
+      if (changed) {
+        writeFileSync(identityFile(S.user), JSON.stringify(S.me, null, 2) + "\n");
       }
       return ok({
         ok: true,
         created: false,
-        name: S.user,
+        name: S.me.name,
         handle: S.me.handle,
         fullKey: encodeKey(S.me.signPub, S.me.boxPub),
         note: "You already have an account — this is your code to share.",
       });
     }
 
-    const who =
+    // Display name is cosmetic; the identity is keyed on disk by its handle.
+    const display =
       (name ?? process.env.MESSENGER_USER ?? userInfo().username ?? "me").trim() || "me";
-    const userDir = join(ROOT, "users", who);
-    mkdirSync(userDir, { recursive: true });
-    const idPath = join(userDir, "identity.json");
-    const id = existsSync(idPath) ? loadIdentity(idPath) : generateIdentity();
-    if (!existsSync(idPath)) writeFileSync(idPath, JSON.stringify(id, null, 2) + "\n");
+    const id = generateIdentity();
+    id.name = display;
+    // Claim the handle FIRST — it's the directory key, and an account isn't
+    // usable without a code anyway. (Throws if the registry is unreachable.)
+    id.handle = await claimHandle(createMailboxClient(mailboxUrl, id, now));
 
-    const contactsPath = join(userDir, "contacts.json");
-    if (!existsSync(contactsPath)) {
-      writeFileSync(contactsPath, JSON.stringify({ me: id.signPub, contacts: [] }, null, 2) + "\n");
-    }
-    setCurrentUser(ROOT, who);
-
-    if (!id.handle) {
-      id.handle = await claimHandle(createMailboxClient(mailboxUrl, id, now));
-      writeFileSync(idPath, JSON.stringify(id, null, 2) + "\n");
-    }
-    S = buildSession(who);
+    mkdirSync(userDirOf(id.handle), { recursive: true });
+    writeFileSync(identityFile(id.handle), JSON.stringify(id, null, 2) + "\n");
+    writeFileSync(
+      contactsFile(id.handle),
+      JSON.stringify({ me: id.signPub, contacts: [] }, null, 2) + "\n",
+    );
+    setCurrentUser(id.handle);
+    S = buildSession(id.handle);
+    ensureWarmer(); // start push delivery now that an account exists
     return ok({
       ok: true,
       created: true,
-      name: who,
+      name: S.me.name,
       handle: S.me.handle,
       fullKey: encodeKey(S.me.signPub, S.me.boxPub),
       note: `Account ready. Share this 6-character code so people can message you: ${S.me.handle}`,
@@ -235,10 +258,13 @@ server.registerTool(
     title: "Send an encrypted message by name or key",
     description:
       "Seal a message and post it to the hosted mailbox. Normally pass `to` = a " +
-      "known contact name. To message someone NEW, the user gives you their key " +
-      "code (a long string of letters and numbers) — pass it as `key` and put " +
-      "their name in `to`; they'll be saved as a contact so next time just use " +
-      "the name. Returns the resolved contact, or asks you to disambiguate.",
+      "known contact name; matching is partial, so a short name like 'Niels' " +
+      "resolves a saved 'Niels - bankdata'. To message someone NEW, the user " +
+      "gives you their key code (a long string of letters and numbers) — pass it " +
+      "as `key` and put their name in `to`; they'll be saved as a contact so next " +
+      "time just use the name. Returns the resolved contact; `no_contact` means " +
+      "nothing matched (offer to add by code), `ambiguous` returns the candidates " +
+      "to disambiguate.",
     inputSchema: {
       to: z.string().describe("Contact name, e.g. 'Sam'"),
       body: z.string().describe("The message text (encrypted end-to-end)"),
@@ -285,7 +311,7 @@ server.registerTool(
   async () =>
     S
       ? ok({
-          name: S.user,
+          name: S.me.name ?? S.user,
           handle: S.me.handle ?? null,
           note: S.me.handle ? undefined : "No handle yet — call create_account to claim one.",
           fullKey: encodeKey(S.me.signPub, S.me.boxPub),
@@ -317,41 +343,6 @@ server.registerTool(
 );
 
 server.registerTool(
-  "enable_auto_delivery",
-  {
-    title: "Turn on automatic background delivery",
-    description:
-      "Install a background service that polls for new mail while no CLI is open. " +
-      "Use ONLY when the user explicitly asks to be alerted outside the CLI — " +
-      "in-chat updates (on open + each turn) are the default and need no service. " +
-      "Desktop notifications are opt-in (MESSENGER_NOTIFY=1). Installing a " +
-      "background service is powerful — expect a permission prompt.",
-    inputSchema: {},
-  },
-  async () => (S ? ok(enableService(S.serviceOpts)) : noAccount()),
-);
-
-server.registerTool(
-  "disable_auto_delivery",
-  {
-    title: "Turn off automatic background delivery",
-    description: "Remove the background delivery service.",
-    inputSchema: {},
-  },
-  async () => (S ? ok(disableService(S.user)) : noAccount()),
-);
-
-server.registerTool(
-  "delivery_status",
-  {
-    title: "Check automatic delivery status",
-    description: "Report whether background auto-delivery is on for this user.",
-    inputSchema: {},
-  },
-  async () => (S ? ok(statusService(S.user)) : noAccount()),
-);
-
-server.registerTool(
   "messages_available",
   {
     title: "Check for waiting messages",
@@ -364,23 +355,31 @@ server.registerTool(
 );
 
 server.registerTool(
-  "listen_for_messages",
+  "watch",
   {
-    title: "Wait for incoming messages (long-poll loop)",
+    title: "Watch for incoming messages (long-poll loop)",
     description:
-      "Block for up to ~25 seconds waiting for new mail, then return it (already " +
+      "Block for up to ~50 seconds waiting for new mail, then return it (already " +
       "marked read) or report idle if none arrived. This is the building block of " +
-      "a listening loop: after it returns, call it AGAIN to keep listening, and " +
-      "repeat until the user says to stop. Portable across CLIs and intentionally " +
-      "not silent — each return is a turn the user sees. Use when the user asks to " +
-      "wait for / watch for / keep an eye out for messages.",
+      "a watch loop: after it returns, call it AGAIN to keep watching, and " +
+      "repeat until the user says to stop. On an idle return, re-call SILENTLY — " +
+      "print nothing to the user; only speak when mail actually arrives. Use when " +
+      "the user asks to watch for / wait for / keep an eye out for messages.",
     inputSchema: {},
   },
-  async () => {
+  async (_args, extra) => {
     if (!S) return noAccount();
-    const deadline = now() + 25_000;
+    const deadline = now() + WATCH_MS;
+    const progressToken = extra?._meta?.progressToken;
+    let ticks = 0;
+    // The background warmer (PUSH.md) drains new mail into the cache via push, so
+    // this loop just watches the LOCAL cache (cheap, ~1s granularity) rather than
+    // hitting the network every tick. A periodic sync is kept as a backstop for
+    // when push is off/unavailable (MESSENGER_PUSH=0 or the socket is down).
+    await sync(S.ctx); // initial catch-up
+    let sinceSync = 0;
     for (;;) {
-      await sync(S.ctx);
+      if (extra?.signal?.aborted) return ok({ status: "idle", count: 0, note: "Watch cancelled." });
       const rows = unreadFor(S.cache, S.me.signPub);
       if (rows.length > 0) {
         const messages = rows.map((m) => {
@@ -397,14 +396,21 @@ server.registerTool(
           status: "messages",
           count: messages.length,
           messages,
-          note: "Report these and offer to reply (draft_reply). Call listen_for_messages again to keep listening.",
+          note: "Read these out in full (sender + body) and offer to reply (draft_reply). Call watch again to keep watching.",
         });
       }
       if (now() >= deadline) {
         return ok({
           status: "idle",
           count: 0,
-          note: "No new messages in the last ~25s. Call listen_for_messages again to keep listening, or stop if the user is done.",
+          note: "No new messages. Silently call watch again to keep watching — do NOT print anything to the user on idle (no heartbeat); only speak when mail actually arrives or the user is done.",
+        });
+      }
+      // Keep the client's request timeout alive across long idle windows.
+      if (progressToken !== undefined) {
+        await extra.sendNotification({
+          method: "notifications/progress",
+          params: { progressToken, progress: ++ticks },
         });
       }
       await sleep(3_000);
