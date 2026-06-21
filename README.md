@@ -17,10 +17,10 @@ agent surfaces the message and helps them reply.
 See [PLAN.md](./PLAN.md) for the full concept and roadmap.
 
 ## Requirements
-Node 20+ (the inbox cache uses `node-sqlite3-wasm` — WebAssembly SQLite, no
-native build). That's all an end user needs — `npx` fetches the rest. State
-(identity, contacts, inbox cache) lives in `~/.cli-chat`, not next to the code, so
-it survives across `npx` runs.
+Node 22+ (uses the native global `WebSocket` for push; the inbox cache uses
+`node-sqlite3-wasm` — WebAssembly SQLite, no native build). That's all an end user
+needs — `npx` fetches the rest. State (identity, contacts, inbox cache) lives in
+`~/.cli-chat`, not next to the code, so it survives across `npx` runs.
 
 ## Set up to message someone (no clone)
 

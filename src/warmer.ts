@@ -10,8 +10,12 @@
 //   - so a dropped socket never loses mail.
 //
 // See PUSH.md. The server side is server-mailbox/inbox-do.ts + /connect.
+//
+// Uses Node's native global WebSocket (Node 22+). The WHATWG API can't set
+// request headers on the handshake, so the Ed25519 auth (same canonical string
+// as the HTTP routes) travels in the URL query instead — the server reads it
+// from there. See STORE.md.
 
-import WebSocket from "ws";
 import { execFile } from "node:child_process";
 import { makeAuthHeaders } from "./auth.ts";
 import { sync, type NetContext } from "./core-net.ts";
@@ -62,20 +66,18 @@ export function startWarmer(ctx: NetContext, opts: WarmerOpts): () => void {
 
   function connect(): void {
     if (stopped) return;
-    // Authenticate the upgrade with the same Ed25519 signed-header scheme as the
-    // HTTP routes; the server derives the inbox id from the verified pubkey.
-    const headers = makeAuthHeaders(
-      ctx.me.signPub,
-      ctx.me.signSec,
-      "GET",
-      "/connect",
-      "",
-      opts.now(),
-    ) as unknown as Record<string, string>;
+    // Same Ed25519 signed canonical string as the HTTP routes, but carried in the
+    // query (native WebSocket can't set headers). Server derives the inbox id
+    // from the verified pubkey, so a socket only ever attaches to its own inbox.
+    const h = makeAuthHeaders(ctx.me.signPub, ctx.me.signSec, "GET", "/connect", "", opts.now());
+    const u = new URL(wsUrl);
+    u.searchParams.set("x-pubkey", h["x-pubkey"]);
+    u.searchParams.set("x-timestamp", h["x-timestamp"]);
+    u.searchParams.set("x-signature", h["x-signature"]);
 
-    ws = new WebSocket(wsUrl, { headers });
+    ws = new WebSocket(u.toString());
 
-    ws.on("open", () => {
+    ws.addEventListener("open", () => {
       backoff = BACKOFF_START_MS; // reset on a healthy connection
       void drain(); // catch up on anything missed while offline
       clearPing();
@@ -88,13 +90,13 @@ export function startWarmer(ctx: NetContext, opts: WarmerOpts): () => void {
       }, PING_MS);
     });
 
-    ws.on("message", (data: unknown) => {
-      if (String(data) === "pong") return; // keepalive ack
+    ws.addEventListener("message", (ev) => {
+      if (String((ev as MessageEvent).data) === "pong") return; // keepalive ack
       void drain(); // any other frame is a wake
     });
 
-    ws.on("close", scheduleReconnect);
-    ws.on("error", () => {
+    ws.addEventListener("close", scheduleReconnect);
+    ws.addEventListener("error", () => {
       try {
         ws?.close();
       } catch {
