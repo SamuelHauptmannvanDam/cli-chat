@@ -74,7 +74,7 @@ body) and offer to reply — do NOT ask "want me to read it?" here; that ask is 
 for the passive inbox notice.
 
 SENDER IDENTITY: each message carries the sender's own name + 6-char handle, so a
-message from someone NEW shows as "Sam (dC0v6m)" instead of a key prefix, and they
+message from someone NEW shows as "Sam (AbC123)" instead of a key prefix, and they
 are AUTO-SAVED to the address book — so a plain "write Sam" works afterwards and
 you can reply right away (no need to ask for their code). But YOUR nickname always
 wins: once the user has saved or renamed a contact, you refer to them by that nick

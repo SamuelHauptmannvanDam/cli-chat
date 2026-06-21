@@ -1,9 +1,9 @@
 {
   "name": "cli-chat-mcp",
-  "version": "0.4.11",
+  "version": "0.4.14",
   "type": "module",
   "description": "Headless cross-CLI messenger for coding agents (MCP)",
-  "license": "MIT",
+  "license": "PolyForm-Noncommercial-1.0.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/SamuelHauptmannvanDam/cli-chat.git"
@@ -36,12 +36,10 @@
     "init": "node src/init-identity.ts",
     "install-clis": "node src/install.ts",
     "add-contact": "node src/add-contact.ts",
-    "mailbox": "node server-mailbox/node.ts",
     "server": "node src/server-net.ts",
     "deploy": "npx wrangler deploy"
   },
   "dependencies": {
-    "@hono/node-server": "^2.0.5",
     "@modelcontextprotocol/sdk": "^1.0.0",
     "hono": "^4.12.25",
     "libsodium-wrappers": "^0.8.4",

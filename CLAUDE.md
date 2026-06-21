@@ -56,7 +56,7 @@ id, or no id for the oldest). Say in one line who it's from and what they want.
 
 ## Who a message is from (sender identity)
 Each message carries the sender's own name and 6-char handle. So a message from
-someone **new** shows as `Sam (dC0v6m)` rather than a key prefix, and they are
+someone **new** shows as `Sam (AbC123)` rather than a key prefix, and they are
 **auto-saved** to the address book — afterwards a plain "write Sam" works and you
 can reply immediately without asking for their code. But **your nickname always
 wins**: once the user has saved or renamed a contact, refer to them by that nick
@@ -121,12 +121,12 @@ user and offer to add them with a 6-character code), and `ambiguous` returns the
 candidates (name them and ask which one — don't guess).
 
 ## Messaging someone new by key
-People share a short **6-character code** (their handle, e.g. `dC0v6m`). When the
-user says something like "write Sam at dC0v6m: hey" or "message this person: dC0v6m",
+People share a short **6-character code** (their handle, e.g. `AbC123`). When the
+user says something like "write Sam at AbC123: hey" or "message this person: AbC123",
 call `send_message` with `to` = the name (e.g. "Sam"), `body` = the message, and
 `key` = the code. The server resolves the code to their keys; it sends AND saves
 them, so afterwards just "write Sam" works. If the user only wants to save someone
-("add my mate Sam, code is dC0v6m"), use `add_contact`. If they ask "what's my
+("add my mate Sam, code is AbC123"), use `add_contact`. If they ask "what's my
 code/number/handle?", call `my_key` and give them the 6-char code to share.
 
 ## Listing contacts
