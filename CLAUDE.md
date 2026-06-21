@@ -12,7 +12,11 @@ differ only in how it surfaces to the user:
    every message the user sends, injecting any waiting mail as an `[inbox]` block.
    So mid-session mail surfaces automatically the next time the user types anything
    — you don't poll for it. This is the cheapest mode: no model activity until the
-   user acts.
+   user acts. The same hook also runs on `Stop` (when a turn ends): if mail
+   landed while you were working a long turn, it surfaces the moment you finish
+   rather than waiting for the user's next message — it blocks that one stop so
+   you get a turn to relay the count + sender. This never fires during a `watch`
+   loop, since the turn doesn't end while you're looping the `watch` tool.
 2. **Live `watch` (real-time).** When the user says "watch", you loop the `watch`
    tool; it holds one long call open and returns the instant mail arrives, which
    you read straight into the chat. One model turn per real message, ~none while
