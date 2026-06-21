@@ -30,7 +30,7 @@ it survives across `npx` runs.
 ```bash
 claude mcp add cli-chat --scope user \
   --env MESSENGER_MAILBOX_URL=https://mailbox.cli-chat-mcp.workers.dev \
-  -- npx -y cli-chat-mcp
+  -- npx -y cli-chat-mcp@latest
 ```
 Or paste this into any MCP-capable CLI's config (Gemini, Cursor, Codex, …):
 ```json
@@ -38,7 +38,7 @@ Or paste this into any MCP-capable CLI's config (Gemini, Cursor, Codex, …):
   "mcpServers": {
     "cli-chat": {
       "command": "npx",
-      "args": ["-y", "cli-chat-mcp"],
+      "args": ["-y", "cli-chat-mcp@latest"],
       "env": { "MESSENGER_MAILBOX_URL": "https://mailbox.cli-chat-mcp.workers.dev" }
     }
   }
@@ -76,7 +76,8 @@ set `MESSENGER_HOME` to override where state lives.
 
 ## The MCP tools
 `create_account` · `send_message` · `messages_available` · `watch` ·
-`read_message` · `draft_reply` · `add_contact` · `my_key` · `list_contacts`.
+`read_message` · `draft_reply` · `add_contact` · `delete_contact` · `my_key` ·
+`contacts`.
 Behavior (when to check, how to reply) is carried in the server's MCP
 `instructions`, so it's the same in every CLI.
 

@@ -66,12 +66,20 @@ as "Niels", a new message from them reads as from "Niels", full stop.
 
 ## Your own name
 The user's display name travels with every message they send (it's what
-recipients see, and how mutual contacts find them). If they don't have one set,
-the session-start hook will prompt you to ask for their **full name**; pass their
-answer to `create_account` to set it. A full name beats a bare first name here
-because it's what others match on when looking you up through the network — but a
-first name is fine if that's all they give (others can still nickname them
-locally). The same call updates the name later if they say "call me X".
+recipients see, and how mutual contacts find them), so set it before doing
+anything that sends. **On a fresh device (no account yet — any tool returns
+`no_account`), ask for their full name FIRST and wait for it before creating the
+account or sending.** Don't silently create the account under the OS login name
+and fire off their message — if they just said "write Sam at AbC123: hey" on a
+clean install, reply with a quick "Quick setup — what's your full name?", then
+call `create_account` with their answer and only then send. Only fall back to the
+OS login name if they actively decline. A full name beats a bare first name
+because it's what others match on through the network, but a first name is fine
+if that's all they give (others can still nickname them locally).
+
+They can change it any time: `create_account` is idempotent and passing a `name`
+updates the display name (use this for "call me X" / "change my name to X"). They
+can see their current name + handle any time at the top of `contacts`.
 
 ## Watch mode (hands-free, adaptive)
 When the user says "watch" (or "watch for messages", "keep an eye out"), call the
@@ -107,7 +115,7 @@ for confirmation or offer to tweak it — send it, then say what you sent. Only
 stop to ask if the user clearly hasn't said what to write.
 
 Name matching is partial, so "Niels" resolves a saved "Niels - bankdata"
-automatically — you don't need to pre-check with `list_contacts`. Only handle
+automatically — you don't need to pre-check with `contacts`. Only handle
 the two failure results: `no_contact` means nothing matched at all (tell the
 user and offer to add them with a 6-character code), and `ambiguous` returns the
 candidates (name them and ask which one — don't guess).
@@ -123,18 +131,33 @@ code/number/handle?", call `my_key` and give them the 6-char code to share.
 
 ## Listing contacts
 When the user asks "who are my contacts?", "who can I message?", or "show my
-address book", call `list_contacts`. It returns every saved person with their
-name, any aliases, their 6-char handle, and shareable key. Report them as a short
-list (names, plus a count). If it returns zero, say the address book is empty and
-remind them they can add someone with a 6-character code.
+address book", call `contacts`. It returns the user's **own** entry first (`me`:
+their name, 6-char handle, and key) followed by every saved person with their
+name, any aliases, their 6-char handle, and shareable key. **Always show the
+user's own entry at the top** (so they can see their own name + handle, and rename
+themselves if it's wrong), then list the saved contacts as a short list (names,
+plus a count). If there are no saved contacts, say the address book is empty (the
+user's own entry still shows) and remind them they can add someone with a 6-char
+code.
 
 ## Renaming a contact
 When the user says "rename Niels to Bob" (or "call Niels something else"), call
-`list_contacts`, take that contact's `fullKey`, then call `add_contact` with
+`contacts`, take that contact's `fullKey`, then call `add_contact` with
 `name` = the new name and `key` = that fullKey. Saving a name against a key
 that's already on file replaces the old entry (the book upserts by key, not
 name), so it renames in place with no duplicate — no need to ask the user for a
 code. Confirm in one line ("Renamed Niels to Bob.").
+
+## Deleting a contact
+When the user says "delete Niels", "remove Sam from my contacts", or "forget this
+person", call `delete_contact` with `name` = that name. Name matching is partial
+just like `send_message`, so a short "Niels" resolves a saved "Niels - bankdata"
+— just call it, don't pre-check with `contacts`. Confirm in one line
+("Deleted Niels."). Handle the two failure results the same way as sending:
+`no_contact` means nothing matched (tell the user), and `ambiguous` returns the
+candidate names (name them and ask which one — don't guess). Deleting only
+forgets them locally; it doesn't block them, and they can be re-added later from
+their 6-character code.
 
 ## Style: act, then report — don't ask permission
 Default to doing the obvious thing and announcing it, e.g. "Sent to Niels: '…'."
