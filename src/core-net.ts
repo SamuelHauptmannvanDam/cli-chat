@@ -9,6 +9,7 @@ import { readFileSync, writeFileSync, renameSync } from "node:fs";
 import { getMessage, insertMessage, markRead, unreadFor, type MessageRow, type Mailbox } from "./db.ts";
 import {
   contactByKey,
+  removeContactByKey,
   saveContacts,
   senderLabel,
   resolve,
@@ -117,6 +118,35 @@ export async function addContact(
   if (!keys) return { ok: false, reason: "not_found" };
   rememberContact(ctx, { name: args.name, signPub: keys.signPub, boxPub: keys.boxPub, handle: keys.handle });
   return { ok: true, name: args.name };
+}
+
+export type DeleteContactResult =
+  | { ok: true; name: string }
+  | { ok: false; reason: "no_contact" | "ambiguous"; query: string; candidates?: string[] };
+
+// Remove a saved contact by name. Resolution mirrors send_message: a partial
+// name is fine ("Niels" finds "Niels - bankdata"), `no_contact` means nothing
+// matched, and `ambiguous` returns the candidate names so the caller can ask
+// which one rather than deleting the wrong person. Deletion itself is keyed on
+// signPub, so exactly the resolved entry is dropped.
+export function deleteContact(
+  ctx: NetContext,
+  args: { name: string },
+): DeleteContactResult {
+  const r = resolve(ctx.book, args.name);
+  if (r.status === "none") return { ok: false, reason: "no_contact", query: args.name };
+  if (r.status === "ambiguous")
+    return {
+      ok: false,
+      reason: "ambiguous",
+      query: args.name,
+      candidates: r.candidates.map((c) => c.name),
+    };
+  const c = r.contact;
+  if (c.signPub) removeContactByKey(ctx.book, c.signPub);
+  else ctx.book.contacts = ctx.book.contacts.filter((x) => x !== c); // legacy keyless entry
+  if (ctx.contactsPath) saveContacts(ctx.contactsPath, ctx.book);
+  return { ok: true, name: c.name };
 }
 
 // Pull any waiting blobs, decrypt, and store in the local cache. Idempotent:
