@@ -5,6 +5,8 @@ mailbox-server.db
 mailbox-server.db-*
 # Each user generates their own identity + contacts locally; never ship them.
 users/
+# Account backups bundle identity.json (private keys) — keep them out of git.
+account-backup-*.tgz
 .wrangler/
 *.log
 

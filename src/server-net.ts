@@ -52,19 +52,20 @@ function buildSession(user: string) {
   const contactsPath = contactsFile(user);
   const me = loadIdentity(identityFile(user));
   const book = loadContacts(contactsPath);
-  // The inbox cache is best-effort: NEVER let a transient open failure collapse
-  // the session. The wasm SQLite VFS can refuse a cross-process open when another
-  // live session of the SAME identity already holds the file; that used to throw,
-  // get swallowed at boot (S=null), surface as a false `no_account`, and make the
-  // agent mint a DUPLICATE identity. Identity is what matters here — fall back to a
+  // The inbox cache is best-effort: NEVER let an open failure collapse the
+  // session. openMailbox now defers the actual file open (per-op on wasm, or a
+  // shareable WAL handle on native — see db.ts), so cross-process contention no
+  // longer throws here the way the old persistent wasm handle did (which used to
+  // surface as a false `no_account` and mint a DUPLICATE identity). The try/catch
+  // stays as cheap defence: on any unexpected open error, fall back to a
   // temporary in-memory cache so the session still loads and reports the real code.
   let cache;
   try {
     cache = openMailbox(inboxFile(user));
   } catch (e) {
     console.error(
-      `Inbox cache for "${user}" is busy (${(e as Error).message}); ` +
-        `using a temporary in-memory cache for this session (another session may have it open).`,
+      `Inbox cache for "${user}" is unavailable (${(e as Error).message}); ` +
+        `using a temporary in-memory cache for this session.`,
     );
     cache = openMailbox(":memory:");
   }
