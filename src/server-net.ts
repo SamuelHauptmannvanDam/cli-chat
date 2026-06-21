@@ -213,7 +213,7 @@ Bob.").
 
 Always keep the human in control of what's sent.`;
 
-const server = new McpServer({ name: "cli-chat", version: "0.4.2" }, { instructions: INSTRUCTIONS });
+const server = new McpServer({ name: "cli-chat", version: "0.4.3" }, { instructions: INSTRUCTIONS });
 const ok = (data: unknown) => ({
   content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }],
 });
