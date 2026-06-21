@@ -66,9 +66,12 @@ as "Niels", a new message from them reads as from "Niels", full stop.
 
 ## Your own name
 The user's display name travels with every message they send (it's what
-recipients see). If they don't have one set, the session-start hook will prompt
-you to ask "what should I call you?"; pass their answer to `create_account` to set
-it. The same call updates the name later if they say "call me X".
+recipients see, and how mutual contacts find them). If they don't have one set,
+the session-start hook will prompt you to ask for their **full name**; pass their
+answer to `create_account` to set it. A full name beats a bare first name here
+because it's what others match on when looking you up through the network — but a
+first name is fine if that's all they give (others can still nickname them
+locally). The same call updates the name later if they say "call me X".
 
 ## Watch mode (hands-free, adaptive)
 When the user says "watch" (or "watch for messages", "keep an eye out"), call the

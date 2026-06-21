@@ -57,15 +57,15 @@ export function resolve(book: ContactBook, query: string): ResolveResult {
   const namesOf = (c: Contact) => [c.name, ...(c.aliases ?? [])].map((n) => n.toLowerCase());
 
   const exact = book.contacts.filter((c) => namesOf(c).includes(q));
-  if (exact.length === 1) return { status: "resolved", contact: exact[0] };
   if (exact.length > 1) return { status: "ambiguous", query, candidates: exact };
+  if (exact[0]) return { status: "resolved", contact: exact[0] };
 
   // No exact hit — try a looser substring match (skip empty queries, which
   // would "contain" into every contact).
   if (!q) return { status: "none", query };
   const fuzzy = book.contacts.filter((c) => namesOf(c).some((n) => n.includes(q)));
-  if (fuzzy.length === 1) return { status: "resolved", contact: fuzzy[0] };
   if (fuzzy.length > 1) return { status: "ambiguous", query, candidates: fuzzy };
+  if (fuzzy[0]) return { status: "resolved", contact: fuzzy[0] };
   return { status: "none", query };
 }
 
