@@ -17,14 +17,19 @@
 // from there. See STORE.md.
 
 import { execFile } from "node:child_process";
+import { rmSync } from "node:fs";
 import { makeAuthHeaders } from "./auth.ts";
-import { sync, type NetContext } from "./core-net.ts";
+import { sync, refreshPending, type NetContext } from "./core-net.ts";
 import { unreadFor } from "./db.ts";
 import { displayNameByKey } from "./contacts.ts";
 
 export interface WarmerOpts {
   mailboxUrl: string;
   now: () => number;
+  // Where to mirror unread mail for the session hook, and where to read its acks.
+  // The warmer is the sole writer of pendingPath; the hook the sole writer of ackPath.
+  pendingPath: string;
+  ackPath: string;
 }
 
 const PING_MS = 30_000; // keepalive cadence
@@ -49,6 +54,14 @@ export function startWarmer(ctx: NetContext, opts: WarmerOpts): () => void {
     draining = true;
     try {
       const added = await sync(ctx);
+      // Apply the hook's acks (mark surfaced mail read) and re-mirror the unread
+      // set for the hook — every tick, so acks land within a drain even with no
+      // new mail. Best-effort: a snapshot write must never break draining.
+      try {
+        refreshPending(ctx, opts.pendingPath, opts.ackPath);
+      } catch {
+        /* disk hiccup — the next tick rewrites it */
+      }
       if (added > 0) notifyNewMail(ctx);
     } catch {
       /* network blip — the next wake or the fallback poll retries */
@@ -113,6 +126,13 @@ export function startWarmer(ctx: NetContext, opts: WarmerOpts): () => void {
     backoff = Math.min(backoff * 2, BACKOFF_MAX_MS);
   }
 
+  // Seed the hook's snapshot from the local cache immediately, so a hook firing
+  // right after boot reads a fresh file instead of falling back to a direct drain.
+  try {
+    refreshPending(ctx, opts.pendingPath, opts.ackPath);
+  } catch {
+    /* fine — the first drain will write it */
+  }
   connect();
   // Fallback poll: a slow safety net in case a wake is ever missed. 60s vs the
   // old 3s loop — ~20× fewer requests, and only a backstop since push handles
@@ -126,6 +146,13 @@ export function startWarmer(ctx: NetContext, opts: WarmerOpts): () => void {
     if (reconnectTimer) clearTimeout(reconnectTimer);
     try {
       ws?.close();
+    } catch {
+      /* ignore */
+    }
+    // Drop the snapshot so a later warmer-off session (MESSENGER_PUSH=0) falls back
+    // to a direct drain instead of trusting a stale file.
+    try {
+      rmSync(opts.pendingPath, { force: true });
     } catch {
       /* ignore */
     }

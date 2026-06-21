@@ -47,3 +47,16 @@ export function contactsFile(user: string): string {
 export function inboxFile(user: string): string {
   return join(userDir(user), "inbox.db");
 }
+
+// The warmer mirrors current unread mail (decrypted) here so the session hook can
+// surface it WITHOUT opening inbox.db — the cross-process collision that used to
+// drop mail on the wasm driver. Warmer is the only writer; the hook only reads.
+export function pendingFile(user: string): string {
+  return join(userDir(user), "pending.json");
+}
+
+// The hook records which pending ids it has surfaced here; the warmer reads it and
+// marks those read in inbox.db. The hook is the only writer; the warmer only reads.
+export function pendingAckFile(user: string): string {
+  return join(userDir(user), "pending-ack.json");
+}
