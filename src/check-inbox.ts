@@ -124,7 +124,25 @@ try {
   // exists (e.g. MESSENGER_PUSH=0) — safe, since no warmer is holding the file then.
   const pendingPath = pendingFile(user);
   const ackPath = pendingAckFile(user);
-  const snap = readPending(pendingPath);
+
+  // Cold-open race: at boot the warmer writes a SEED snapshot (synced:false,
+  // mirrored from the local cache) and only drains the network a beat later. A
+  // SessionStart hook that reads the seed can wrongly report "no mail" for
+  // something already waiting on the server — and it must NOT direct-drain to
+  // compensate, because the live warmer owns inbox.db (concurrent wasm-SQLite
+  // writers drop mail). So when push is on, briefly wait for the warmer's first
+  // real (synced) snapshot before deciding. Bounded, so a missing/stuck warmer
+  // can't hang the open; the hook's own 20s timeout is the hard backstop. Only on
+  // SessionStart — mid-session hooks always see an already-synced warmer, so they
+  // never wait (no per-keystroke latency).
+  let snap = readPending(pendingPath);
+  if (hookEventName === "SessionStart" && process.env.MESSENGER_PUSH !== "0") {
+    const deadline = Date.now() + (Number(process.env.MESSENGER_COLD_OPEN_MS) || 3000);
+    while ((snap === null || snap.synced === false) && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 150));
+      snap = readPending(pendingPath);
+    }
+  }
   const usePending = snap !== null && Date.now() - snap.writtenAt < PENDING_STALE_MS;
 
   let toShow: { id: string; from: string; body: string }[];
@@ -206,11 +224,22 @@ try {
     // the count via systemMessage and the agent earns one more turn (reason) to
     // relay it. Mail is already marked read + stopHookActive guards re-entry, so
     // the next Stop finds nothing and lets the turn end normally — no loop.
+    //
+    // CRITICAL: a Stop block's `reason` is rendered ON SCREEN (unlike
+    // additionalContext, which is hidden). So keep it LEAN — no identity preamble,
+    // no [inbox] instruction wall, and NO message bodies (those would leak the
+    // content the count-only summary deliberately withholds). Just enough for the
+    // agent to relay the count; bodies are re-fetched via read_message(id) — which
+    // works even after mark-read — when the user actually asks to hear them.
+    const ids = toShow.map((m) => `${m.id} (from ${m.from})`).join(", ");
     console.log(
       JSON.stringify({
         decision: "block",
         reason:
-          `Mail arrived while you were working — surface it now. ` + agentContext,
+          `New mail arrived mid-turn. Relay this to the user, then stop:\n` +
+          `  ${summary}\n` +
+          `Do NOT print bodies; if they ask to read, call read_message with the ` +
+          `id. Waiting: ${ids}`,
         systemMessage: summary,
       }),
     );
