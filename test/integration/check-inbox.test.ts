@@ -37,12 +37,17 @@ function seedIdentity(name = "Sam") {
   );
 }
 
-function seedPending(messages: Array<{ id: string; from: string; body: string }>, ageMs = 0) {
+function seedPending(
+  messages: Array<{ id: string; from: string; body: string }>,
+  ageMs = 0,
+  synced = true,
+) {
   writeFileSync(
     join(userDir(), "pending.json"),
     JSON.stringify({
       writtenAt: Date.now() - ageMs,
       messages: messages.map((m) => ({ ...m, at: Date.now(), in_reply_to: null })),
+      synced,
     }),
   );
 }
@@ -53,7 +58,11 @@ function seedAck(ids: string[]) {
 
 // Run the hook with the given event, returning parsed stdout (or null when the
 // hook stays silent, which is itself a meaningful outcome).
-function runHook(hookEventName: string, extra: Record<string, unknown> = { account: true }): any {
+function runHook(
+  hookEventName: string,
+  extra: Record<string, unknown> = { account: true },
+  extraEnv: Record<string, string> = {},
+): any {
   const payload = JSON.stringify({ hook_event_name: hookEventName, ...extra });
   const res = spawnSync("node", [script], {
     input: payload,
@@ -64,6 +73,7 @@ function runHook(hookEventName: string, extra: Record<string, unknown> = { accou
       MESSENGER_HOME: home,
       MESSENGER_USER: USER,
       MESSENGER_MAILBOX_URL: "", // pending path never hits the network; guard anyway
+      ...extraEnv,
     },
   });
   assert.equal(res.status, 0, `exit ${res.status}: ${res.stderr}`);
@@ -132,7 +142,11 @@ test("mail arriving on Stop blocks the stop so the agent can relay it", () => {
   const out = runHook("Stop");
   assert.equal(out.decision, "block");
   assert.match(out.systemMessage, /📬 1 new message from Niels/);
-  assert.match(out.reason, /ping/);
+  // The block `reason` is rendered ON SCREEN, so it must stay lean: tell the agent
+  // to relay, reference the id for an on-demand re-fetch — and NOT leak the body.
+  assert.doesNotMatch(out.reason, /ping/);
+  assert.match(out.reason, /read_message/);
+  assert.match(out.reason, /m1/);
 });
 
 test("no mail on SessionStart still hands the agent its identity", () => {
@@ -156,4 +170,26 @@ test("no mail on UserPromptSubmit produces no output", () => {
   seedPending([]);
   const out = runHook("UserPromptSubmit");
   assert.equal(out, null);
+});
+
+test("SessionStart waits past a seed-only snapshot before deciding (cold-open race)", () => {
+  // synced:false is the warmer's boot seed, written before its first network
+  // drain. The hook must wait for a synced snapshot rather than trust the seed —
+  // bounded by MESSENGER_COLD_OPEN_MS. No warmer runs here, so it waits the full
+  // window (kept short for the test) then surfaces whatever the seed holds.
+  seedIdentity("Sam");
+  seedPending([{ id: "m1", from: "Niels", body: "ping" }], 0, false);
+  const t0 = Date.now();
+  const out = runHook("SessionStart", { account: true }, { MESSENGER_COLD_OPEN_MS: "400" });
+  assert.ok(Date.now() - t0 >= 400, "should wait the cold-open window for a synced snapshot");
+  assert.match(out.systemMessage, /📬 1 new message from Niels/); // still surfaces the seed on timeout
+});
+
+test("SessionStart does not wait when a synced snapshot is already present", () => {
+  seedIdentity("Sam");
+  seedPending([{ id: "m1", from: "Niels", body: "ping" }], 0, true);
+  const t0 = Date.now();
+  const out = runHook("SessionStart", { account: true }, { MESSENGER_COLD_OPEN_MS: "5000" });
+  assert.ok(Date.now() - t0 < 2000, "a synced snapshot is trusted immediately, no wait");
+  assert.match(out.systemMessage, /📬 1 new message from Niels/);
 });

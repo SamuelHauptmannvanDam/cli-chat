@@ -128,8 +128,10 @@ export function startWarmer(ctx: NetContext, opts: WarmerOpts): () => void {
 
   // Seed the hook's snapshot from the local cache immediately, so a hook firing
   // right after boot reads a fresh file instead of falling back to a direct drain.
+  // Marked synced:false — it predates the first network drain, so the SessionStart
+  // hook knows to wait for the real drain before deciding there's no mail.
   try {
-    refreshPending(ctx, opts.pendingPath, opts.ackPath);
+    refreshPending(ctx, opts.pendingPath, opts.ackPath, false);
   } catch {
     /* fine — the first drain will write it */
   }
