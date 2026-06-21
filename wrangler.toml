@@ -18,6 +18,17 @@ binding = "DB"
 database_name = "cli-chat"
 database_id = "3789e756-8aaf-42ab-8366-1d289133b39a"
 
+# Push delivery (PUSH.md): one Inbox Durable Object per recipient holds their
+# hibernatable WebSockets; POST /messages wakes them. No persistent DO storage
+# is used (sockets only), but new DO classes still require a migration entry.
+[[durable_objects.bindings]]
+name = "INBOX"
+class_name = "Inbox"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Inbox"]
+
 # Daily retention sweep (worker.ts scheduled()): prune read mail after a week
 # and anything older than a month, so the mailbox can't grow without bound.
 [triggers]

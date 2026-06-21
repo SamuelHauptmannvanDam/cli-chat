@@ -14,6 +14,10 @@ import type { Store } from "./store.ts";
 export interface AppDeps {
   store: Store;
   now: () => number;
+  // Optional push hook: called with the recipient's signPub after a message is
+  // stored, so a transport can wake live subscribers. Omitted on the Node runner
+  // (no Durable Objects); injected on Workers. Must not throw / block delivery.
+  notify?: (recipient: string) => void;
 }
 
 // Abuse limits. These are short text ciphertexts, so the caps are generous yet
@@ -24,7 +28,7 @@ const MAX_BODY_BYTES = 16 * 1024;
 
 export function createApp(deps: AppDeps): Hono {
   const app = new Hono();
-  const { store, now } = deps;
+  const { store, now, notify } = deps;
 
   app.get("/health", (c) => c.json({ ok: true }));
 
@@ -75,6 +79,8 @@ export function createApp(deps: AppDeps): Hono {
       created_at: msg.created_at,
       in_reply_to: msg.in_reply_to ?? null,
     });
+    // Wake any live subscribers for this recipient (push). Best-effort.
+    notify?.(msg.recipient);
     return c.json({ ok: true, id: msg.id });
   });
 
