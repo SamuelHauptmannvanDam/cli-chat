@@ -75,6 +75,39 @@ test("isRegistered is true only for a key with a claimed handle", () => {
   assert.equal(store.isRegistered("nobody-sign"), false);
 });
 
+test("put records the sender→recipient pair as known (for reply exemption)", () => {
+  const store = nodeSqliteStore(":memory:");
+  store.put(wire({ sender: "alice", recipient: "bob" }));
+  // Alice wrote to Bob, so when Bob replies, Bob is a known sender to Alice —
+  // i.e. from Alice's inbox, Bob is exempt from new-sender throttling.
+  assert.equal(store.isKnownSender("alice", "bob"), true);
+  // The reverse isn't implied — Bob hasn't written to Alice, so Alice is still
+  // an unknown (throttled) sender from Bob's inbox.
+  assert.equal(store.isKnownSender("bob", "alice"), false);
+});
+
+test("countRecentFromPair counts only this pair, by SERVER receive time", () => {
+  const store = nodeSqliteStore(":memory:");
+  // created_at is attacker-controlled (all 0 here); receivedAt is the server's.
+  store.put(wire({ id: "m1", sender: "alice", recipient: "bob", created_at: 0 }), 1000);
+  store.put(wire({ id: "m2", sender: "alice", recipient: "bob", created_at: 0 }), 2000);
+  store.put(wire({ id: "m3", sender: "carol", recipient: "bob", created_at: 0 }), 2000);
+  assert.equal(store.countRecentFromPair("bob", "alice", 1500), 1); // only m2 ≥ 1500
+  assert.equal(store.countRecentFromPair("bob", "alice", 0), 2);
+  assert.equal(store.countRecentFromPair("bob", "carol", 0), 1);
+});
+
+test("countRecentUnknown excludes senders the recipient has replied to", () => {
+  const store = nodeSqliteStore(":memory:");
+  // Two strangers write to Bob.
+  store.put(wire({ id: "s1", sender: "alice", recipient: "bob" }), 1000);
+  store.put(wire({ id: "s2", sender: "carol", recipient: "bob" }), 1000);
+  assert.equal(store.countRecentUnknown("bob", 0), 2);
+  // Bob replies to Alice → Alice becomes known → drops out of the unknown count.
+  store.put(wire({ id: "r1", sender: "bob", recipient: "alice" }), 1500);
+  assert.equal(store.countRecentUnknown("bob", 0), 1); // only carol remains
+});
+
 test("purge drops read mail past the read window and anything past the age window", () => {
   const DAY = 24 * 60 * 60 * 1000;
   const now = 100 * DAY;
