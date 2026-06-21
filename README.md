@@ -14,8 +14,6 @@ agent surfaces the message and helps them reply.
 - **Hosted mailbox** — Cloudflare Worker + D1 (store-and-forward), already
   deployed; runs on Node locally too.
 
-See [PLAN.md](./PLAN.md) for the full concept and roadmap.
-
 ## Requirements
 Node 22+ (uses the native global `WebSocket` for push). The inbox cache picks its
 SQLite driver automatically: native `node:sqlite` on Node 24+ (one shared WAL
@@ -48,13 +46,13 @@ Or paste this into any MCP-capable CLI's config (Gemini, Cursor, Codex, …):
 
 **2. Restart your CLI**, approve the `cli-chat` server once, then say *"set me
 up"* — `create_account` mints your identity and prints your 6-char code (e.g.
-`dC0v6m`) to share.
+`AbC123`) to share.
 
 **3. Swap 6-char codes** with whoever you're messaging (both directions).
 
 **4. Message:**
 ```
-write Sam at dC0v6m: hey      # first time: by code (saves them)
+write Sam at AbC123: hey      # first time: by code (saves them)
 write Sam: hey                # after that: by name
 ```
 When the recipient opens their CLI they're told a message is waiting and asked if
@@ -112,7 +110,7 @@ Mail is always drained into a local cache in the background by the push warmer
   client lets the call hold the full window instead of re-firing every ~minute.
 - **On demand** — or just ask "any messages?" anytime.
 - **Who it's from** — each message carries the sender's name + handle, so a
-  message from someone new reads as "Sam (dC0v6m)" and auto-saves them as a
+  message from someone new reads as "Sam (AbC123)" and auto-saves them as a
   contact (reply or "write Sam" just works after). Your own nickname for a saved
   contact always wins on screen — their self-name only shows until you've named
   them.
@@ -127,13 +125,15 @@ Mail is always drained into a local cache in the background by the push warmer
 | `src/mailbox-client.ts` | signed HTTP client |
 | `src/init-identity.ts` · `install.ts` · `add-contact.ts` | onboarding helpers |
 | `src/check-inbox.ts` | on-open read (SessionStart hook) |
-| `server-mailbox/` | the Hono mailbox: `app.ts`, `node.ts` (local), `worker.ts`+`wrangler.toml` (Cloudflare/D1), `inbox-do.ts` (Inbox Durable Object — push fan-out), `store.ts`·`store-d1.ts`, `verify.ts`, `schema.sql` |
+| `server-mailbox/` | the Hono mailbox: `app.ts`, `node.ts` (local), `worker.ts`+`wrangler.toml.example` (Cloudflare/D1), `inbox-do.ts` (Inbox Durable Object — push fan-out), `store.ts`·`store-d1.ts`, `verify.ts`, `schema.sql` |
 | `test/unit/` · `test/integration/` · `test/e2e/` | unit + integration + real-MCP/push tests (`live-net.ts`, `live-net-mcp.ts`, `live-push.ts`) |
 
 ## Deploy your own mailbox (optional)
-The mailbox is already deployed. To run your own:
+To run your own (`wrangler.toml` is gitignored — it holds your own ids — so start
+from the template):
 ```bash
-npx wrangler d1 create cli-chat          # put the id in wrangler.toml
+cp wrangler.toml.example wrangler.toml    # then set `name` (your worker URL)
+npx wrangler d1 create cli-chat           # paste the printed id into wrangler.toml
 npx wrangler d1 execute cli-chat --remote --file server-mailbox/schema.sql
 npm run deploy
 ```

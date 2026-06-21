@@ -9,6 +9,9 @@ users/
 account-backup-*.tgz
 .wrangler/
 *.log
+# Real deploy config holds your own D1 id + worker name — keep it local.
+# Self-hosters copy wrangler.toml.example → wrangler.toml and fill in theirs.
+wrangler.toml
 
 # build output
 dist/
