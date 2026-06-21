@@ -84,17 +84,27 @@ Behavior (when to check, how to reply) is carried in the server's MCP
   you don't need `npm run init` first. The server now boots even with no identity
   on the device — until you have one, the other tools report `no_account` and the
   agent offers to run `create_account`.
-- **`watch`** is a cross-CLI watch loop: it long-polls ~25s for new mail (marking
-  it read) and the agent re-calls it to keep watching. It needs no OS service and
-  works in any MCP CLI, but it's not silent — each return is a turn you see.
+- **`watch`** is a cross-CLI watch loop: it holds one tool call open for up to
+  `MESSENGER_WATCH_MS` (default ~9.2 min), reading the local cache every 3s and
+  re-draining the mailbox every 15s as a network backstop, then returns any new
+  mail (marking it read) so the agent re-calls to keep watching. It needs no OS
+  service and works in any MCP CLI. To live the full window it relies on the
+  client honoring MCP progress pings (it sends one every 3s); a client that caps
+  tool calls regardless will return sooner and just re-call more often.
 
-## Receiving: on-open or on-demand
-- **On open** — Claude Code runs a `SessionStart` hook (`src/check-inbox.ts`)
-  that pulls waiting mail and tells you how many are waiting and from whom, then
-  offers to read them (the bodies stay private to the agent until you say yes).
-  Other CLIs check on their first turn (via the server instructions).
-- **On demand** — ask "any messages?" anytime, or have the agent `watch` to
-  long-poll for new mail while you wait.
+## Receiving: two hands-free modes (no OS notifications)
+Mail is always drained into a local cache in the background by the push warmer
+(zero model turns). It surfaces to you two ways:
+- **On-keystroke (default, ~zero idle cost)** — `check-inbox.ts` runs on
+  `SessionStart` *and* `UserPromptSubmit`, so waiting mail is announced on open and
+  again automatically the next time you type anything. The bodies stay private to
+  the agent until you say "read it". No polling, no background model activity.
+- **Live `watch` (real-time)** — say "watch" and the agent loops the `watch` tool;
+  it holds one long call open and reads new mail into the chat the instant it
+  arrives. One model turn per real message, ~none while idle. Set
+  `MCP_TOOL_TIMEOUT` high (see `.claude/settings.json`) so the client lets the call
+  hold the full window instead of re-firing every ~minute.
+- **On demand** — or just ask "any messages?" anytime.
 - **Who it's from** — each message carries the sender's name + handle, so a
   message from someone new reads as "Sam (dC0v6m)" and auto-saves them as a
   contact (reply or "write Sam" just works after). Your own nickname for a saved

@@ -129,12 +129,32 @@ by the background WS — no network needed) and emits the lightweight
 `additionalContext`, surfaced only if the user says yes. Same as today, just faster
 and offline-resilient.
 
-#### `listen_for_messages` (demoted to optional)
-Keep it for the explicit "lean back and watch, read it straight into context the
-instant it arrives" mode. Reimplement on top of the warmer: instead of looping
-`sync` every 3s, **await the next wake** (or a deadline) and return. It still
-occupies the turn *by design* (that's what "watch" means), but it's no longer
-required to stay current — the background warmer does that.
+#### `watch` (the explicit hands-free mode — AS IMPLEMENTED)
+Kept for the explicit "lean back and watch, read it straight into context the
+instant it arrives" mode. It occupies the turn *by design* (that's what "watch"
+means), and it's no longer required to stay current — the background warmer does
+that. How the loop actually works in `src/server-net.ts`:
+
+- **One catch-up `sync(ctx)` on entry**, then loop, blocking up to `WATCH_MS`
+  (env `MESSENGER_WATCH_MS`, default `550_000` ≈ 9.2 min; parsed defensively so an
+  unset/empty/non-numeric value — e.g. a Windows shell that doesn't expand the
+  `${VAR:-…}` default in `.mcp.json` — falls back to the default instead of
+  collapsing to 0/NaN and re-firing every ~minute).
+- **Each tick (`WATCH_PING_MS` = 3s)** it does NOT poll the network: it reads the
+  **local cache** (cheap), and — if the client sent a `progressToken` — emits one
+  MCP `notifications/progress` ping. That ping is a *keepalive* so progress-aware
+  clients reset their ~60s tool-call timeout and the call can live the full window.
+- **Network backstop (`WATCH_SYNC_MS` = 15s)** it re-runs `sync(ctx)` so mail still
+  surfaces within a single call even when push is off or the WebSocket is blocked
+  (firewall/proxy — common on Windows). Without push this is the delivery path;
+  with push it's a rarely-needed safety net.
+- **Returns** as soon as the local cache has unread mail (marking it read), on
+  client abort, or when the deadline passes (`idle`); the agent re-calls to keep
+  watching.
+
+Note this is a local-cache poll with a network backstop, NOT the pure
+"await the next wake frame" design sketched above — the warmer owns the socket;
+`watch` just observes the cache the warmer (or its own backstop sync) fills.
 
 ### Concurrency note (ties to the `db.ts` decision)
 Two processes touch `~/.cli-chat`: the long-lived MCP server (warmer, writing) and
