@@ -11,12 +11,30 @@ import { initCrypto, generateIdentity, type Identity } from "../../src/crypto.ts
 
 const NOW = 1_700_000_000_000;
 
+// Response bodies come back as `unknown`; tests assert on a known shape, so read
+// them through this typed helper rather than scattering casts at each call site.
+const readJson = async <T>(res: { json(): Promise<unknown> }): Promise<T> => (await res.json()) as T;
+
 before(async () => {
   await initCrypto();
 });
 
-function freshApp(limits?: { unknownPairHourly?: number; unknownRecipientHourly?: number }) {
-  return createApp({ store: nodeSqliteStore(":memory:"), now: () => NOW, limits });
+function freshApp(
+  limits?: { unknownPairHourly?: number; unknownRecipientHourly?: number; unknownSenderDaily?: number },
+  rateLimit?: (bucket: "resolve" | "post-ip" | "post-key", key: string) => Promise<boolean>,
+) {
+  return createApp({ store: nodeSqliteStore(":memory:"), now: () => NOW, limits, rateLimit });
+}
+
+// A fake edge limiter that allows the first `allow[bucket]` calls per (bucket,key)
+// then denies — stands in for the Cloudflare Rate Limiting binding in tests.
+function counterLimiter(allow: Partial<Record<"resolve" | "post-ip" | "post-key", number>>) {
+  const seen: Record<string, number> = {};
+  return async (bucket: "resolve" | "post-ip" | "post-key", key: string) => {
+    const k = `${bucket}:${key}`;
+    seen[k] = (seen[k] ?? 0) + 1;
+    return seen[k] <= (allow[bucket] ?? Infinity);
+  };
 }
 
 // Signed request against app.fetch. path is both the URL path and the value
@@ -78,13 +96,13 @@ test("a signed message can be posted, then drained by its recipient", async () =
 
   // Bob sees it in his summary...
   const summary = await signedRequest(app, bob, "GET", "/mailbox");
-  assert.equal((await summary.json()).count, 1);
+  assert.equal((await readJson<{ count: number }>(summary)).count, 1);
 
   // ...and drains the blob (still ciphertext — the server never decrypts).
   const drain = await signedRequest(app, bob, "GET", "/messages");
-  const { messages } = await drain.json();
+  const { messages } = await readJson<{ messages: { body: string }[] }>(drain);
   assert.equal(messages.length, 1);
-  assert.equal(messages[0].body, "c2VhbGVk");
+  assert.equal(messages[0]?.body, "c2VhbGVk");
 });
 
 test("POST /messages rejects a forged sender (signer ≠ declared sender)", async () => {
@@ -104,7 +122,7 @@ test("POST /messages rejects a forged sender (signer ≠ declared sender)", asyn
   });
   const res = await signedRequest(app, mallory, "POST", "/messages", forged);
   assert.equal(res.status, 403);
-  assert.match((await res.json()).error, /sender does not match/);
+  assert.match((await readJson<{ error: string }>(res)).error, /sender does not match/);
 });
 
 test("POST /messages with a signed-but-unparseable body is a 400", async () => {
@@ -113,7 +131,7 @@ test("POST /messages with a signed-but-unparseable body is a 400", async () => {
   // Signature is valid over the raw bytes, but the bytes aren't JSON.
   const res = await signedRequest(app, alice, "POST", "/messages", "{not json");
   assert.equal(res.status, 400);
-  assert.match((await res.json()).error, /invalid json/);
+  assert.match((await readJson<{ error: string }>(res)).error, /invalid json/);
 });
 
 test("POST /register with a signed-but-unparseable body is a 400", async () => {
@@ -146,7 +164,7 @@ test("POST /messages to a never-registered recipient is a 404", async () => {
   });
   const res = await signedRequest(app, alice, "POST", "/messages", msg);
   assert.equal(res.status, 404);
-  assert.match((await res.json()).error, /unknown recipient/);
+  assert.match((await readJson<{ error: string }>(res)).error, /unknown recipient/);
 });
 
 test("POST /messages with an oversize body is rejected 413", async () => {
@@ -165,7 +183,7 @@ test("POST /messages with an oversize body is rejected 413", async () => {
   });
   const res = await signedRequest(app, alice, "POST", "/messages", msg);
   assert.equal(res.status, 413);
-  assert.match((await res.json()).error, /too large/);
+  assert.match((await readJson<{ error: string }>(res)).error, /too large/);
 });
 
 // A sealed-ish message blob from `from` to `to`, signed by `from`.
@@ -191,7 +209,7 @@ test("an unknown sender is throttled past the per-pair hourly cap", async () => 
   assert.equal((await send(2)).status, 200);
   const blocked = await send(3); // Alice is unknown to Bob and over the cap
   assert.equal(blocked.status, 429);
-  assert.match((await blocked.json()).error, /rate limited/);
+  assert.match((await readJson<{ error: string }>(blocked)).error, /rate limited/);
 });
 
 test("a sender the recipient wrote to first is exempt from throttling", async () => {
@@ -221,6 +239,57 @@ test("the per-recipient backstop caps a Sybil spray from many fresh keys", async
   assert.equal((await spray(1)).status, 200);
   assert.equal((await spray(2)).status, 200);
   assert.equal((await spray(3)).status, 429); // 3rd distinct stranger this hour
+});
+
+test("a single key's cold outreach is capped per day across recipients", async () => {
+  const app = freshApp({ unknownPairHourly: 5, unknownRecipientHourly: 50, unknownSenderDaily: 2 });
+  const spammer = generateIdentity();
+  const r1 = generateIdentity(), r2 = generateIdentity(), r3 = generateIdentity();
+  await register(app, r1, "rrr111");
+  await register(app, r2, "rrr222");
+  await register(app, r3, "rrr333");
+  // Three different new people, one message each: per-pair (5) and per-recipient
+  // (50) caps never bite, so only the daily cold-reach cap (2) can stop the 3rd.
+  assert.equal((await signedRequest(app, spammer, "POST", "/messages", msgFrom(spammer, r1, "c-1"))).status, 200);
+  assert.equal((await signedRequest(app, spammer, "POST", "/messages", msgFrom(spammer, r2, "c-2"))).status, 200);
+  const blocked = await signedRequest(app, spammer, "POST", "/messages", msgFrom(spammer, r3, "c-3"));
+  assert.equal(blocked.status, 429);
+  assert.match((await readJson<{ error: string }>(blocked)).error, /new people/);
+});
+
+test("/resolve is rate-limited per the edge limiter, before the lookup", async () => {
+  const app = freshApp(undefined, counterLimiter({ resolve: 2 }));
+  const alice = generateIdentity();
+  await register(app, alice, "alice1");
+  // First two resolves pass (limiter allows 2); the lookup itself still works.
+  assert.equal((await app.fetch(new Request("http://mailbox/resolve/alice1"))).status, 200);
+  assert.equal((await app.fetch(new Request("http://mailbox/resolve/alice1"))).status, 200);
+  // Third is throttled — even though the handle exists, the limiter gates first.
+  const blocked = await app.fetch(new Request("http://mailbox/resolve/alice1"));
+  assert.equal(blocked.status, 429);
+});
+
+test("POST /messages is rate-limited at the IP layer before auth", async () => {
+  const app = freshApp(undefined, counterLimiter({ "post-ip": 1 }));
+  const alice = generateIdentity();
+  const bob = generateIdentity();
+  await register(app, bob, "bobip1");
+  assert.equal((await signedRequest(app, alice, "POST", "/messages", msgFrom(alice, bob, "i-1"))).status, 200);
+  // Second POST from the same IP (all test requests share the "local" key) → 429,
+  // regardless of validity.
+  const blocked = await signedRequest(app, alice, "POST", "/messages", msgFrom(alice, bob, "i-2"));
+  assert.equal(blocked.status, 429);
+});
+
+test("POST /messages is rate-limited per sender key after auth", async () => {
+  const app = freshApp(undefined, counterLimiter({ "post-key": 2 }));
+  const alice = generateIdentity();
+  const bob = generateIdentity();
+  await register(app, bob, "bobkey");
+  assert.equal((await signedRequest(app, alice, "POST", "/messages", msgFrom(alice, bob, "k-1"))).status, 200);
+  assert.equal((await signedRequest(app, alice, "POST", "/messages", msgFrom(alice, bob, "k-2"))).status, 200);
+  const blocked = await signedRequest(app, alice, "POST", "/messages", msgFrom(alice, bob, "k-3"));
+  assert.equal(blocked.status, 429);
 });
 
 test("register then resolve a handle round-trips public keys", async () => {

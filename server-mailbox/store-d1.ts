@@ -135,5 +135,19 @@ export function d1Store(db: D1Like): Store {
         .first()) as { n?: number } | null;
       return Number(row?.n ?? 0);
     },
+
+    async countRecentSentToNew(sender: string, since: number): Promise<number> {
+      const row = (await db
+        .prepare(
+          `SELECT COUNT(*) AS n FROM messages m
+           WHERE m.sender = ? AND m.received_at >= ?
+             AND NOT EXISTS (
+               SELECT 1 FROM known k WHERE k.owner = m.recipient AND k.peer = m.sender
+             )`,
+        )
+        .bind(sender, since)
+        .first()) as { n?: number } | null;
+      return Number(row?.n ?? 0);
+    },
   };
 }
