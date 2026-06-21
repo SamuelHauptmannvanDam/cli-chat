@@ -10,7 +10,7 @@
 import { readFileSync } from "node:fs";
 import { initCrypto } from "./crypto.ts";
 import { loadIdentity } from "./identity.ts";
-import { loadContacts, displayNameByKey } from "./contacts.ts";
+import { loadContacts, senderLabel } from "./contacts.ts";
 import { openMailbox, unreadFor, markRead } from "./db.ts";
 import { createMailboxClient } from "./mailbox-client.ts";
 import { sync, type NetContext } from "./core-net.ts";
@@ -82,21 +82,48 @@ try {
     cache,
     client: createMailboxClient(url, me, now),
     now,
+    // Persist any contact auto-saved from an incoming self-introduction during sync.
+    contactsPath: contactsFile(user),
   };
+
+  // If this account never got a real display name (older identity, or one
+  // backfilled to the handle), the people we message see only a key prefix. Nudge
+  // the agent — once, on session open — to ask what to call the user.
+  const namePlaceholder = !me.name || me.name === me.handle || me.name === user;
 
   // Who this device represents — handed to the agent (not the user) as context
   // so it knows whose messenger it is. Display name lives in the identity now.
-  const whoami =
+  let whoami =
     `You are acting as the messenger for ${me.name ?? user}` +
     (me.handle ? ` (their code is ${me.handle})` : "") + ".";
+
+  // The ask to run, once on session open, when the user has no real name set —
+  // their name now travels with every message they send, so it's worth having.
+  const nudgeAsk = namePlaceholder && hookEventName === "SessionStart";
+  const nameAskUser =
+    "👤 You haven't set a name yet — it's what people see when you message them. " +
+    "What should I call you?";
+  if (nudgeAsk) {
+    whoami +=
+      " The user has NOT set a display name (it's still a placeholder), so the " +
+      "people they message see only a key prefix. Their name now travels with " +
+      "each message they send. Ask them once, conversationally, what you should " +
+      "call them, then call create_account with that name to set it. Don't nag if " +
+      "they decline.";
+  }
 
   await sync(ctx);
   const unread = unreadFor(cache, me.signPub);
   if (unread.length === 0) {
     // No mail. On session open, still give the agent its identity (agent-only,
-    // no user-facing systemMessage). On per-turn checks, stay silent.
+    // no user-facing systemMessage) — plus, if needed, the name ask.
     if (hookEventName === "SessionStart") {
-      console.log(JSON.stringify({ hookSpecificOutput: { hookEventName, additionalContext: whoami } }));
+      console.log(
+        JSON.stringify({
+          ...(nudgeAsk ? { systemMessage: nameAskUser } : {}),
+          hookSpecificOutput: { hookEventName, additionalContext: whoami },
+        }),
+      );
     }
     process.exit(0);
   }
@@ -104,7 +131,7 @@ try {
   // What the USER sees: just a count + who from, and an offer to read — NOT the
   // bodies. Senders are de-duplicated and listed so "1 new message from Sam"
   // reads naturally.
-  const senders = [...new Set(unread.map((m) => displayNameByKey(book, m.sender)))];
+  const senders = [...new Set(unread.map((m) => senderLabel(book, m.sender)))];
   const noun = `${unread.length} new message${unread.length > 1 ? "s" : ""}`;
   let summary = `📬 ${noun} from ${senders.join(", ")} — want me to read ${unread.length > 1 ? "them" : "it"}?`;
   // On session open, also nudge the hands-free option: a watch loop that
@@ -113,13 +140,14 @@ try {
   if (hookEventName === "SessionStart") {
     summary += `\n   ↳ Tip: write "watch" in a new terminal for auto-reading new messages into our chat.`;
   }
+  if (nudgeAsk) summary += `\n   ↳ ${nameAskUser}`;
 
   // What the AGENT gets (privately, hidden from the user): the full bodies + ids
   // so it can print them ON REQUEST without re-fetching, plus how to behave. The
   // messages are marked read here so the per-turn hook won't re-announce them.
   const bodies: string[] = [];
   for (const m of unread) {
-    bodies.push(`\nFrom ${displayNameByKey(book, m.sender)} (id ${m.id}):\n  ${m.body}`);
+    bodies.push(`\nFrom ${senderLabel(book, m.sender)} (id ${m.id}):\n  ${m.body}`);
     markRead(cache, m.id, now());
   }
 

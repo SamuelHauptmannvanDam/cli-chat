@@ -180,23 +180,94 @@ describe("reply failures", () => {
     assert.equal(r.ok === false && r.reason, "not_found");
   });
 
-  test("replying to a sender who isn't in the book is no_keys", async () => {
-    // Bob receives from a stranger he hasn't saved, then tries to reply.
+  test("a reply to a self-introduced stranger now succeeds (they were auto-saved)", async () => {
+    // Bob receives from a stranger he hasn't saved. Their message carries a
+    // self-introduction (name + reply key), so Bob can answer — and they're
+    // auto-saved for next time.
     const strangerId = generateIdentity();
     const stranger = makeContext(mb.baseUrl, strangerId);
+    stranger.me.name = "Mallory";
     const bobId = generateIdentity();
-    const bob = makeContext(mb.baseUrl, bobId, [
-      // Bob knows the stranger's keys well enough to receive, but we omit them
-      // from his book so the reply lookup fails.
-    ]);
-    await regSelf(bob); // Bob is a real account → registered recipient
-    // Stranger needs Bob in their book to send.
+    const bob = makeContext(mb.baseUrl, bobId);
+    await regSelf(bob);
+    await regSelf(stranger); // so Bob's reply can be delivered back
     stranger.book.contacts.push({ id: "bob", name: "Bob", signPub: bobId.signPub, boxPub: bobId.boxPub });
     const sent = await sendMessage(stranger, { to: "Bob", body: "who am I?" });
     assert.ok(sent.ok);
     await sync(bob);
-    const r = await draftReply(bob, { in_reply_to: sent.ok ? sent.id : "", body: "hello?" });
+    // Auto-saved under their own name.
+    assert.equal(bob.book.contacts.find((c) => c.signPub === strangerId.signPub)?.name, "Mallory");
+    const r = await draftReply(bob, { in_reply_to: sent.ok ? sent.id : "", body: "hello!" });
+    assert.ok(r.ok && r.to.name === "Mallory");
+  });
+
+  test("replying to a legacy (no self-introduction) stranger is still no_keys", async () => {
+    // A message sealed WITHOUT the self-introduction envelope (an older client):
+    // no reply key travels, so there's nothing to auto-save or reply to.
+    const { seal } = await import("../../src/crypto.ts");
+    const { randomUUID } = await import("node:crypto");
+    const strangerId = generateIdentity();
+    const bobId = generateIdentity();
+    const bob = makeContext(mb.baseUrl, bobId);
+    await regSelf(bob);
+    const strangerClient = makeContext(mb.baseUrl, strangerId).client;
+    const id = randomUUID();
+    await strangerClient.send({
+      id,
+      recipient: bobId.signPub,
+      sender: strangerId.signPub,
+      body: seal("plain legacy body", bobId.boxPub), // raw text, no envelope
+      tags: null,
+      created_at: now(),
+      in_reply_to: null,
+    });
+    await sync(bob);
+    // Nothing auto-saved; the body still reads through as plain text.
+    assert.equal(bob.book.contacts.length, 0);
+    const read = await readMessage(bob, { id });
+    assert.ok(read.ok && read.body === "plain legacy body");
+    const r = await draftReply(bob, { in_reply_to: id, body: "hello?" });
     assert.equal(r.ok === false && r.reason, "no_keys");
+  });
+});
+
+describe("sender identity", () => {
+  test("a new sender shows as 'Name (handle)' and is auto-saved", async () => {
+    const aliceId = generateIdentity();
+    const alice = makeContext(mb.baseUrl, aliceId);
+    alice.me.name = "Alice";
+    alice.me.handle = "alice1";
+    const bobId = generateIdentity();
+    const bob = makeContext(mb.baseUrl, bobId);
+    await regSelf(bob);
+    await regSelf(alice); // so Bob's "write Alice" reply can be delivered
+    alice.book.contacts.push({ id: "bob", name: "Bob", signPub: bobId.signPub, boxPub: bobId.boxPub });
+
+    await sendMessage(alice, { to: "Bob", body: "hi, new here" });
+    const avail = await messagesAvailable(bob);
+    assert.equal(avail.count, 1);
+    assert.equal(avail.messages[0].from, "Alice (alice1)");
+    // Auto-saved, so a bare "write Alice" works next.
+    const sent = await sendMessage(bob, { to: "Alice", body: "welcome" });
+    assert.ok(sent.ok && sent.to.name === "Alice");
+  });
+
+  test("your own nickname wins over the sender's self-name", async () => {
+    const aliceId = generateIdentity();
+    const alice = makeContext(mb.baseUrl, aliceId);
+    alice.me.name = "Alice";
+    alice.me.handle = "alice1";
+    const bobId = generateIdentity();
+    // Bob already calls her "Boss" — his nick must win, and no "(handle)" shown.
+    const bob = makeContext(mb.baseUrl, bobId, [
+      { id: "boss", name: "Boss", signPub: aliceId.signPub, boxPub: aliceId.boxPub },
+    ]);
+    await regSelf(bob);
+    alice.book.contacts.push({ id: "bob", name: "Bob", signPub: bobId.signPub, boxPub: bobId.boxPub });
+
+    await sendMessage(alice, { to: "Bob", body: "report?" });
+    const avail = await messagesAvailable(bob);
+    assert.equal(avail.messages[0].from, "Boss");
   });
 });
 
