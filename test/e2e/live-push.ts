@@ -64,12 +64,12 @@ function ctxFor(me: Identity, contacts: any[], file: string): NetContext {
 }
 const samCtx = ctxFor(
   sam,
-  [{ id: "niels", name: "Niels", signPub: niels.signPub, boxPub: niels.boxPub }],
+  [{ name: "Niels", signPub: niels.signPub, boxPub: niels.boxPub }],
   join(tmp, "sam.json"),
 );
 const nielsCtx = ctxFor(
   niels,
-  [{ id: "sam", name: "Sam", signPub: sam.signPub, boxPub: sam.boxPub }],
+  [{ name: "Sam", signPub: sam.signPub, boxPub: sam.boxPub }],
   join(tmp, "niels.json"),
 );
 

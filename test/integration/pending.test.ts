@@ -39,7 +39,7 @@ test("refreshPending mirrors unread to pending.json; an ack marks read and drops
   const sender = generateIdentity();
   const book: ContactBook = {
     me: me.signPub,
-    contacts: [{ id: "ann", name: "Ann", signPub: sender.signPub, boxPub: sender.boxPub }],
+    contacts: [{ name: "Ann", signPub: sender.signPub, boxPub: sender.boxPub }],
   };
   const cache = openMailbox(":memory:");
   const ctx = { me, book, cache, client: {}, now: () => 1000 } as unknown as NetContext;

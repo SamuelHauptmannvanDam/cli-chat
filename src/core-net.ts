@@ -30,18 +30,17 @@ export interface NetContext {
 }
 
 // Save (or update) a contact in the book and persist it to disk if we know
-// where the book lives. Replaces any entry with the same local name or key.
+// where the book lives. signPub is the sole identity: we upsert on the key, so
+// re-saving the same person replaces them while two different people may share a
+// name (the resolver tells them apart, returning `ambiguous` on a name clash).
 // `auto` marks a contact saved from a received self-introduction (their own name,
 // not a nick you chose); a manual save/rename leaves it off so the nick wins.
 export function rememberContact(
   ctx: NetContext,
   c: { name: string; signPub: string; boxPub: string; handle?: string; auto?: boolean },
 ): void {
-  const id = c.name.toLowerCase();
-  ctx.book.contacts = ctx.book.contacts.filter(
-    (x) => x.id !== id && x.signPub !== c.signPub,
-  );
-  const entry: Contact = { id, name: c.name, signPub: c.signPub, boxPub: c.boxPub };
+  ctx.book.contacts = ctx.book.contacts.filter((x) => x.signPub !== c.signPub);
+  const entry: Contact = { name: c.name, signPub: c.signPub, boxPub: c.boxPub };
   if (c.handle) entry.handle = c.handle;
   if (c.auto) entry.auto = true;
   ctx.book.contacts.push(entry);
