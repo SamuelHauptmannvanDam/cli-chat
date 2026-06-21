@@ -1,8 +1,17 @@
-// Phase 0 mailbox: a local SQLite file acting as the store-and-forward relay.
-// No network, no encryption yet — schema mirrors §6 of PLAN.md minus the
-// crypto/sig columns so Phase 1 can grow into it without a rewrite.
+// Local inbox cache: a small SQLite file on the user's machine holding their
+// decrypted recent messages (drained from the hosted mailbox). NOT the mailbox
+// itself — that's the Cloudflare Worker + D1.
+//
+// Backed by node-sqlite3-wasm (SQLite compiled to WebAssembly) rather than the
+// built-in node:sqlite, so the published package runs on Node 20+ on any OS with
+// no native build step — node:sqlite is only usable unflagged on Node 24+, which
+// silently broke installs on the Node 22 LTS line.
 
-import { DatabaseSync } from "node:sqlite";
+import sqlite from "node-sqlite3-wasm";
+const { Database } = sqlite;
+
+// The handle type consumers pass around (so nothing else imports the sqlite lib).
+export type Mailbox = InstanceType<typeof Database>;
 
 export interface MessageRow {
   id: string;
@@ -16,14 +25,15 @@ export interface MessageRow {
   in_reply_to: string | null; // threading: id of the message this answers
 }
 
-export function openMailbox(path: string): DatabaseSync {
-  const db = new DatabaseSync(path);
-  // WAL + a busy timeout so the MCP server and the SessionStart hook can share
-  // one inbox.db without locking each other out.
+export function openMailbox(path: string): Mailbox {
+  const db = new Database(path);
+  // Best-effort durability/concurrency pragmas. WAL isn't supported by every
+  // wasm VFS; the busy timeout helps the MCP server and the SessionStart hook
+  // share one inbox.db. Harmless if the backend rejects them.
   try {
     db.exec(`PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 3000;`);
   } catch {
-    /* :memory: and some FS don't support WAL — harmless */
+    /* unsupported backend (e.g. :memory:) — fine */
   }
   db.exec(`
     CREATE TABLE IF NOT EXISTS messages (
@@ -42,51 +52,38 @@ export function openMailbox(path: string): DatabaseSync {
   return db;
 }
 
-export function insertMessage(db: DatabaseSync, m: MessageRow): void {
-  db.prepare(
+export function insertMessage(db: Mailbox, m: MessageRow): void {
+  db.run(
     `INSERT INTO messages
        (id, recipient, sender, body, tags, created_at, fetched_at, read_at, in_reply_to)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(
-    m.id,
-    m.recipient,
-    m.sender,
-    m.body,
-    m.tags,
-    m.created_at,
-    m.fetched_at,
-    m.read_at,
-    m.in_reply_to,
+    [m.id, m.recipient, m.sender, m.body, m.tags, m.created_at, m.fetched_at, m.read_at, m.in_reply_to],
   );
 }
 
 // Inbound messages for a user that haven't been surfaced (read) yet.
-export function unreadFor(db: DatabaseSync, me: string): MessageRow[] {
-  return db
-    .prepare(
-      `SELECT * FROM messages
+export function unreadFor(db: Mailbox, me: string): MessageRow[] {
+  return db.all(
+    `SELECT * FROM messages
        WHERE recipient = ? AND read_at IS NULL
        ORDER BY created_at ASC`,
-    )
-    .all(me) as unknown as MessageRow[];
+    [me],
+  ) as unknown as MessageRow[];
 }
 
-export function getMessage(db: DatabaseSync, id: string): MessageRow | undefined {
-  return db.prepare(`SELECT * FROM messages WHERE id = ?`).get(id) as
-    | MessageRow
-    | undefined;
+export function getMessage(db: Mailbox, id: string): MessageRow | undefined {
+  // node-sqlite3-wasm returns null (not undefined) for a miss.
+  return (db.get(`SELECT * FROM messages WHERE id = ?`, [id]) as unknown as MessageRow) ?? undefined;
 }
 
-export function markFetched(db: DatabaseSync, id: string, now: number): void {
-  db.prepare(
-    `UPDATE messages SET fetched_at = COALESCE(fetched_at, ?) WHERE id = ?`,
-  ).run(now, id);
+export function markFetched(db: Mailbox, id: string, now: number): void {
+  db.run(`UPDATE messages SET fetched_at = COALESCE(fetched_at, ?) WHERE id = ?`, [now, id]);
 }
 
-export function markRead(db: DatabaseSync, id: string, now: number): void {
-  db.prepare(`UPDATE messages SET read_at = ?, fetched_at = COALESCE(fetched_at, ?) WHERE id = ?`).run(
+export function markRead(db: Mailbox, id: string, now: number): void {
+  db.run(`UPDATE messages SET read_at = ?, fetched_at = COALESCE(fetched_at, ?) WHERE id = ?`, [
     now,
     now,
     id,
-  );
+  ]);
 }
