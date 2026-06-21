@@ -1,6 +1,6 @@
 {
   "name": "cli-chat-mcp",
-  "version": "0.4.11",
+  "version": "0.4.12",
   "type": "module",
   "description": "Headless cross-CLI messenger for coding agents (MCP)",
   "license": "MIT",
