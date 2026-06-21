@@ -7,6 +7,7 @@ import {
   resolve,
   displayName,
   displayNameByKey,
+  senderLabel,
   contactByKey,
   loadContacts,
   type ContactBook,
@@ -94,6 +95,24 @@ test("displayName reverse-maps an id, falling back to the raw id", () => {
 test("displayNameByKey maps a signPub, falling back to a short prefix", () => {
   assert.equal(displayNameByKey(book, "sam-sign"), "Sam");
   assert.equal(displayNameByKey(book, "abcdef0123456789"), "abcdef01…");
+});
+
+test("senderLabel: nick wins, auto-saved shows name+handle, unknown shows prefix", () => {
+  const labelBook: ContactBook = {
+    me: "me-key",
+    contacts: [
+      // A nick the user chose — shown plain, never their self-name or handle.
+      { id: "boss", name: "Boss", signPub: "alice-sign", boxPub: "a-box", handle: "alice1" },
+      // Auto-saved from a self-introduction — shown as "name (handle)".
+      { id: "mallory", name: "Mallory", signPub: "mal-sign", boxPub: "m-box", handle: "mal007", auto: true },
+      // Auto-saved but no handle known — falls back to just the name.
+      { id: "nohandle", name: "Pat", signPub: "pat-sign", boxPub: "p-box", auto: true },
+    ],
+  };
+  assert.equal(senderLabel(labelBook, "alice-sign"), "Boss");
+  assert.equal(senderLabel(labelBook, "mal-sign"), "Mallory (mal007)");
+  assert.equal(senderLabel(labelBook, "pat-sign"), "Pat");
+  assert.equal(senderLabel(labelBook, "abcdef0123456789"), "abcdef01…");
 });
 
 test("contactByKey finds the contact for a signPub, else undefined", () => {

@@ -29,6 +29,22 @@ open), THEN call `messages_available` and `read_message` to fetch new ones.
 For mail that arrived after the hook ran, call `read_message` (by id, or no id
 for the oldest). Say in one line who it's from and what they want.
 
+## Who a message is from (sender identity)
+Each message carries the sender's own name and 6-char handle. So a message from
+someone **new** shows as `Sam (dC0v6m)` rather than a key prefix, and they are
+**auto-saved** to the address book — afterwards a plain "write Sam" works and you
+can reply immediately without asking for their code. But **your nickname always
+wins**: once the user has saved or renamed a contact, refer to them by that nick
+in the terminal, never by what they call themselves — their self-name and the
+user's nick for them are two different things. So if you already know `6e7a0f5f…`
+as "Niels", a new message from them reads as from "Niels", full stop.
+
+## Your own name
+The user's display name travels with every message they send (it's what
+recipients see). If they don't have one set, the session-start hook will prompt
+you to ask "what should I call you?"; pass their answer to `create_account` to set
+it. The same call updates the name later if they say "call me X".
+
 ## Watch mode (hands-free)
 When the user says "watch" (or "watch for messages", "keep an eye out"), call the
 `watch` tool. It long-polls ~50s and returns any new mail; after it returns —
@@ -70,9 +86,9 @@ code/number/handle?", call `my_key` and give them the 6-char code to share.
 ## Listing contacts
 When the user asks "who are my contacts?", "who can I message?", or "show my
 address book", call `list_contacts`. It returns every saved person with their
-name, any aliases, and shareable key. Report them as a short list (names, plus a
-count). If it returns zero, say the address book is empty and remind them they
-can add someone with a 6-character code.
+name, any aliases, their 6-char handle, and shareable key. Report them as a short
+list (names, plus a count). If it returns zero, say the address book is empty and
+remind them they can add someone with a 6-character code.
 
 ## Renaming a contact
 When the user says "rename Niels to Bob" (or "call Niels something else"), call
