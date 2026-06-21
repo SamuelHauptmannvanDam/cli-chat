@@ -63,8 +63,13 @@ export function isHandle(s: string): boolean {
 
 // Random handle using crypto-grade bytes (rejection-free: map each byte mod 62).
 export function randomHandle(randomBytes: Uint8Array): string {
+  if (randomBytes.length < HANDLE_LEN) {
+    throw new Error(`randomHandle needs at least ${HANDLE_LEN} bytes, got ${randomBytes.length}`);
+  }
   let h = "";
-  for (let i = 0; i < HANDLE_LEN; i++) h += ALPHABET[randomBytes[i] % 62];
+  // for...of over a fixed-length view yields each byte as a plain number (not
+  // number | undefined), so the lookup can't silently produce "undefined".
+  for (const byte of randomBytes.subarray(0, HANDLE_LEN)) h += ALPHABET[byte % 62];
   return h;
 }
 

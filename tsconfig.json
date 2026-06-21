@@ -1,0 +1,17 @@
+{
+  // Node-runtime project: the CLI/MCP server, hooks, tests, and the Node-backed
+  // mailbox (node:sqlite). Worker-only files live in tsconfig.worker.json.
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023"],
+    "types": ["node"]
+  },
+  "include": [
+    "src/**/*.ts",
+    "test/**/*.ts",
+    "server-mailbox/app.ts",
+    "server-mailbox/verify.ts",
+    "server-mailbox/store.ts",
+    "server-mailbox/node.ts"
+  ]
+}

@@ -97,7 +97,7 @@ check("Niels sees 1 message from Sam", avail.count === 1 && avail.messages[0]?.f
 check("preview is the DECRYPTED text", avail.messages[0]?.preview === PLAINTEXT);
 
 // 4. Read + clear.
-const read = await readMessage(niels, { id: avail.messages[0].id });
+const read = await readMessage(niels, { id: avail.messages[0]!.id });
 check("Niels reads the decrypted body", read.ok === true && read.body === PLAINTEXT);
 check("inbox clears after read", (await messagesAvailable(niels)).count === 0);
 
@@ -106,7 +106,7 @@ const reply = await draftReply(niels, { in_reply_to: sentId, body: "Free Sat + S
 check("Niels replies to Sam", reply.ok === true && reply.to.name === "Sam");
 
 const samInbox = await messagesAvailable(sam);
-check("Sam receives the reply", samInbox.count === 1 && samInbox.messages[0].from === "Niels");
+check("Sam receives the reply", samInbox.count === 1 && samInbox.messages[0]!.from === "Niels");
 const samRead = await readMessage(sam, {});
 check("Sam reads availability", samRead.ok === true && samRead.body.includes("Sat + Sun"));
 check("reply threads to the original", samRead.ok === true && samRead.in_reply_to === sentId);

@@ -44,7 +44,7 @@ test("drain returns blobs then marks them fetched (one-shot)", () => {
   store.put(wire({ id: "b", created_at: 2 }));
   const first = store.drain("bob", 5000) as WireMessage[];
   assert.deepEqual(first.map((m) => m.id), ["a", "b"]);
-  assert.equal(first[0].body, "ciphertext");
+  assert.equal(first[0]?.body, "ciphertext");
   // Already fetched → drains empty the second time, and summary clears.
   assert.equal((store.drain("bob", 6000) as WireMessage[]).length, 0);
   assert.equal((store.summary("bob") as any[]).length, 0);
