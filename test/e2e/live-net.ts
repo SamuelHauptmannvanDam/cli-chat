@@ -3,11 +3,11 @@
 // the server stores only ciphertext, and that sender spoofing is rejected.
 
 import assert from "node:assert/strict";
-import { serve } from "@hono/node-server";
 import { DatabaseSync } from "node:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { serveFetch } from "../serve-fetch.ts";
 import { createApp } from "../../server-mailbox/app.ts";
 import { nodeSqliteStore } from "../../server-mailbox/store.ts";
 import { initCrypto, generateIdentity } from "../../src/crypto.ts";
@@ -30,11 +30,8 @@ const now = () => Date.now();
 
 // --- stand up the hosted mailbox on a real port ---------------------------
 const app = createApp({ store: nodeSqliteStore(serverDbPath), now });
-const httpServer = await new Promise<any>((res) => {
-  const srv = serve({ fetch: app.fetch, port: 0 }, () => res(srv));
-});
-const port = httpServer.address().port;
-const baseUrl = `http://localhost:${port}`;
+const httpServer = await serveFetch(app.fetch);
+const baseUrl = httpServer.url;
 
 // --- two identities + cross-referenced contact books ----------------------
 const samId = generateIdentity();
@@ -63,6 +60,11 @@ const niels: NetContext = {
   client: createMailboxClient(baseUrl, nielsId, now),
   now,
 };
+
+// Both register their handles first — real accounts always do at setup, and the
+// mailbox rejects mail to never-registered keys.
+await sam.client.registerHandle(samId.signPub.slice(0, 6));
+await niels.client.registerHandle(nielsId.signPub.slice(0, 6));
 
 let passed = 0;
 function check(label: string, cond: boolean) {

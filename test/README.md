@@ -20,8 +20,9 @@ test/
   and `roundtrip` — the whole `core-net` send → sync → read → reply loop over an
   in-process Hono mailbox with real sealed-box encryption.
 - **e2e/** — `live-net.ts` (self-contained, run by `test:e2e`) and
-  `live-net-mcp.ts`, which drives two real MCP server processes and needs a
-  running mailbox (`npm run mailbox`) plus `users/sam` + `users/niels`.
+  `live-net-mcp.ts`, which drives two real MCP server processes against the
+  deployed mailbox (override with `MESSENGER_MAILBOX_URL`) plus `users/sam` +
+  `users/niels`.
 
 ## Running
 
