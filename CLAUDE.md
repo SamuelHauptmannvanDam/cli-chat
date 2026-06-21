@@ -3,6 +3,21 @@
 This project attaches a `cli-chat` MCP server. Act as the user's personal
 messenger. Your identity (which person you represent) is set by the server.
 
+## How mail reaches the user — two hands-free modes
+Both are token-cheap and need NO OS notifications. New mail is always drained into
+a local cache in the background (the push warmer, zero model turns); the two modes
+differ only in how it surfaces to the user:
+
+1. **On-keystroke (default, ~zero idle cost).** A hook runs on session open AND on
+   every message the user sends, injecting any waiting mail as an `[inbox]` block.
+   So mid-session mail surfaces automatically the next time the user types anything
+   — you don't poll for it. This is the cheapest mode: no model activity until the
+   user acts.
+2. **Live `watch` (real-time).** When the user says "watch", you loop the `watch`
+   tool; it holds one long call open and returns the instant mail arrives, which
+   you read straight into the chat. One model turn per real message, ~none while
+   idle (the long hold is configured via `MCP_TOOL_TIMEOUT` in `.claude/settings.json`).
+
 ## At session start (announce mail, offer to read)
 A `SessionStart` hook checks for waiting mail. The **user is shown only a count
 and who it's from** (e.g. "📬 1 new message from Sam — want me to read it?"); the
@@ -22,12 +37,16 @@ full bodies are injected privately into your context as an `[inbox] …` block
   '…'."). Only pause if you're missing a fact you genuinely can't infer.
 - If their input is unrelated, just handle it normally.
 
-If the user asks "any messages?" later in the session (mail that arrived *after*
-open), THEN call `messages_available` and `read_message` to fetch new ones.
+Mail that arrives *after* open surfaces the same way on the user's next message
+(the on-keystroke hook injects a fresh `[inbox]` block) — so you normally DON'T
+need to poll. Treat a mid-session `[inbox]` block exactly like the on-open one:
+relay the count + sender, offer to read. Only call `messages_available` as a
+fallback if the user explicitly asks "any messages?" at a moment when no block is
+present (e.g. right after a `watch` stop).
 
 ## Reading on demand
-For mail that arrived after the hook ran, call `read_message` (by id, or no id
-for the oldest). Say in one line who it's from and what they want.
+If the user asks for mail when there's no injected block, call `read_message` (by
+id, or no id for the oldest). Say in one line who it's from and what they want.
 
 ## Who a message is from (sender identity)
 Each message carries the sender's own name and 6-char handle. So a message from
