@@ -25,12 +25,21 @@ const user = currentUser();
 // the event that actually fired, so read the real event name off stdin and
 // echo it back. Default to SessionStart if stdin isn't valid hook JSON.
 let hookEventName = "SessionStart";
+// Stop hooks pass stop_hook_active=true when the stop is itself the result of a
+// previous Stop-hook continuation — our guard against looping on the forced turn.
+let stopHookActive = false;
 try {
   const payload = JSON.parse(readFileSync(0, "utf8"));
   if (payload?.hook_event_name) hookEventName = payload.hook_event_name;
+  if (payload?.stop_hook_active) stopHookActive = true;
 } catch {
   // no/invalid stdin — keep the default
 }
+
+// On a Stop that's already a continuation of our own block, do nothing — the
+// mail we surfaced was marked read, so this only guards the rare race where the
+// re-prompted turn hasn't relayed yet. Cheaper than re-syncing the network.
+if (hookEventName === "Stop" && stopHookActive) process.exit(0);
 
 // Does this device have an account yet? If not, nudge the user to set up — but
 // only ONCE per session (on SessionStart), never nagging on every prompt. We
@@ -151,26 +160,41 @@ try {
     markRead(cache, m.id, now());
   }
 
-  console.log(
-    JSON.stringify({
-      systemMessage: summary,
-      hookSpecificOutput: {
-        hookEventName,
-        additionalContext:
-          whoami +
-          `\n\n[inbox] ${noun} waiting (already marked read). The user has ONLY ` +
-          `been shown a count, NOT the contents. Do NOT print the bodies below ` +
-          `unless the user asks to hear them (e.g. "read it", "go on", "yes"); ` +
-          `then print the relevant message in full. Do NOT call ` +
-          `messages_available/read_message for these — use the bodies here. To ` +
-          `reply, use draft_reply with the id, asking for any missing fact first. ` +
-          `The on-open summary already shows a "say watch" tip, so don't repeat ` +
-          `it; if the user says "watch", call the \`watch\` tool and auto-read new ` +
-          `mail in full as it arrives.\n` +
-          bodies.join("\n"),
-      },
-    }),
-  );
+  const agentContext =
+    whoami +
+    `\n\n[inbox] ${noun} waiting (already marked read). The user has ONLY ` +
+    `been shown a count, NOT the contents. Do NOT print the bodies below ` +
+    `unless the user asks to hear them (e.g. "read it", "go on", "yes"); ` +
+    `then print the relevant message in full. Do NOT call ` +
+    `messages_available/read_message for these — use the bodies here. To ` +
+    `reply, use draft_reply with the id, asking for any missing fact first. ` +
+    `The on-open summary already shows a "say watch" tip, so don't repeat ` +
+    `it; if the user says "watch", call the \`watch\` tool and auto-read new ` +
+    `mail in full as it arrives.\n` +
+    bodies.join("\n");
+
+  if (hookEventName === "Stop") {
+    // The turn just ended, so additionalContext would sit unread until the user
+    // types again — defeating the point. Instead block the stop: the user sees
+    // the count via systemMessage and the agent earns one more turn (reason) to
+    // relay it. Mail is already marked read + stopHookActive guards re-entry, so
+    // the next Stop finds nothing and lets the turn end normally — no loop.
+    console.log(
+      JSON.stringify({
+        decision: "block",
+        reason:
+          `Mail arrived while you were working — surface it now. ` + agentContext,
+        systemMessage: summary,
+      }),
+    );
+  } else {
+    console.log(
+      JSON.stringify({
+        systemMessage: summary,
+        hookSpecificOutput: { hookEventName, additionalContext: agentContext },
+      }),
+    );
+  }
 } catch {
   process.exit(0);
 }

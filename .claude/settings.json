@@ -39,6 +39,18 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/src/check-inbox.ts\"",
+            "timeout": 12,
+            "statusMessage": "Checking messenger inbox..."
+          }
+        ]
+      }
     ]
   }
 }
