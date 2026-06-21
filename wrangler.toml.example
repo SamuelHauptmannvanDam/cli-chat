@@ -20,9 +20,11 @@
 #     "ALTER TABLE messages ADD COLUMN received_at INTEGER"
 # (The node/dev driver self-heals this automatically; only D1 needs the step.)
 
-# Worker name = first segment of the URL: mailbox.<account-subdomain>.workers.dev
+# Worker name = first segment of the URL: <name>.<account-subdomain>.workers.dev
 # (the D1 database below keeps its own name, "cli-chat", and its data.)
-name = "mailbox"
+# Pick your own; this becomes the public URL you point clients at via
+# MESSENGER_MAILBOX_URL.
+name = "<your-worker-name>"
 main = "server-mailbox/worker.ts"
 compatibility_date = "2026-01-01"
 compatibility_flags = ["nodejs_compat"]
@@ -30,7 +32,8 @@ compatibility_flags = ["nodejs_compat"]
 [[d1_databases]]
 binding = "DB"
 database_name = "cli-chat"
-database_id = "3789e756-8aaf-42ab-8366-1d289133b39a"
+# Run `npx wrangler d1 create cli-chat` and paste the printed id here.
+database_id = "<your-d1-database-id>"
 
 # Push delivery (PUSH.md): one Inbox Durable Object per recipient holds their
 # hibernatable WebSockets; POST /messages wakes them. No persistent DO storage

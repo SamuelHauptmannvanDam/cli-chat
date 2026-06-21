@@ -3,7 +3,7 @@
 //
 // Default is the hosted worker so a bare `npx cli-chat-mcp` works with no env.
 // Override per-process with MESSENGER_MAILBOX_URL — e.g. http://localhost:8787
-// when developing against a local mailbox (`npm run mailbox`).
+// when developing against a local mailbox (`npx wrangler dev`).
 
 export const DEFAULT_MAILBOX_URL = "https://mailbox.cli-chat-mcp.workers.dev";
 

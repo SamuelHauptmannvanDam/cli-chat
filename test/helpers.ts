@@ -4,10 +4,10 @@
 // initialised once per process; node:test isolates each test file in its own
 // process, so every file that imports this gets a clean slate.
 
-import { serve } from "@hono/node-server";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { serveFetch } from "./serve-fetch.ts";
 import { createApp } from "../server-mailbox/app.ts";
 import { nodeSqliteStore, type Store } from "../server-mailbox/store.ts";
 import { initCrypto, generateIdentity, type Identity } from "../src/crypto.ts";
@@ -35,10 +35,8 @@ export async function startMailbox(clock: () => number = now): Promise<Mailbox> 
   const dbPath = join(dir, "mailbox.db");
   const store = nodeSqliteStore(dbPath);
   const app = createApp({ store, now: clock });
-  const srv = await new Promise<any>((res) => {
-    const s = serve({ fetch: app.fetch, port: 0 }, () => res(s));
-  });
-  const baseUrl = `http://localhost:${srv.address().port}`;
+  const srv = await serveFetch(app.fetch);
+  const baseUrl = srv.url;
   return {
     baseUrl,
     store,
