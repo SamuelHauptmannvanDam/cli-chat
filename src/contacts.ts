@@ -91,3 +91,12 @@ export function senderLabel(book: ContactBook, signPub: string): string {
 export function contactByKey(book: ContactBook, signPub: string): Contact | undefined {
   return book.contacts.find((c) => c.signPub === signPub);
 }
+
+// Drop a contact by key (signPub is the sole identity, so this is exact and can
+// only ever remove the one entry). Returns true if a contact was removed, false
+// if no entry had that key. Mutates the book in place; the caller persists.
+export function removeContactByKey(book: ContactBook, signPub: string): boolean {
+  const before = book.contacts.length;
+  book.contacts = book.contacts.filter((c) => c.signPub !== signPub);
+  return book.contacts.length < before;
+}
