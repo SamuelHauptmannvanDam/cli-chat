@@ -13,9 +13,9 @@ import { loadIdentity } from "./identity.ts";
 import { loadContacts, senderLabel } from "./contacts.ts";
 import { openMailbox, unreadFor, markRead } from "./db.ts";
 import { createMailboxClient } from "./mailbox-client.ts";
-import { sync, type NetContext } from "./core-net.ts";
+import { sync, readPending, readAck, writePendingAck, type NetContext } from "./core-net.ts";
 import { currentUser } from "./current-user.ts";
-import { identityFile, contactsFile, inboxFile } from "./paths.ts";
+import { identityFile, contactsFile, inboxFile, pendingFile, pendingAckFile } from "./paths.ts";
 import { resolveMailboxUrl } from "./config.ts";
 
 const user = currentUser();
@@ -77,23 +77,15 @@ if (!setUp) {
   process.exit(0); // nothing more to do without an account
 }
 
+// A pending.json older than this is treated as stale (warmer off/dead) → the hook
+// falls back to a direct drain. The warmer rewrites it on every drain (≤ its 60s
+// poll), so 2 min of silence means nothing is maintaining it.
+const PENDING_STALE_MS = 120_000;
+
 const url = resolveMailboxUrl();
 
 try {
-  await initCrypto();
-  const me = loadIdentity(identityFile(user));
-  const book = loadContacts(contactsFile(user));
-  const cache = openMailbox(inboxFile(user));
-  const now = () => Date.now();
-  const ctx: NetContext = {
-    me,
-    book,
-    cache,
-    client: createMailboxClient(url, me, now),
-    now,
-    // Persist any contact auto-saved from an incoming self-introduction during sync.
-    contactsPath: contactsFile(user),
-  };
+  const me = loadIdentity(identityFile(user)); // plain JSON read — no crypto needed here
 
   // If this account never got a real display name (older identity, or one
   // backfilled to the handle), the people we message see only a key prefix. Nudge
@@ -121,9 +113,45 @@ try {
       "they decline.";
   }
 
-  await sync(ctx);
-  const unread = unreadFor(cache, me.signPub);
-  if (unread.length === 0) {
+  // Gather waiting mail as {id, from, body}. Prefer the warmer's pending.json
+  // snapshot so this hook NEVER opens inbox.db (the wasm cross-process lock that
+  // used to drop mail). Fall back to a direct drain only when no fresh snapshot
+  // exists (e.g. MESSENGER_PUSH=0) — safe, since no warmer is holding the file then.
+  const pendingPath = pendingFile(user);
+  const ackPath = pendingAckFile(user);
+  const snap = readPending(pendingPath);
+  const usePending = snap !== null && Date.now() - snap.writtenAt < PENDING_STALE_MS;
+
+  let toShow: { id: string; from: string; body: string }[];
+  if (usePending) {
+    const acked = new Set(readAck(ackPath));
+    toShow = snap!.messages
+      .filter((m) => !acked.has(m.id))
+      .map((m) => ({ id: m.id, from: m.from, body: m.body }));
+    // Ack every id currently pending (surfaced now or already): the warmer marks
+    // them read on its next drain. Overwrite-only, so the ack file never grows.
+    writePendingAck(ackPath, snap!.messages.map((m) => m.id));
+  } else {
+    await initCrypto();
+    const book = loadContacts(contactsFile(user));
+    const cache = openMailbox(inboxFile(user));
+    const now = () => Date.now();
+    const ctx: NetContext = {
+      me,
+      book,
+      cache,
+      client: createMailboxClient(url, me, now),
+      now,
+      // Persist any contact auto-saved from an incoming self-introduction during sync.
+      contactsPath: contactsFile(user),
+    };
+    await sync(ctx);
+    const unread = unreadFor(cache, me.signPub);
+    toShow = unread.map((m) => ({ id: m.id, from: senderLabel(book, m.sender), body: m.body }));
+    for (const m of unread) markRead(cache, m.id, now()); // direct path marks read itself
+  }
+
+  if (toShow.length === 0) {
     // No mail. On session open, still give the agent its identity (agent-only,
     // no user-facing systemMessage) — plus, if needed, the name ask.
     if (hookEventName === "SessionStart") {
@@ -138,27 +166,21 @@ try {
   }
 
   // What the USER sees: just a count + who from, and an offer to read — NOT the
-  // bodies. Senders are de-duplicated and listed so "1 new message from Sam"
-  // reads naturally.
-  const senders = [...new Set(unread.map((m) => senderLabel(book, m.sender)))];
-  const noun = `${unread.length} new message${unread.length > 1 ? "s" : ""}`;
-  let summary = `📬 ${noun} from ${senders.join(", ")} — want me to read ${unread.length > 1 ? "them" : "it"}?`;
-  // On session open, also nudge the hands-free option: a watch loop that
-  // auto-reads incoming mail straight into the chat. Only on SessionStart so it
-  // doesn't repeat on every per-turn inbox check mid-session.
+  // bodies. Senders are de-duplicated and listed so "1 new message from Sam" reads
+  // naturally.
+  const senders = [...new Set(toShow.map((m) => m.from))];
+  const noun = `${toShow.length} new message${toShow.length > 1 ? "s" : ""}`;
+  let summary = `📬 ${noun} from ${senders.join(", ")} — want me to read ${toShow.length > 1 ? "them" : "it"}?`;
+  // On session open, also nudge the hands-free option: a watch loop that auto-reads
+  // incoming mail straight into the chat. Only on SessionStart so it doesn't repeat.
   if (hookEventName === "SessionStart") {
     summary += `\n   ↳ Tip: write "watch" in a new terminal for auto-reading new messages into our chat.`;
   }
   if (nudgeAsk) summary += `\n   ↳ ${nameAskUser}`;
 
-  // What the AGENT gets (privately, hidden from the user): the full bodies + ids
-  // so it can print them ON REQUEST without re-fetching, plus how to behave. The
-  // messages are marked read here so the per-turn hook won't re-announce them.
-  const bodies: string[] = [];
-  for (const m of unread) {
-    bodies.push(`\nFrom ${senderLabel(book, m.sender)} (id ${m.id}):\n  ${m.body}`);
-    markRead(cache, m.id, now());
-  }
+  // What the AGENT gets (privately, hidden from the user): the full bodies + ids so
+  // it can print them ON REQUEST without re-fetching, plus how to behave.
+  const bodies: string[] = toShow.map((m) => `\nFrom ${m.from} (id ${m.id}):\n  ${m.body}`);
 
   const agentContext =
     whoami +

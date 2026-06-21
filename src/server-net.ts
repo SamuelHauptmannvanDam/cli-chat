@@ -18,7 +18,14 @@ import { openMailbox } from "./db.ts";
 import { createMailboxClient } from "./mailbox-client.ts";
 import { encodeKey } from "./key-code.ts";
 import { currentUser, setCurrentUser, resolveIdentity } from "./current-user.ts";
-import { userDir as userDirOf, identityFile, contactsFile, inboxFile } from "./paths.ts";
+import {
+  userDir as userDirOf,
+  identityFile,
+  contactsFile,
+  inboxFile,
+  pendingFile,
+  pendingAckFile,
+} from "./paths.ts";
 import { resolveMailboxUrl } from "./config.ts";
 import { startWarmer } from "./warmer.ts";
 import { claimHandle } from "./provision.ts";
@@ -118,7 +125,13 @@ function ensureWarmer(): void {
     stopWarmer();
     stopWarmer = null;
   }
-  if (S) stopWarmer = startWarmer(S.ctx, { mailboxUrl, now });
+  if (S)
+    stopWarmer = startWarmer(S.ctx, {
+      mailboxUrl,
+      now,
+      pendingPath: pendingFile(S.user),
+      ackPath: pendingAckFile(S.user),
+    });
 }
 ensureWarmer();
 
