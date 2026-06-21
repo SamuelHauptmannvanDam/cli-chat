@@ -5,7 +5,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   resolve,
-  displayName,
   displayNameByKey,
   senderLabel,
   contactByKey,
@@ -85,11 +84,6 @@ test("resolve reports ambiguous when a substring matches several contacts", () =
 test("resolve reports none for an empty query rather than matching everyone", () => {
   const r = resolve(book, "   ");
   assert.equal(r.status, "none");
-});
-
-test("displayName reverse-maps an id, falling back to the raw id", () => {
-  assert.equal(displayName(book, "niels"), "Niels");
-  assert.equal(displayName(book, "ghost"), "ghost");
 });
 
 test("displayNameByKey maps a signPub, falling back to a short prefix", () => {
