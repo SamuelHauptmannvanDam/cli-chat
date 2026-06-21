@@ -140,7 +140,8 @@ export async function sync(ctx: NetContext): Promise<number> {
     // Auto-save a genuinely new sender from the keys they introduced themselves
     // with, so "write <name>" works next time and a reply can be sealed. NEVER
     // clobber someone you already know — your nick for them wins.
-    if (env.boxPub && b.sender && !contactByKey(ctx.book, b.sender)) {
+    const known = b.sender ? contactByKey(ctx.book, b.sender) : undefined;
+    if (env.boxPub && b.sender && !known) {
       const name = env.name || env.handle || `${b.sender.slice(0, 8)}…`;
       rememberContact(ctx, {
         name,
@@ -149,6 +150,14 @@ export async function sync(ctx: NetContext): Promise<number> {
         handle: env.handle,
         auto: true,
       });
+    } else if (known && env.handle && !known.handle) {
+      // Known contact missing a handle (e.g. saved before self-introductions
+      // existed). Backfill ONLY the handle from their new-style envelope —
+      // never touch name/nick/auto, so "your nick wins" still holds.
+      known.handle = env.handle;
+      if (ctx.contactsPath) {
+        writeFileSync(ctx.contactsPath, JSON.stringify(ctx.book, null, 2) + "\n");
+      }
     }
     const row: MessageRow = {
       id: b.id,
