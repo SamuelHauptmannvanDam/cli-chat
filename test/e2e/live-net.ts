@@ -42,11 +42,11 @@ const nielsId = generateIdentity();
 
 const samBook: ContactBook = {
   me: samId.signPub,
-  contacts: [{ id: "niels", name: "Niels", signPub: nielsId.signPub, boxPub: nielsId.boxPub }],
+  contacts: [{ name: "Niels", signPub: nielsId.signPub, boxPub: nielsId.boxPub }],
 };
 const nielsBook: ContactBook = {
   me: nielsId.signPub,
-  contacts: [{ id: "sam", name: "Sam", signPub: samId.signPub, boxPub: samId.boxPub }],
+  contacts: [{ name: "Sam", signPub: samId.signPub, boxPub: samId.boxPub }],
 };
 
 const sam: NetContext = {

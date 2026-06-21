@@ -84,8 +84,8 @@ describe("send failures", () => {
     const x = generateIdentity();
     const y = generateIdentity();
     const alice = makeContext(mb.baseUrl, me, [
-      { id: "sam1", name: "Sam", signPub: x.signPub, boxPub: x.boxPub },
-      { id: "sam2", name: "Sam", signPub: y.signPub, boxPub: y.boxPub },
+      { name: "Sam", signPub: x.signPub, boxPub: x.boxPub },
+      { name: "Sam", signPub: y.signPub, boxPub: y.boxPub },
     ]);
     const r = await sendMessage(alice, { to: "Sam", body: "hi" });
     assert.equal(r.ok === false && r.reason, "ambiguous");
@@ -93,7 +93,7 @@ describe("send failures", () => {
   });
 
   test("a contact without keys returns no_keys", async () => {
-    const alice = makeContext(mb.baseUrl, generateIdentity(), [{ id: "x", name: "Keyless" }]);
+    const alice = makeContext(mb.baseUrl, generateIdentity(), [{ name: "Keyless" }]);
     const r = await sendMessage(alice, { to: "Keyless", body: "hi" });
     assert.equal(r.ok === false && r.reason, "no_keys");
   });
@@ -191,7 +191,7 @@ describe("reply failures", () => {
     const bob = makeContext(mb.baseUrl, bobId);
     await regSelf(bob);
     await regSelf(stranger); // so Bob's reply can be delivered back
-    stranger.book.contacts.push({ id: "bob", name: "Bob", signPub: bobId.signPub, boxPub: bobId.boxPub });
+    stranger.book.contacts.push({ name: "Bob", signPub: bobId.signPub, boxPub: bobId.boxPub });
     const sent = await sendMessage(stranger, { to: "Bob", body: "who am I?" });
     assert.ok(sent.ok);
     await sync(bob);
@@ -241,7 +241,7 @@ describe("sender identity", () => {
     const bob = makeContext(mb.baseUrl, bobId);
     await regSelf(bob);
     await regSelf(alice); // so Bob's "write Alice" reply can be delivered
-    alice.book.contacts.push({ id: "bob", name: "Bob", signPub: bobId.signPub, boxPub: bobId.boxPub });
+    alice.book.contacts.push({ name: "Bob", signPub: bobId.signPub, boxPub: bobId.boxPub });
 
     await sendMessage(alice, { to: "Bob", body: "hi, new here" });
     const avail = await messagesAvailable(bob);
@@ -260,10 +260,10 @@ describe("sender identity", () => {
     const bobId = generateIdentity();
     // Bob already calls her "Boss" — his nick must win, and no "(handle)" shown.
     const bob = makeContext(mb.baseUrl, bobId, [
-      { id: "boss", name: "Boss", signPub: aliceId.signPub, boxPub: aliceId.boxPub },
+      { name: "Boss", signPub: aliceId.signPub, boxPub: aliceId.boxPub },
     ]);
     await regSelf(bob);
-    alice.book.contacts.push({ id: "bob", name: "Bob", signPub: bobId.signPub, boxPub: bobId.boxPub });
+    alice.book.contacts.push({ name: "Bob", signPub: bobId.signPub, boxPub: bobId.boxPub });
 
     await sendMessage(alice, { to: "Bob", body: "report?" });
     const avail = await messagesAvailable(bob);
@@ -279,10 +279,10 @@ describe("sender identity", () => {
     // Bob saved Alice as "Boss" BEFORE self-introductions existed: a real nick,
     // no handle on file. Her new-style envelope should fill the handle only.
     const bob = makeContext(mb.baseUrl, bobId, [
-      { id: "boss", name: "Boss", signPub: aliceId.signPub, boxPub: aliceId.boxPub },
+      { name: "Boss", signPub: aliceId.signPub, boxPub: aliceId.boxPub },
     ]);
     await regSelf(bob);
-    alice.book.contacts.push({ id: "bob", name: "Bob", signPub: bobId.signPub, boxPub: bobId.boxPub });
+    alice.book.contacts.push({ name: "Bob", signPub: bobId.signPub, boxPub: bobId.boxPub });
 
     await sendMessage(alice, { to: "Bob", body: "ping" });
     await sync(bob);
@@ -301,10 +301,10 @@ describe("sender identity", () => {
     const bobId = generateIdentity();
     // Bob already has a handle on file for Alice; a new message must not clobber it.
     const bob = makeContext(mb.baseUrl, bobId, [
-      { id: "boss", name: "Boss", signPub: aliceId.signPub, boxPub: aliceId.boxPub, handle: "OLD123" },
+      { name: "Boss", signPub: aliceId.signPub, boxPub: aliceId.boxPub, handle: "OLD123" },
     ]);
     await regSelf(bob);
-    alice.book.contacts.push({ id: "bob", name: "Bob", signPub: bobId.signPub, boxPub: bobId.boxPub });
+    alice.book.contacts.push({ name: "Bob", signPub: bobId.signPub, boxPub: bobId.boxPub });
 
     await sendMessage(alice, { to: "Bob", body: "ping" });
     await sync(bob);
@@ -321,7 +321,7 @@ describe("crypto boundaries", () => {
     const bobId = generateIdentity();
     const wrongBox = generateIdentity();
     const alice = makeContext(mb.baseUrl, aliceId, [
-      { id: "bob", name: "Bob", signPub: bobId.signPub, boxPub: wrongBox.boxPub },
+      { name: "Bob", signPub: bobId.signPub, boxPub: wrongBox.boxPub },
     ]);
     const bob = makeContext(mb.baseUrl, bobId);
     await regSelf(bob); // registered recipient; the seal, not the address, is wrong

@@ -43,10 +43,9 @@ const book: ContactBook = existsSync(contactsPath)
   : { me: me.signPub, contacts: [] };
 book.me = me.signPub;
 
-const id = name.toLowerCase();
-// Replace any existing entry with the same local name or same key.
-book.contacts = book.contacts.filter((c) => c.id !== id && c.signPub !== signPub);
-book.contacts.push({ id, name, signPub, boxPub });
+// signPub is the sole identity — replace any existing entry with the same key.
+book.contacts = book.contacts.filter((c) => c.signPub !== signPub);
+book.contacts.push({ name, signPub, boxPub });
 saveContacts(contactsPath, book);
 
 console.log(`Added "${name}". You can now message them:  write ${name}: <your message>`);
