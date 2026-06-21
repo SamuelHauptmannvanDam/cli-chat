@@ -8,6 +8,7 @@ import {
   displayNameByKey,
   senderLabel,
   contactByKey,
+  removeContactByKey,
   loadContacts,
   type ContactBook,
 } from "../../src/contacts.ts";
@@ -112,6 +113,28 @@ test("senderLabel: nick wins, auto-saved shows name+handle, unknown shows prefix
 test("contactByKey finds the contact for a signPub, else undefined", () => {
   assert.equal(contactByKey(book, "niels-sign")?.name, "Niels");
   assert.equal(contactByKey(book, "unknown"), undefined);
+});
+
+test("removeContactByKey drops only the matching key and reports success", () => {
+  const b: ContactBook = {
+    me: "me-key",
+    contacts: [
+      { name: "Niels", signPub: "niels-sign", boxPub: "niels-box" },
+      { name: "Sam", signPub: "sam-sign", boxPub: "sam-box" },
+    ],
+  };
+  assert.equal(removeContactByKey(b, "niels-sign"), true);
+  assert.equal(b.contacts.length, 1);
+  assert.equal(b.contacts[0]?.signPub, "sam-sign");
+});
+
+test("removeContactByKey returns false when no contact has that key", () => {
+  const b: ContactBook = {
+    me: "me-key",
+    contacts: [{ name: "Sam", signPub: "sam-sign", boxPub: "sam-box" }],
+  };
+  assert.equal(removeContactByKey(b, "nobody"), false);
+  assert.equal(b.contacts.length, 1);
 });
 
 test("loadContacts parses a valid book from disk", () => {

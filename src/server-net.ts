@@ -32,6 +32,7 @@ import { claimHandle } from "./provision.ts";
 import { INSTRUCTIONS } from "./instructions.ts";
 import {
   addContact,
+  deleteContact,
   draftReply,
   messagesAvailable,
   readMessage,
@@ -139,7 +140,7 @@ ensureWarmer();
 // Behavior travels WITH the server (MCP `instructions`, sent on connect) so it
 // works in any MCP-capable CLI — not just Claude Code's CLAUDE.md. The text is
 // the single source in ./instructions.ts; esbuild inlines it into the bundle.
-const server = new McpServer({ name: "cli-chat", version: "0.4.8" }, { instructions: INSTRUCTIONS });
+const server = new McpServer({ name: "cli-chat", version: "0.4.11" }, { instructions: INSTRUCTIONS });
 const ok = (data: unknown) => ({
   content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }],
 });
@@ -324,6 +325,23 @@ const TOOLS: {
     run: (s, { name, key }) => addContact(s.ctx, { name, key }),
   },
   {
+    name: "delete_contact",
+    title: "Delete a saved contact",
+    description:
+      "Remove a person from the address book by name. Use when the user says " +
+      "'delete Niels', 'remove Sam from my contacts', or 'forget this person'. " +
+      "Name matching is partial, like send_message: a short name resolves a " +
+      "saved 'Niels - bankdata'. Returns the deleted name on success; " +
+      "`no_contact` means nothing matched, `ambiguous` returns the candidate " +
+      "names so you can ask which one rather than guessing. Deleting only forgets " +
+      "them locally — it doesn't block them, and they can be re-added from their " +
+      "code later.",
+    inputSchema: {
+      name: z.string().describe("Contact name to delete, e.g. 'Niels'"),
+    },
+    run: (s, { name }) => deleteContact(s.ctx, { name }),
+  },
+  {
     name: "my_key",
     title: "Show my own code to share",
     description:
@@ -339,15 +357,24 @@ const TOOLS: {
     }),
   },
   {
-    name: "list_contacts",
-    title: "List my saved contacts",
+    name: "contacts",
+    title: "List my contacts (me first, then saved people)",
     description:
-      "Return all people the user has saved, each with the nickname to address " +
-      "them by, any aliases, their 6-char handle (when known), and their shareable " +
-      "full key. Use when the user asks 'who are my contacts?', 'who can I " +
-      "message?', or 'show my address book'.",
+      "Return the user's own entry (`me`: their display name, 6-char handle, and " +
+      "shareable full key) followed by everyone they've saved — each with the " +
+      "nickname to address them by, any aliases, their 6-char handle (when known), " +
+      "and their full key. ALWAYS show the user's own entry FIRST so they can see " +
+      "their own name + handle at a glance (and update the name with create_account " +
+      "if it's wrong). Use when the user asks 'who are my contacts?', 'show my " +
+      "address book', or 'what's my name/handle?'.",
     inputSchema: {},
     run: (s) => ({
+      me: {
+        self: true,
+        name: s.me.name ?? s.user,
+        handle: s.me.handle ?? null,
+        fullKey: encodeKey(s.me.signPub, s.me.boxPub),
+      },
       count: s.book.contacts.length,
       contacts: s.book.contacts.map((c) => ({
         name: c.name,

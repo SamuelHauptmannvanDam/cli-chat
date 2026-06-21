@@ -5,7 +5,7 @@
 //
 //   node src/install.ts   (or: npm run install-clis)   # from a clone
 //
-// The registered command is `npx -y cli-chat-mcp`, so the target CLI always
+// The registered command is `npx -y cli-chat-mcp@latest`, so the target CLI always
 // runs the published package — no repo checkout or build needed on that machine.
 // Identity lives in ~/.cli-chat (created on first use via create_account), so
 // MESSENGER_USER is optional; set it only to pin a specific identity by name.
@@ -20,7 +20,8 @@ import { dirname, join } from "node:path";
 import { resolveMailboxUrl } from "./config.ts";
 
 const HOME = process.env.HOME_OVERRIDE ?? homedir(); // HOME_OVERRIDE for testing
-const PKG = "cli-chat-mcp"; // the published npm package run via npx
+const PKG = "cli-chat-mcp@latest"; // published package + dist-tag: npx caches, so
+// pin @latest to force it to resolve the newest publish instead of a stale cache.
 const NAME = "cli-chat"; // the server key shown in each CLI's config
 
 const user = process.env.MESSENGER_USER; // optional: pin a named identity
