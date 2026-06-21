@@ -3,6 +3,15 @@
   "version": "0.4.8",
   "type": "module",
   "description": "Headless cross-CLI messenger for coding agents (MCP)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SamuelHauptmannvanDam/cli-chat.git"
+  },
+  "bugs": {
+    "url": "https://github.com/SamuelHauptmannvanDam/cli-chat/issues"
+  },
+  "homepage": "https://github.com/SamuelHauptmannvanDam/cli-chat#readme",
   "bin": {
     "cli-chat": "dist/server-net.js"
   },
