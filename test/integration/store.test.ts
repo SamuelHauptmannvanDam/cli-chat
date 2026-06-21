@@ -101,6 +101,21 @@ test("countRecentFromPair counts only this pair, by SERVER receive time", () => 
   assert.equal(store.countRecentFromPair("bob", "carol", 0), 1);
 });
 
+test("draining a message does NOT drop it from the anti-spam window", () => {
+  // Batch-drain marks rows fetched (it doesn't delete them), so a message keeps
+  // counting toward the rolling admission window even after the recipient pulls
+  // it. This is the property that makes delete-on-drain unsafe and batch-drain
+  // safe — guard it so a future change can't silently regress the throttle.
+  const store = nodeSqliteStore(":memory:");
+  store.put(wire({ id: "m1", sender: "alice", recipient: "bob" }), 1000);
+  store.put(wire({ id: "m2", sender: "alice", recipient: "bob" }), 1000);
+  assert.equal(store.countRecentFromPair("bob", "alice", 0), 2);
+  const drained = store.drain("bob", 1500) as any[];
+  assert.equal(drained.length, 2); // delivered
+  assert.equal(store.countRecentFromPair("bob", "alice", 0), 2); // still counted
+  assert.equal(store.countRecentUnknown("bob", 0), 2);
+});
+
 test("countRecentUnknown excludes senders the recipient has replied to", () => {
   const store = nodeSqliteStore(":memory:");
   // Two strangers write to Bob.
