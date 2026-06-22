@@ -56,9 +56,8 @@ if (user) {
 if (!setUp) {
   if (hookEventName === "SessionStart") {
     const userText =
-      "👋 First-time startup of cli-chat — let me help you with that. Before you can " +
-      "message anyone, I need a display name. It's what people see when you message " +
-      "them, and how mutual contacts find you. What's your full name?";
+      "👋 Welcome to cli-chat! What's your full name? It's the name people see " +
+      "when you message them.";
     const agentText =
       "FIRST-TIME STARTUP: this device has no cli-chat account yet (no identity " +
       "exists, and the other messaging tools return no_account until one does). Ask " +
