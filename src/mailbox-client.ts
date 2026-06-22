@@ -82,7 +82,11 @@ export function createMailboxClient(
     },
 
     async resolveHandle(handle) {
-      const res = await fetch(`${base}/resolve/${encodeURIComponent(handle)}`);
+      // Sign the resolve like every other route — the server requires it so the
+      // handle directory can't be walked anonymously. The path (handle included)
+      // is what gets signed, so it must match the URL exactly.
+      const path = `/resolve/${encodeURIComponent(handle)}`;
+      const res = await fetch(`${base}${path}`, { headers: headers("GET", path, "") });
       if (res.status === 404) return null;
       if (!res.ok) await fail(res, "resolve");
       return (await res.json()) as { signPub: string; boxPub: string };

@@ -211,13 +211,20 @@ export function createApp(deps: AppDeps): Hono {
     return c.json({ ok: true, handle: body.handle });
   });
 
-  // Resolve a handle → public keys. Public (these are public keys), so the only
-  // guard is a per-IP rate limit: a scraper can't list the directory, but it's
-  // the one route that turns a handle into a messageable key, so throttling it
-  // is what caps directory harvesting (PLAN open Q#7). Checked before the lookup.
+  // Resolve a handle → public keys. The values returned are public keys, but the
+  // route is the one that turns a handle into a messageable key, so it's gated two
+  // ways against directory harvesting (PLAN open Q#7): a per-IP rate limit (the
+  // cheap pre-crypto wall), then a signed request — so only someone with a real
+  // account can resolve at all, and anonymous scrapers are turned away outright.
+  // There's no list endpoint, so even an account holder can only resolve handles
+  // they already know, one at a time, under the rate cap. The path (handle and
+  // all) is folded into the signature, matching how the client signs it.
   app.get("/resolve/:handle", async (c) => {
     if (await limited("resolve", clientIp(c)))
       return c.json({ error: "rate limited" }, 429);
+    const path = new URL(c.req.url).pathname;
+    const auth = await verifyRequest((h) => c.req.header(h), "GET", path, "", now());
+    if (!auth.ok) return c.json({ error: auth.reason }, 401);
     const rec = await store.resolveHandle(c.req.param("handle"));
     if (!rec) return c.json({ error: "not found" }, 404);
     return c.json(rec);

@@ -262,11 +262,20 @@ test("/resolve is rate-limited per the edge limiter, before the lookup", async (
   const alice = generateIdentity();
   await register(app, alice, "alice1");
   // First two resolves pass (limiter allows 2); the lookup itself still works.
-  assert.equal((await app.fetch(new Request("http://mailbox/resolve/alice1"))).status, 200);
-  assert.equal((await app.fetch(new Request("http://mailbox/resolve/alice1"))).status, 200);
-  // Third is throttled — even though the handle exists, the limiter gates first.
-  const blocked = await app.fetch(new Request("http://mailbox/resolve/alice1"));
+  assert.equal((await signedRequest(app, alice, "GET", "/resolve/alice1")).status, 200);
+  assert.equal((await signedRequest(app, alice, "GET", "/resolve/alice1")).status, 200);
+  // Third is throttled — even though the handle exists, the limiter gates first
+  // (before signature verification), so it's 429 regardless of the valid auth.
+  const blocked = await signedRequest(app, alice, "GET", "/resolve/alice1");
   assert.equal(blocked.status, 429);
+});
+
+test("unsigned /resolve is rejected 401 — the directory can't be walked anonymously", async () => {
+  const app = freshApp();
+  const alice = generateIdentity();
+  await register(app, alice, "alice1");
+  const res = await app.fetch(new Request("http://mailbox/resolve/alice1"));
+  assert.equal(res.status, 401);
 });
 
 test("POST /messages is rate-limited at the IP layer before auth", async () => {
@@ -299,8 +308,9 @@ test("register then resolve a handle round-trips public keys", async () => {
   const reg = await signedRequest(app, alice, "POST", "/register", body);
   assert.deepEqual(await reg.json(), { ok: true, handle: "alice1" });
 
-  // /resolve is public (these are public keys) — no signature needed.
-  const res = await app.fetch(new Request("http://mailbox/resolve/alice1"));
+  // /resolve requires a signed request (only real accounts resolve); the keys it
+  // returns are public, but this keeps the directory from being walked anonymously.
+  const res = await signedRequest(app, alice, "GET", "/resolve/alice1");
   assert.deepEqual(await res.json(), { signPub: alice.signPub, boxPub: alice.boxPub });
 });
 
@@ -322,6 +332,8 @@ test("register rejects a malformed handle", async () => {
 });
 
 test("resolve of an unknown handle is 404", async () => {
-  const res = await freshApp().fetch(new Request("http://mailbox/resolve/nobody"));
+  const app = freshApp();
+  const alice = generateIdentity();
+  const res = await signedRequest(app, alice, "GET", "/resolve/nobody");
   assert.equal(res.status, 404);
 });
