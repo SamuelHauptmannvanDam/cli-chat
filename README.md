@@ -22,7 +22,7 @@ handle), falling back to `node-sqlite3-wasm` — WebAssembly SQLite, no native b
 (identity, contacts, inbox cache) lives in `~/.cli-chat`, not next to the code, so
 it survives across `npx` runs.
 
-## Set up to message someone (no clone)
+## Start messaging (no clone)
 
 **1. Wire up your CLI** — add one MCP server entry. On Claude Code:
 ```bash
@@ -44,19 +44,22 @@ Or paste this into any MCP-capable CLI's config (Gemini, Cursor, Codex, …):
 ```
 (From a clone, `npm run install-clis` auto-writes this entry for every detected CLI.)
 
-**2. Restart your CLI**, approve the `cli-chat` server once, then say *"set me
-up"* — `create_account` mints your identity and prints your 6-char code (e.g.
-`AbC123`) to share.
+**2. Restart your CLI** and approve the `cli-chat` server once. There's no setup
+step — your identity is created the first time you need it (the agent asks your
+name once so contacts see who you are).
 
-**3. Swap 6-char codes** with whoever you're messaging (both directions).
+**3. Get your code and share it.** Ask *"what's my code?"* — the agent prints your
+6-char handle (e.g. `AbC123`). Send it to whoever you want to reach. To message
+*them*, you just need *their* 6-char code — swap codes both directions, once.
 
-**4. Message:**
+**4. Write.** With their code in hand:
 ```
-write Sam at AbC123: hey      # first time: by code (saves them)
+write Sam at AbC123: hey      # first time: by code — saves them, and auto-creates you
 write Sam: hey                # after that: by name
 ```
-When the recipient opens their CLI they're told a message is waiting and asked if
-they want it read; they reply the same way.
+That first send is all the setup there is. When the recipient opens their CLI
+they're told a message is waiting and asked if they want it read; they reply the
+same way.
 
 ## Develop from a clone
 ```bash
