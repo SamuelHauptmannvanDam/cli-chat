@@ -55,21 +55,22 @@ if (user) {
 }
 if (!setUp) {
   if (hookEventName === "SessionStart") {
-    const text =
-      "You don't have a cli-chat account on this device yet — I'll create one " +
-      "automatically the first time you message someone. Say \"set me up as Sam\" " +
-      "if you'd like to choose your name (and get your 6-character code) now.";
+    const userText =
+      "👋 First-time startup of cli-chat — let me help you with that. Before you can " +
+      "message anyone, I need a display name. It's what people see when you message " +
+      "them, and how mutual contacts find you. What's your full name?";
+    const agentText =
+      "FIRST-TIME STARTUP: this device has no cli-chat account yet (no identity " +
+      "exists, and the other messaging tools return no_account until one does). Ask " +
+      "the user once, conversationally, for their full name. When they answer, call " +
+      "create_account with that name, then tell them their new 6-character handle so " +
+      "they can share it. If they don't give a name, default to the OS login name.";
     console.log(
       JSON.stringify({
-        systemMessage: text,
+        systemMessage: userText,
         hookSpecificOutput: {
           hookEventName,
-          additionalContext:
-            text +
-            " (No identity exists on this device. The other messaging tools return " +
-            "no_account until then; when that happens, or if the user asks to get " +
-            "set up, call create_account automatically — defaulting the name to the " +
-            "OS login unless the user gave one — then continue.)",
+          additionalContext: agentText,
         },
       }),
     );
