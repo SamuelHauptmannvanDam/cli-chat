@@ -15,6 +15,9 @@ export interface Contact {
   auto?: boolean; // saved automatically from a received self-introduction, NOT a
   // user-chosen nick. While true, `name` is just what they call themselves, so we
   // show "name (handle)"; renaming them (a real nick) clears this and shows the nick.
+  sentCount?: number; // how many messages YOU'VE sent them; ranks the "most active"
+  // shortcut in the contacts list. Absent on contacts never written to (treated 0).
+  lastMessageAt?: number; // epoch ms of the last message you sent them (recency tiebreak).
 }
 
 export interface ContactBook {
@@ -67,6 +70,41 @@ export function resolve(book: ContactBook, query: string): ResolveResult {
   if (fuzzy.length > 1) return { status: "ambiguous", query, candidates: fuzzy };
   if (fuzzy[0]) return { status: "resolved", contact: fuzzy[0] };
   return { status: "none", query };
+}
+
+// How recently you must have written someone for them to count as "active". Past
+// this they drop out of the active list and rejoin the alphabetical rest, so a
+// contact you stop messaging ages off the top on its own.
+export const ACTIVE_WINDOW_MS = 60 * 24 * 60 * 60 * 1000; // 60 days
+
+// Split the book into two display lists:
+//   active — people written within the last 60 days, ordered by who you've written
+//            MOST (then recency, then name). Your current conversations, on top.
+//   rest   — everyone else (gone quiet, or never written), alphabetical.
+// `now` is epoch ms. Pure: returns new arrays, does not mutate the input.
+export function orderedContacts(
+  contacts: Contact[],
+  now: number,
+): { active: Contact[]; rest: Contact[] } {
+  const cutoff = now - ACTIVE_WINDOW_MS;
+  const byName = (a: Contact, b: Contact) =>
+    a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+
+  const active: Contact[] = [];
+  const rest: Contact[] = [];
+  for (const c of contacts) {
+    const ts = c.lastMessageAt ?? 0;
+    if (ts > 0 && ts >= cutoff) active.push(c);
+    else rest.push(c);
+  }
+  active.sort(
+    (a, b) =>
+      (b.sentCount ?? 0) - (a.sentCount ?? 0) ||
+      (b.lastMessageAt ?? 0) - (a.lastMessageAt ?? 0) ||
+      byName(a, b),
+  );
+  rest.sort(byName);
+  return { active, rest };
 }
 
 // Phase 1 reverse lookup keyed by Ed25519 address. Falls back to a short prefix

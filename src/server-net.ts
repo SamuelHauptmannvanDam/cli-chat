@@ -13,7 +13,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { userInfo } from "node:os";
 import { initCrypto, generateIdentity } from "./crypto.ts";
 import { loadIdentity } from "./identity.ts";
-import { loadContacts, saveContacts } from "./contacts.ts";
+import { loadContacts, saveContacts, orderedContacts } from "./contacts.ts";
 import { openMailbox } from "./db.ts";
 import { createMailboxClient } from "./mailbox-client.ts";
 import { encodeKey } from "./key-code.ts";
@@ -369,23 +369,34 @@ const TOOLS: {
       "and their full key. ALWAYS show the user's own entry FIRST so they can see " +
       "their own name + handle at a glance (and update the name with create_account " +
       "if it's wrong). Use when the user asks 'who are my contacts?', 'show my " +
-      "address book', or 'what's my name/handle?'.",
+      "address book', or 'what's my name/handle?'. Saved people come back in two " +
+      "lists: `active` (written in the last 60 days, ordered by who the user " +
+      "messages most) and `contacts` (everyone else, alphabetical). Render `active` " +
+      "first when non-empty, then `contacts` A–Z; do NOT show message counts.",
     inputSchema: {},
-    run: (s) => ({
-      me: {
-        self: true,
-        name: s.me.name ?? s.user,
-        handle: s.me.handle ?? null,
-        fullKey: encodeKey(s.me.signPub, s.me.boxPub),
-      },
-      count: s.book.contacts.length,
-      contacts: s.book.contacts.map((c) => ({
+    run: (s) => {
+      const fmt = (c: (typeof s.book.contacts)[number]) => ({
         name: c.name,
         aliases: c.aliases ?? [],
         handle: c.handle ?? null,
         fullKey: c.signPub && c.boxPub ? encodeKey(c.signPub, c.boxPub) : null,
-      })),
-    }),
+      });
+      // active = written in the last 60 days, most-written first; rest = everyone
+      // else, alphabetical. A contact you stop messaging ages out of active on its
+      // own. Render active first, then rest A–Z; do NOT show message counts.
+      const { active, rest } = orderedContacts(s.book.contacts, s.ctx.now());
+      return {
+        me: {
+          self: true,
+          name: s.me.name ?? s.user,
+          handle: s.me.handle ?? null,
+          fullKey: encodeKey(s.me.signPub, s.me.boxPub),
+        },
+        count: s.book.contacts.length,
+        active: active.map(fmt),
+        contacts: rest.map(fmt),
+      };
+    },
   },
   {
     name: "messages_available",
