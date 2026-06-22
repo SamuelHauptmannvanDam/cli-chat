@@ -84,7 +84,7 @@ function runHook(
 test("no account on SessionStart asks for the user's name to set up", () => {
   // No identity seeded → not set up.
   const out = runHook("SessionStart");
-  assert.match(out.systemMessage, /First-time startup of cli-chat/);
+  assert.match(out.systemMessage, /Welcome to cli-chat/);
   assert.match(out.systemMessage, /What's your full name\?/);
   assert.equal(out.hookSpecificOutput.hookEventName, "SessionStart");
   assert.match(out.hookSpecificOutput.additionalContext, /create_account/);
