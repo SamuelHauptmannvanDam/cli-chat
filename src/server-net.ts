@@ -149,7 +149,10 @@ const noAccount = () =>
   ok({
     ok: false,
     reason: "no_account",
-    note: "No account on this device yet. Call create_account to generate your identity and 6-char code.",
+    note:
+      "No account on this device yet. Call create_account to generate your identity " +
+      "and 6-char code. Ask the user for their full name first; only fall back to the " +
+      "OS login name if they don't give one.",
   });
 
 type Session = NonNullable<typeof S>;
@@ -421,11 +424,46 @@ const TOOLS: {
   },
 ];
 
+// Just-in-time choreography attached to tool RESULTS. Unlike the server
+// `instructions` field (which some MCP clients silently drop), a result note
+// rides along with the tool output every client hands back to the model — so the
+// few highest-value behaviors survive even where server instructions don't. Keep
+// these terse; the full policy still lives in instructions.ts. Never overrides a
+// note the handler already set.
+const resultNote = (name: string, r: any): string | undefined => {
+  switch (name) {
+    case "send_message":
+      if (r.ok) return "Sent. Tell the user in one line what you sent — don't ask to confirm.";
+      if (r.reason === "no_contact") return "No contact matched. Offer to add them with their 6-char code.";
+      if (r.reason === "ambiguous") return "Several matched: name the candidates and ask the user which — don't guess.";
+      return undefined;
+    case "delete_contact":
+      if (r.ok) return "Confirm in one line, e.g. 'Deleted Niels.'";
+      return undefined;
+    case "read_message":
+      if (r.ok) return "Read this out to the user (sender + body); to reply, use draft_reply with this id.";
+      return undefined;
+    case "draft_reply":
+      if (r.ok) return "Confirm in one line what you sent.";
+      return undefined;
+    case "contacts":
+      return "Show the user's own entry (me) first, then list the saved contacts.";
+    default:
+      return undefined;
+  }
+};
+
+const attachNote = (name: string, r: any): any => {
+  if (!r || typeof r !== "object" || Array.isArray(r) || r.note) return r;
+  const note = resultNote(name, r);
+  return note ? { ...r, note } : r;
+};
+
 for (const t of TOOLS) {
   server.registerTool(
     t.name,
     { title: t.title, description: t.description, inputSchema: t.inputSchema },
-    guard(t.run),
+    guard(async (s, args) => attachNote(t.name, await t.run(s, args))),
   );
 }
 
