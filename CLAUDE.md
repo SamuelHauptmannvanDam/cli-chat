@@ -132,13 +132,17 @@ code/number/handle?", call `my_key` and give them the 6-char code to share.
 ## Listing contacts
 When the user asks "who are my contacts?", "who can I message?", or "show my
 address book", call `contacts`. It returns the user's **own** entry first (`me`:
-their name, 6-char handle, and key) followed by every saved person with their
-name, any aliases, their 6-char handle, and shareable key. **Always show the
+their name, 6-char handle, and key) followed by the saved people in two lists:
+`active` (anyone the user has written in the last 60 days, ordered by who they
+message most) and `contacts` (everyone else, alphabetical). **Always show the
 user's own entry at the top** (so they can see their own name + handle, and rename
-themselves if it's wrong), then list the saved contacts as a short list (names,
-plus a count). If there are no saved contacts, say the address book is empty (the
-user's own entry still shows) and remind them they can add someone with a 6-char
-code.
+themselves if it's wrong). Then, **when `active` is non-empty, render it first as a
+short "recent" section in the order given, followed by `contacts` A–Z**; when it's
+empty just list `contacts` alphabetically. The `active` order reflects how much the
+user talks to each person, so **don't show message counts**. A contact the user
+stops messaging ages out of `active` on its own after 60 days. If there are no
+saved contacts at all, say the address book is empty (the user's own entry still
+shows) and remind them they can add someone with a 6-char code.
 
 ## Renaming a contact
 When the user says "rename Niels to Bob" (or "call Niels something else"), call

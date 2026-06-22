@@ -232,6 +232,16 @@ async function sendSealed(
     in_reply_to,
   };
   await ctx.client.send(wire);
+  // Tally the send against the contact so the contacts list can lead with the
+  // people you actually talk to. Bumped only after the send succeeds, and only
+  // for a saved contact (anonymous/key-only sends have an entry by now too, since
+  // sendMessage remembers them first). Persisted like every other book mutation.
+  const contact = ctx.book.contacts.find((c) => c.signPub === to.signPub);
+  if (contact) {
+    contact.sentCount = (contact.sentCount ?? 0) + 1;
+    contact.lastMessageAt = ctx.now();
+    if (ctx.contactsPath) saveContacts(ctx.contactsPath, ctx.book);
+  }
   return wire.id;
 }
 

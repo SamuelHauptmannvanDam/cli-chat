@@ -10,6 +10,8 @@ import {
   contactByKey,
   removeContactByKey,
   loadContacts,
+  orderedContacts,
+  type Contact,
   type ContactBook,
 } from "../../src/contacts.ts";
 
@@ -157,4 +159,70 @@ test("loadContacts rejects a structurally invalid book", () => {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+const NOW = 1_000_000_000_000; // fixed "now" for deterministic window tests
+const DAY = 24 * 60 * 60 * 1000;
+const daysAgo = (d: number) => NOW - d * DAY;
+
+// Build a book of N contacts named A, B, C… Each entry in `wrote` gives a contact
+// a send count and a "last written N days ago" timestamp, marking them active.
+const mkContacts = (n: number, wrote: Record<string, { sent: number; days: number }> = {}): Contact[] =>
+  Array.from({ length: n }, (_, i) => {
+    const name = String.fromCharCode(65 + i); // A, B, C…
+    const c: Contact = { name, signPub: `${name}-sign`, boxPub: `${name}-box` };
+    const w = wrote[name];
+    if (w) {
+      c.sentCount = w.sent;
+      c.lastMessageAt = daysAgo(w.days);
+    }
+    return c;
+  });
+
+test("orderedContacts: active list is who you've written most in the last 60 days", () => {
+  const { active, rest } = orderedContacts(
+    mkContacts(5, {
+      D: { sent: 30, days: 1 },
+      B: { sent: 20, days: 5 },
+      E: { sent: 10, days: 10 },
+    }),
+    NOW,
+  );
+  assert.deepEqual(active.map((c) => c.name), ["D", "B", "E"]); // most-written first
+  assert.deepEqual(rest.map((c) => c.name), ["A", "C"]); // never written → alphabetical
+});
+
+test("orderedContacts: a contact written >60 days ago ages out into the rest", () => {
+  const { active, rest } = orderedContacts(
+    mkContacts(3, {
+      A: { sent: 99, days: 90 }, // heavily written but long quiet → drops off
+      B: { sent: 2, days: 3 }, // recent → active
+    }),
+    NOW,
+  );
+  assert.deepEqual(active.map((c) => c.name), ["B"]);
+  assert.deepEqual(rest.map((c) => c.name), ["A", "C"]); // A rejoins, alphabetical
+});
+
+test("orderedContacts: a contact exactly at the 60-day edge still counts as active", () => {
+  const { active } = orderedContacts(mkContacts(1, { A: { sent: 1, days: 60 } }), NOW);
+  assert.deepEqual(active.map((c) => c.name), ["A"]);
+});
+
+test("orderedContacts: equal counts within active broken by recency, then name", () => {
+  const { active } = orderedContacts(
+    mkContacts(3, {
+      A: { sent: 5, days: 4 },
+      B: { sent: 5, days: 2 }, // same count, more recent → above A
+      C: { sent: 5, days: 4 }, // same count + same recency as A → after A by name
+    }),
+    NOW,
+  );
+  assert.deepEqual(active.map((c) => c.name), ["B", "A", "C"]);
+});
+
+test("orderedContacts: does not mutate the input array", () => {
+  const contacts = mkContacts(3, { C: { sent: 9, days: 1 } });
+  orderedContacts(contacts, NOW);
+  assert.deepEqual(contacts.map((c) => c.name), ["A", "B", "C"]); // original order untouched
 });
