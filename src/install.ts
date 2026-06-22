@@ -144,5 +144,5 @@ console.log(
     `  command: npx\n  args:    ["-y", "${PKG}"]\n` +
     `  env:     MESSENGER_MAILBOX_URL=${mailboxUrl}` +
     (user ? `, MESSENGER_USER=${user}` : "") +
-    `\n\nRestart each CLI to pick it up, then say "set me up" to get your code.`,
+    `\n\nRestart each CLI to pick it up — on first start it'll ask for your name and give you your code.`,
 );
