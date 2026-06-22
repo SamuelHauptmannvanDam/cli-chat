@@ -51,14 +51,19 @@ new_sqlite_classes = ["Inbox"]
 # `period` must be 10 or 60 (seconds). These are the coarse outer wall; the
 # per-recipient / per-sender admission caps in app.ts are the real spam ceiling.
 # app.ts fails OPEN when a binding is absent, so local/Node runs are unaffected.
-#   RESOLVE_LIMITER  — caps directory harvesting (handle → keys) per IP.
+#   RESOLVE_LIMITER  — caps directory harvesting (handle → keys) per IP. /resolve
+#                      also requires a signed request (only real accounts resolve),
+#                      so this low cap is defence-in-depth against an account
+#                      holder walking the 6-char handle space. A human resolves a
+#                      handful of handles ever, so 20/min is generous for them and
+#                      brutal for a scraper.
 #   POST_IP_LIMITER  — caps the raw POST /messages flood per IP (pre-crypto).
 #   POST_KEY_LIMITER — caps one verified sender's send rate.
 [[unsafe.bindings]]
 name = "RESOLVE_LIMITER"
 type = "ratelimit"
 namespace_id = "1001"
-simple = { limit = 60, period = 60 }
+simple = { limit = 20, period = 60 }
 
 [[unsafe.bindings]]
 name = "POST_IP_LIMITER"
