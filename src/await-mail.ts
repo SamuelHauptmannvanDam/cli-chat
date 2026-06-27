@@ -1,39 +1,35 @@
-// The A1 "live inbox" listener. A short-lived, BLOCKING process the agent runs in
-// the BACKGROUND when the user says "listen": it waits until new mail lands,
-// prints the whole waiting batch as one JSON line, and EXITS 0. The agent's
-// harness re-invokes it on that exit — so the agent renders the batch into the
-// live feed and relaunches this command. No held-open tool call (unlike `watch`),
-// and no model cost while idle: between messages this is just a sleeping process.
+// The A1 "chat" WAKER. A short-lived, BLOCKING process the agent runs in the
+// BACKGROUND when the user says "chat": it waits until there is new mail to
+// surface, then EXITS 0 — and that's all. It carries NO output the agent needs to
+// read. The harness re-invokes the agent on that exit; the agent then fetches the
+// batch via the `chat_batch` MCP tool (a clean, named tool call — no temp-file
+// path on screen) and relaunches this waker.
 //
-// Two modes, chosen by the listener's own env (the start_listening tool passes a
-// matching MESSENGER_PUSH):
-//   - push (default): the MCP server's warmer keeps a decrypted pending.json
-//     current from the push socket. We only WATCH that file — never open inbox.db
-//     (avoids the wasm cross-process two-writer hazard) — and ack surfaced ids so
-//     they don't resurface on relaunch.
-//   - poll (MESSENGER_PUSH=0): no warmer, so we drain the mailbox ourselves.
+// It only DETECTS, never delivers. That split is the whole point: because the
+// agent never reads this process's stdout, the machine-room output path stays off
+// the screen. Content comes from chat_batch instead. See server-net.ts.
 //
-// Unlike `watch`, surfaced mail is NOT read one-at-a-time: the whole batch is
-// emitted at once and lives in the agent's context for batch reply.
+// Two modes, chosen by the waker's own env (start_chat passes a matching one):
+//   - push (default): the MCP server's warmer keeps pending.json current from the
+//     push socket. We only WATCH that file (no inbox.db access) and exit when it
+//     shows mail the feed hasn't surfaced yet (i.e. not in the ack file).
+//   - poll (MESSENGER_PUSH=0): no warmer, so we drain the mailbox until unread
+//     appears. We do NOT mark it read — chat_batch marks it when it delivers.
+//
+// Heartbeats chat.lock every tick so the check-inbox hook stays silent while chat
+// is live (the feed is the sole surfacing path). See check-inbox.ts (reader).
 
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 import { writeFileSync } from "node:fs";
 import { currentUser } from "./current-user.ts";
 import { loadIdentity } from "./identity.ts";
-import { loadContacts, senderLabel } from "./contacts.ts";
-import { openMailbox, unreadFor, markRead } from "./db.ts";
+import { loadContacts } from "./contacts.ts";
+import { openMailbox, unreadFor } from "./db.ts";
 import { createMailboxClient } from "./mailbox-client.ts";
 import { initCrypto } from "./crypto.ts";
 import { resolveMailboxUrl } from "./config.ts";
-import {
-  readPending,
-  readAck,
-  writePendingAck,
-  sync,
-  type NetContext,
-  type InboxMessage,
-} from "./core-net.ts";
+import { readPending, readAck, sync, type NetContext, type InboxMessage } from "./core-net.ts";
 import {
   identityFile,
   contactsFile,
@@ -49,29 +45,15 @@ const DRAIN_POLL_MS = 3_000; // network drain cadence in poll mode (no warmer)
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-export interface FeedMessage {
-  id: string;
-  from: string;
-  body: string;
-  at: number;
-}
-
 // The messages in a snapshot the feed hasn't surfaced yet (i.e. not already
-// acked). Pure + exported so the selection is unit-testable without the IO.
-export function pickUnsurfaced(messages: InboxMessage[], acked: Set<string>): FeedMessage[] {
-  return messages
-    .filter((m) => !acked.has(m.id))
-    .map((m) => ({ id: m.id, from: m.from, body: m.body, at: m.at }));
+// acked). Pure + exported so the selection stays unit-testable without the IO.
+export function pickUnsurfaced(messages: InboxMessage[], acked: Set<string>): InboxMessage[] {
+  return messages.filter((m) => !acked.has(m.id));
 }
 
-function emit(event: string, messages: FeedMessage[]): void {
-  process.stdout.write(JSON.stringify({ event, count: messages.length, messages }) + "\n");
-}
-
-// Heartbeat the chat lock so the session hook knows chat is live and stays silent
-// (the feed is surfacing). Bumped every tick; never removed — a clean "stop" or a
-// kill just lets it go stale, and a relaunch refreshes it well within the hook's
-// freshness window. Best-effort: a write hiccup must not break the listen loop.
+// Heartbeat the chat lock so the session hook knows chat is live and stays silent.
+// Bumped every tick; never removed — a clean "stop" or kill just lets it go stale,
+// and a relaunch refreshes it well within the hook's freshness window.
 function touchLock(lockPath: string): void {
   try {
     writeFileSync(lockPath, String(Date.now()));
@@ -80,34 +62,27 @@ function touchLock(lockPath: string): void {
   }
 }
 
-// push mode: watch the warmer's pending.json, surface + ack any new mail, exit.
+// push mode: watch the warmer's pending.json; exit the moment unsurfaced mail
+// appears. Never touches inbox.db. The ack file (written by chat_batch when it
+// delivers) is what marks a message surfaced — so after a fetch we keep blocking
+// instead of re-firing on mail already in the feed.
 async function runPush(pendingPath: string, ackPath: string, lockPath: string): Promise<void> {
   for (;;) {
     touchLock(lockPath);
     try {
       const snap = readPending(pendingPath);
-      // Ignore the boot SEED (synced:false) and any stale file (warmer dead).
       const fresh = snap && snap.synced !== false && Date.now() - snap.writtenAt < PENDING_STALE_MS;
-      if (fresh) {
-        const newMsgs = pickUnsurfaced(snap!.messages, new Set(readAck(ackPath)));
-        if (newMsgs.length) {
-          emit("mail", newMsgs);
-          // Ack the whole pending set so the warmer marks it read → it won't
-          // resurface when the agent relaunches us a moment later.
-          writePendingAck(ackPath, snap!.messages.map((m) => m.id));
-          return;
-        }
-      }
+      if (fresh && pickUnsurfaced(snap!.messages, new Set(readAck(ackPath))).length > 0) return;
     } catch {
-      /* transient read/write hiccup — keep waiting */
+      /* transient read hiccup — keep waiting */
     }
     await sleep(PUSH_POLL_MS);
   }
 }
 
 // poll mode (no warmer is maintaining pending.json): drain the mailbox ourselves
-// until something arrives, then mark it read and exit. No two-writer hazard here
-// because MESSENGER_PUSH=0 means no warmer holds inbox.db.
+// until unread appears, then exit. We do NOT mark it read — chat_batch does that
+// when it delivers the batch, so the read-state stays single-owner.
 async function runPoll(user: string, lockPath: string): Promise<void> {
   await initCrypto();
   const me = loadIdentity(identityFile(user));
@@ -126,18 +101,7 @@ async function runPoll(user: string, lockPath: string): Promise<void> {
     touchLock(lockPath);
     try {
       await sync(ctx);
-      const unread = unreadFor(cache, me.signPub);
-      if (unread.length) {
-        const msgs = unread.map((m) => ({
-          id: m.id,
-          from: senderLabel(book, m.sender),
-          body: m.body,
-          at: m.created_at,
-        }));
-        emit("mail", msgs);
-        for (const m of unread) markRead(cache, m.id, now());
-        return;
-      }
+      if (unreadFor(cache, me.signPub).length > 0) return;
     } catch {
       /* network blip — retry next tick */
     }
@@ -147,11 +111,11 @@ async function runPoll(user: string, lockPath: string): Promise<void> {
 
 async function main(): Promise<void> {
   const user = currentUser();
-  if (!user) return emit("no_account", []);
+  if (!user) return; // no account → exit; chat_batch reports the real state
   try {
     loadIdentity(identityFile(user));
   } catch {
-    return emit("no_account", []);
+    return;
   }
   const lockPath = chatLockFile(user);
   if (process.env.MESSENGER_PUSH === "0") await runPoll(user, lockPath);
@@ -165,7 +129,7 @@ if (isEntry) {
   main()
     .then(() => process.exit(0))
     .catch((e) => {
-      console.error(`await-mail: ${(e as Error).message}`);
+      console.error(`chat waker: ${(e as Error).message}`);
       process.exit(0); // never hard-fail — the agent simply relaunches
     });
 }

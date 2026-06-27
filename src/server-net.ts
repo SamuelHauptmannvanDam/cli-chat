@@ -37,6 +37,9 @@ import {
   draftReply,
   messagesAvailable,
   readMessage,
+  readPending,
+  readAck,
+  writePendingAck,
   sendMessage,
   sync,
   takeUnread,
@@ -439,6 +442,19 @@ const TOOLS: {
     },
     run: (s, { in_reply_to, body }) => draftReply(s.ctx, { in_reply_to, body }),
   },
+  {
+    name: "chat_batch",
+    title: "Fetch the waiting live-inbox messages",
+    description:
+      "Deliver the messages currently waiting for the live inbox ('chat') and mark " +
+      "them surfaced. Call this right after the chat WAKER (start_chat's command) " +
+      "exits — it's how the feed gets its content WITHOUT reading the waker's raw " +
+      "output file. Returns {count, messages:[{id,from,body,...}]}; render them as " +
+      "the feed and reply with draft_reply by id. After fetching, relaunch the " +
+      "waker in the background.",
+    inputSchema: {},
+    run: (s) => chatBatch(s),
+  },
 ];
 
 // Just-in-time choreography attached to tool RESULTS. Unlike the server
@@ -463,6 +479,10 @@ const resultNote = (name: string, r: any): string | undefined => {
     case "draft_reply":
       if (r.ok) return "Confirm in one line what you sent.";
       return undefined;
+    case "chat_batch":
+      return r.count > 0
+        ? "Render these as the live feed (sender + body, keep each id); reply with draft_reply by id. Then relaunch the chat waker in the background."
+        : "Nothing new. Relaunch the chat waker in the background to keep listening.";
     case "contacts":
       return "Show the user's own entry (me) first, then list the saved contacts.";
     default:
@@ -584,19 +604,41 @@ function listenerCommand(s: Session): string {
   return `${env}node ${JSON.stringify(listenerPath)}`;
 }
 
+// Deliver the waiting live-inbox batch to the agent and mark it surfaced. This is
+// how the feed gets its content WITHOUT the agent reading the waker's raw output
+// file (the temp path that read like the machine room). Mirrors the check-inbox
+// hook's two paths: prefer the warmer's pending snapshot (ack it so it won't
+// resurface); fall back to a direct drain when no warmer maintains the snapshot.
+const PENDING_STALE_MS = 120_000; // matches check-inbox / the waker
+async function chatBatch(s: Session) {
+  const pendingPath = pendingFile(s.user);
+  const ackPath = pendingAckFile(s.user);
+  const snap = readPending(pendingPath);
+  const fresh = snap && snap.synced !== false && now() - snap.writtenAt < PENDING_STALE_MS;
+  if (fresh) {
+    const acked = new Set(readAck(ackPath));
+    const messages = snap!.messages.filter((m) => !acked.has(m.id));
+    writePendingAck(ackPath, snap!.messages.map((m) => m.id)); // warmer marks read next tick
+    return { count: messages.length, messages };
+  }
+  await sync(s.ctx); // no warmer snapshot → drain directly, marking read as we take
+  const messages = takeUnread(s.ctx);
+  return { count: messages.length, messages };
+}
+
 server.registerTool(
   "start_chat",
   {
-    title: "Open the live inbox (background listener)",
+    title: "Open the live inbox (background waker)",
     description:
-      "Return the exact local shell command for the live-inbox listener: a process " +
-      "to run in the BACKGROUND that blocks until new mail arrives, prints the " +
-      "waiting batch as one JSON line, and exits. Use when the user says 'chat' / " +
-      "'go live' / 'start chat' — their explicit, per-session 'my chat terminal'. " +
-      "Run the returned `command` as a background task; each time it exits it has " +
-      "printed a JSON batch {event,count,messages} — render those as the live feed, " +
-      "then run the SAME command again in the background to keep the inbox live. " +
-      "(Full choreography — accumulate, batch-reply, stop — is in the server " +
+      "Return the local shell command for the live-inbox WAKER: a process to run in " +
+      "the BACKGROUND that blocks until new mail arrives and then exits — it carries " +
+      "NO output you need to read. Use when the user says 'chat' / 'go live' / " +
+      "'start chat' — their explicit, per-session 'my chat terminal'. Run the " +
+      "`command` as a background task; when it EXITS, call `chat_batch` to fetch the " +
+      "waiting messages, render them as the live feed, then run the SAME command " +
+      "again in the background to keep the inbox live. Do NOT read the waker's output " +
+      "file or narrate the raw command. (Full choreography is in the server " +
       "instructions.)",
     inputSchema: {},
   },
@@ -606,17 +648,16 @@ server.registerTool(
     mode: process.env.MESSENGER_PUSH === "0" ? "poll" : "push",
     label: "Listening for new messages",
     note:
-      "Run this in the BACKGROUND with a short friendly description like " +
-      "'Listening for new messages' — do NOT narrate, print, or explain the raw " +
-      "command to the user; it's internal plumbing. Just show the feed. " +
-      "When it exits it has printed " +
-      "one JSON line {event,count,messages}: render EVERY message as the live feed " +
-      "(sender + body, keep each id), then run the SAME command again in the " +
-      "background to keep listening. Let mail accumulate — show the whole batch and " +
-      "let the user reply to one/some/all in a single turn (draft_reply per id); " +
-      "anything they don't address stays in the feed. On 'stop', stop relaunching " +
-      "and kill the running background task. If event is 'no_account', tell the user " +
-      "to set up first (create_account).",
+      "Run this in the BACKGROUND under a short description like 'Listening for new " +
+      "messages' — do NOT narrate or explain the raw command, and do NOT read the " +
+      "background task's output file; it's internal plumbing. The command is a " +
+      "WAKER: it blocks until mail arrives, then exits. When it EXITS, call " +
+      "`chat_batch` to get the waiting messages, render them as the live feed " +
+      "(sender + body, keep each id), let the user reply to one/some/all in a single " +
+      "turn (draft_reply per id; anything they don't address stays pending), then " +
+      "run the SAME command again in the background. On 'stop', stop relaunching and " +
+      "kill the background task. If chat_batch returns no_account, tell the user to " +
+      "set up first and don't relaunch.",
   })),
 );
 
