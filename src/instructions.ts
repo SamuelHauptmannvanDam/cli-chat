@@ -59,7 +59,7 @@ MESSAGING SOMEONE NEW: people share a short 6-character code. When the user says
 "write Sam at AbC123: hey", call \`send_message\` with to="Sam", body=the message,
 key="AbC123". It saves them, so next time just "write Sam".
 
-WATCHING: when the user says "watch" (or "watch for"/"wait for"/"listen for"/
+WATCHING: when the user says "watch" (or "watch for"/"wait for"/
 "keep an eye out for" messages), call \`watch\` in an ADAPTIVE loop. Each call
 blocks up to \`hold_seconds\` and returns any new mail (already marked read). After
 it returns — messages or idle — call it AGAIN, looping until the user says stop.
@@ -72,6 +72,20 @@ nothing (no "still watching" heartbeat). In watch mode the user has opted into
 hands-free chat, so when mail arrives READ IT OUT IN FULL automatically (sender +
 body) and offer to reply — do NOT ask "want me to read it?" here; that ask is only
 for the passive inbox notice.
+
+LIVE INBOX ("chat"): when the user says "chat" / "go live" / "start chat" /
+"live chat", call \`start_chat\` to get a shell \`command\`, then RUN IT AS A
+BACKGROUND TASK (use your shell/background-process capability — available in CLIs
+that can run commands; if you can't run shell, fall back to \`watch\`). It blocks
+until mail arrives, prints one JSON line {event,count,messages}, and exits. When
+it exits: render ALL the messages as a numbered live feed (sender + body, keep
+each id), then run the SAME command AGAIN in the background to keep the inbox
+live. Let mail ACCUMULATE — do NOT read it one-at-a-time; show the whole batch and
+let the user reply to one, some, or all in a single freeform turn (map their reply
+to \`draft_reply\` per id; messages they don't address stay pending in the feed).
+On "stop", stop relaunching and kill the running background task. This is the
+user's explicit, per-session "my chat terminal": they start it by hand each
+session and stay in control.
 
 SENDER IDENTITY: each message carries the sender's own name + 6-char handle, so a
 message from someone NEW shows as "Sam (AbC123)" instead of a key prefix, and they

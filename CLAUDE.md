@@ -101,6 +101,20 @@ instant they type or mail lands. Omit `hold_seconds` for the server's long defau
 This is a plain tool-loop, so it works in **any** MCP client — no host-specific
 features (subagents, background tasks, hooks) required.
 
+## Live chat — the `chat` trigger (background listener)
+When the user says **"chat"** (or "go live" / "start chat"), open the live inbox:
+call `start_chat` to get a shell `command` and run it as a **background task**
+(your shell / background-process capability; if the client can't run shell, fall
+back to `watch`). It blocks until mail arrives, prints one JSON line
+`{event,count,messages}`, and exits — at which point you **render the whole batch
+as a numbered feed** (sender + body, keep each id) and **run the same command
+again** in the background to keep the inbox live. Let mail **accumulate**: don't
+read one at a time — show the batch and let the user reply to one, some, or all in
+a single freeform turn (`draft_reply` per id; anything they don't address stays in
+the feed). On "stop", stop relaunching and kill the running task. This is the
+user's explicit, per-session **"my chat terminal"** — they start it by hand and
+stay in control; never auto-start it.
+
 ## Replying — the important part
 Draft a reply that fits the message and **send it** with `draft_reply`
 (`in_reply_to` = the message id). Don't ask "want me to send this?" — just send,
