@@ -7,7 +7,7 @@
 // Fails silent (exit 0, no output) on any error or when MESSENGER_USER is unset,
 // so it never blocks or noisily breaks a session.
 
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { initCrypto } from "./crypto.ts";
 import { loadIdentity } from "./identity.ts";
 import { loadContacts, senderLabel } from "./contacts.ts";
@@ -15,7 +15,7 @@ import { openMailbox, unreadFor, markRead } from "./db.ts";
 import { createMailboxClient } from "./mailbox-client.ts";
 import { sync, readPending, readAck, writePendingAck, type NetContext } from "./core-net.ts";
 import { currentUser } from "./current-user.ts";
-import { identityFile, contactsFile, inboxFile, pendingFile, pendingAckFile } from "./paths.ts";
+import { identityFile, contactsFile, inboxFile, pendingFile, pendingAckFile, chatLockFile } from "./paths.ts";
 import { resolveMailboxUrl } from "./config.ts";
 
 const user = currentUser();
@@ -80,6 +80,23 @@ if (!setUp) {
 // this never fires at runtime — it just narrows `user` to string for the rest
 // of the hook, which is all per-user path building from here down.
 if (!user) process.exit(0);
+
+// While the live inbox ("chat") is running, ITS background listener owns
+// surfacing — it reads new mail straight into the feed and acks it. Suppress this
+// hook's count-only notice so the same message isn't announced twice. The listener
+// heartbeats chat.lock every tick; a fresh lock means chat is live. Only suppress
+// on keystroke (UserPromptSubmit) and turn-end (Stop) — the exact paths where the
+// double-announce happens; SessionStart still runs so a new session gets its
+// identity context (and a fresh session hasn't started chat yet anyway).
+const CHAT_ACTIVE_MS = 15_000; // > the listener's poll cadence, covers relaunch gap
+function chatActive(u: string): boolean {
+  try {
+    return Date.now() - statSync(chatLockFile(u)).mtimeMs < CHAT_ACTIVE_MS;
+  } catch {
+    return false; // no lock / unreadable → chat isn't running
+  }
+}
+if (hookEventName !== "SessionStart" && chatActive(user)) process.exit(0);
 
 // A pending.json older than this is treated as stale (warmer off/dead) → the hook
 // falls back to a direct drain. The warmer rewrites it on every drain (≤ its 60s

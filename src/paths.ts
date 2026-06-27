@@ -60,3 +60,12 @@ export function pendingFile(user: string): string {
 export function pendingAckFile(user: string): string {
   return join(userDir(user), "pending-ack.json");
 }
+
+// While the live inbox ("chat") listener is running it heartbeats this lock file
+// (bumping its mtime every tick). A FRESH lock tells the session hook that chat is
+// live, so the hook suppresses its count-only notice and the listener's feed is
+// the sole surfacing path — otherwise a new message gets announced twice. See
+// await-mail.ts (writer) and check-inbox.ts (reader).
+export function chatLockFile(user: string): string {
+  return join(userDir(user), "chat.lock");
+}

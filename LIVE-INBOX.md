@@ -131,10 +131,11 @@ The foundation everything above renders through.
    on "chat"/"go live" → call the tool → spawn backgrounded → on each
    completion render the pending **feed** and **relaunch**; on "stop" don't
    relaunch. Define the batch-reply behavior (freeform → `draft_reply` per id).
-4. **Reconcile with `check-inbox.ts`.** While the listener is active the feed
-   owns surfacing, so the count-only hook must not also mark mail read / hide it.
-   Decide: listener-active suppresses the hook's claim, or both share one pending
-   list + marker. (Integration point — get this right so mail isn't double-claimed.)
+4. **Reconcile with `check-inbox.ts`.** ✅ Done. The listener heartbeats a
+   `chat.lock` (mtime) every tick; the hook treats a lock fresh within 15s as
+   "chat is live" and suppresses its count-only notice on keystroke/turn-end
+   (SessionStart still runs). So the feed is the sole surfacing path while chat is
+   on — no double-announce — and the lock simply goes stale on stop/kill.
 5. **Build wiring (`build.mjs`).** Bundle `await-mail.ts` into `dist/`.
 6. **Tests.** Unit: the pending-diff/marker logic. Integration: spawn → message →
    batch on stdout → exit.
