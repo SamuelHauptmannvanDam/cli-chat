@@ -18,6 +18,7 @@
 
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
+import { writeFileSync } from "node:fs";
 import { currentUser } from "./current-user.ts";
 import { loadIdentity } from "./identity.ts";
 import { loadContacts, senderLabel } from "./contacts.ts";
@@ -39,6 +40,7 @@ import {
   inboxFile,
   pendingFile,
   pendingAckFile,
+  chatLockFile,
 } from "./paths.ts";
 
 const PENDING_STALE_MS = 120_000; // matches check-inbox: older snapshot → warmer dead
@@ -66,9 +68,22 @@ function emit(event: string, messages: FeedMessage[]): void {
   process.stdout.write(JSON.stringify({ event, count: messages.length, messages }) + "\n");
 }
 
+// Heartbeat the chat lock so the session hook knows chat is live and stays silent
+// (the feed is surfacing). Bumped every tick; never removed — a clean "stop" or a
+// kill just lets it go stale, and a relaunch refreshes it well within the hook's
+// freshness window. Best-effort: a write hiccup must not break the listen loop.
+function touchLock(lockPath: string): void {
+  try {
+    writeFileSync(lockPath, String(Date.now()));
+  } catch {
+    /* best-effort heartbeat */
+  }
+}
+
 // push mode: watch the warmer's pending.json, surface + ack any new mail, exit.
-async function runPush(pendingPath: string, ackPath: string): Promise<void> {
+async function runPush(pendingPath: string, ackPath: string, lockPath: string): Promise<void> {
   for (;;) {
+    touchLock(lockPath);
     try {
       const snap = readPending(pendingPath);
       // Ignore the boot SEED (synced:false) and any stale file (warmer dead).
@@ -93,7 +108,7 @@ async function runPush(pendingPath: string, ackPath: string): Promise<void> {
 // poll mode (no warmer is maintaining pending.json): drain the mailbox ourselves
 // until something arrives, then mark it read and exit. No two-writer hazard here
 // because MESSENGER_PUSH=0 means no warmer holds inbox.db.
-async function runPoll(user: string): Promise<void> {
+async function runPoll(user: string, lockPath: string): Promise<void> {
   await initCrypto();
   const me = loadIdentity(identityFile(user));
   const book = loadContacts(contactsFile(user));
@@ -108,6 +123,7 @@ async function runPoll(user: string): Promise<void> {
     contactsPath: contactsFile(user),
   };
   for (;;) {
+    touchLock(lockPath);
     try {
       await sync(ctx);
       const unread = unreadFor(cache, me.signPub);
@@ -137,8 +153,9 @@ async function main(): Promise<void> {
   } catch {
     return emit("no_account", []);
   }
-  if (process.env.MESSENGER_PUSH === "0") await runPoll(user);
-  else await runPush(pendingFile(user), pendingAckFile(user));
+  const lockPath = chatLockFile(user);
+  if (process.env.MESSENGER_PUSH === "0") await runPoll(user, lockPath);
+  else await runPush(pendingFile(user), pendingAckFile(user), lockPath);
 }
 
 // Run the blocking loop only when invoked directly (so importing the pure helper
