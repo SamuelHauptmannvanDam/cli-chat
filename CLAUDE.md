@@ -15,14 +15,13 @@ differ only in how it surfaces to the user:
    user acts. The same hook also runs on `Stop` (when a turn ends): if mail
    landed while you were working a long turn, it surfaces the moment you finish
    rather than waiting for the user's next message — it blocks that one stop so
-   you get a turn to relay the count + sender. This never fires during a `watch`
-   loop, since the turn doesn't end while you're looping the `watch` tool.
-2. **Live `watch` (real-time).** When the user says "watch", you loop the `watch`
-   tool; it holds one long call open and returns the instant mail arrives, which
-   you read straight into the chat. One model turn per real message, ~none while
-   idle (the hold is a server-driven adaptive long-poll — ~9.2 min default via
-   `MESSENGER_WATCH_MS`, tunable per call with the `hold_seconds` param;
-   `MCP_TOOL_TIMEOUT` is only the client-side cap).
+   you get a turn to relay the count + sender. This is suppressed while live chat
+   is running, so mail doesn't get announced twice.
+2. **Live chat (real-time).** When the user says "chat", you open the live inbox:
+   a background waker blocks until mail arrives then exits, and you fetch the batch
+   with `chat_batch` and read it straight into the terminal. One model turn per
+   real batch, ~none while idle. (Needs a client that can run a background shell;
+   where it can't, fall back to mode 1 plus `messages_available` on demand.)
 
 ## At session start (announce mail, offer to read)
 A `SessionStart` hook checks for waiting mail. The **user is shown only a count
@@ -33,7 +32,7 @@ full bodies are injected privately into your context as an `[inbox] …` block
 - **Do NOT print the bodies on open.** Just relay the count and sender and ask if
   they want it read (the hook already shows the summary; don't duplicate it
   verbatim — a brief "want me to read it?" is enough). The summary also suggests
-  they can say "watch" to go hands-free — see below.
+  they can say "chat" to go hands-free — see below.
 - When the user says to read it (e.g. "read it", "go on", "yes"), print the
   relevant message in full from the injected body. Do NOT call
   `messages_available`/`read_message` for these — you already have them.
@@ -48,7 +47,7 @@ Mail that arrives *after* open surfaces the same way on the user's next message
 need to poll. Treat a mid-session `[inbox]` block exactly like the on-open one:
 relay the count + sender, offer to read. Only call `messages_available` as a
 fallback if the user explicitly asks "any messages?" at a moment when no block is
-present (e.g. right after a `watch` stop).
+present (e.g. right after a live chat stop).
 
 ## Reading on demand
 If the user asks for mail when there's no injected block, call `read_message` (by
@@ -81,28 +80,9 @@ They can change it any time: `create_account` is idempotent and passing a `name`
 updates the display name (use this for "call me X" / "change my name to X"). They
 can see their current name + handle any time at the top of `contacts`.
 
-## Watch mode (hands-free, adaptive)
-When the user says "watch" (or "watch for messages", "keep an eye out"), call the
-`watch` tool in an **adaptive loop**. Each call long-polls for up to its
-`hold_seconds` and returns any new mail; after it returns — messages or idle —
-call it AGAIN, looping until the user says stop. On an idle return, re-call
-**silently** — print nothing (no "still watching" heartbeat); only speak when mail
-actually arrives. This is the opt-in hands-free mode, so when mail arrives **read
-it out in full automatically** (sender + body) and offer to reply — do NOT ask
-"want me to read it?" here (that ask is only for the passive on-open notice).
-
-**Stay responsive — pick `hold_seconds` adaptively.** The user can keep chatting
-while you watch, but anything they type only reaches you when the current call
-returns. So while they're actively chatting, pass `hold_seconds: 5` — they type,
-the call returns idle within ~5s, you **send their message, then re-watch** (no
-long queue). After several quiet idle returns with no user activity, **back off**
-(`hold_seconds` 15 → 30 → 60) to stay token-cheap while idle; snap back to `5` the
-instant they type or mail lands. Omit `hold_seconds` for the server's long default.
-This is a plain tool-loop, so it works in **any** MCP client — no host-specific
-features (subagents, background tasks, hooks) required.
-
 ## Live chat — the `chat` trigger (background waker + `chat_batch`)
-When the user says **"chat"** (or "go live" / "start chat"), open the live inbox:
+When the user says **"chat"** (or "go live" / "start chat", and also "watch" /
+"watch for messages" / "keep an eye out"), open the live inbox:
 call `start_chat` to get a shell `command` and run it as a **background task**.
 **Always set the background-shell tool's `description`** to a plain phrase the end
 user reads *instead of* the command — "Listening for new messages" on first start,
@@ -119,6 +99,10 @@ stop relaunching and kill the task. If `chat_batch` returns `no_account`, tell t
 user to set up first and don't relaunch. This is the user's explicit, per-session
 **"my chat terminal"** — they start it by hand and stay in control; never
 auto-start it.
+
+Live chat needs a client that can run a background shell. Where it can't, there's
+no live mode — fall back to the on-keystroke inbox notice (mode 1) and
+`messages_available` on demand.
 
 ## Replying — the important part
 Draft a reply that fits the message and **send it** with `draft_reply`

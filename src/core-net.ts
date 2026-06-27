@@ -291,10 +291,10 @@ export interface InboxMessage {
 }
 
 // Take every currently-unread message, marking each read, with the FULL body —
-// the receive shape the live `watch` loop hands straight to the user. Kept here
-// (not inlined in the watch tool) so it shares the sender-labelling and read
-// semantics with the rest of the receive path instead of the tool reaching into
-// the cache directly.
+// the receive shape `chat_batch` hands straight to the user when there's no fresh
+// warmer snapshot. Kept here (not inlined in the tool) so it shares the
+// sender-labelling and read semantics with the rest of the receive path instead
+// of the tool reaching into the cache directly.
 export function takeUnread(ctx: NetContext): InboxMessage[] {
   return unreadFor(ctx.cache, ctx.me.signPub).map((m) => {
     markRead(ctx.cache, m.id, ctx.now());
@@ -313,8 +313,9 @@ export function takeUnread(ctx: NetContext): InboxMessage[] {
 // driver's cross-process lock — the old "mail never surfaced" bug). So the warmer
 // (sole writer) mirrors current unread mail here, already decrypted, and the hook
 // just reads it. Read-state stays in SQLite; a message is marked read ONLY once the
-// hook acks it (writePendingAck → refreshPending), never at queue time — so `watch`
-// and messages_available aren't starved, and nothing is lost if the hook never runs.
+// hook acks it (writePendingAck → refreshPending), never at queue time — so
+// chat_batch and messages_available aren't starved, and nothing is lost if the
+// hook never runs.
 
 export interface PendingSnapshot {
   writtenAt: number;

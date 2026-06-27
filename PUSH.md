@@ -1,7 +1,9 @@
 # Push delivery spec — background WebSocket warmer
 
-Status: design — the background warmer and `watch` tool are now implemented (the
-desktop notification is opt-in via `MESSENGER_NOTIFY=1`, off by default).
+Status: design — the background warmer is implemented; the live mode is now the
+"chat" inbox (await-mail waker + `chat_batch`, see `LIVE-INBOX.md`), which replaced
+the old in-call `watch` tool. The desktop notification is opt-in via
+`MESSENGER_NOTIFY=1`, off by default.
 Supersedes the 3-second poll loop in `listen_for_messages`.
 
 ## Goal
@@ -132,32 +134,16 @@ by the background WS — no network needed) and emits the lightweight
 `additionalContext`, surfaced only if the user says yes. Same as today, just faster
 and offline-resilient.
 
-#### `watch` (the explicit hands-free mode — AS IMPLEMENTED)
-Kept for the explicit "lean back and watch, read it straight into context the
-instant it arrives" mode. It occupies the turn *by design* (that's what "watch"
-means), and it's no longer required to stay current — the background warmer does
-that. How the loop actually works in `src/server-net.ts`:
-
-- **One catch-up `sync(ctx)` on entry**, then loop, blocking up to `WATCH_MS`
-  (env `MESSENGER_WATCH_MS`, default `550_000` ≈ 9.2 min; parsed defensively so an
-  unset/empty/non-numeric value — e.g. a Windows shell that doesn't expand the
-  `${VAR:-…}` default in `.mcp.json` — falls back to the default instead of
-  collapsing to 0/NaN and re-firing every ~minute).
-- **Each tick (`WATCH_PING_MS` = 3s)** it does NOT poll the network: it reads the
-  **local cache** (cheap), and — if the client sent a `progressToken` — emits one
-  MCP `notifications/progress` ping. That ping is a *keepalive* so progress-aware
-  clients reset their ~60s tool-call timeout and the call can live the full window.
-- **Network backstop (`WATCH_SYNC_MS` = 15s)** it re-runs `sync(ctx)` so mail still
-  surfaces within a single call even when push is off or the WebSocket is blocked
-  (firewall/proxy — common on Windows). Without push this is the delivery path;
-  with push it's a rarely-needed safety net.
-- **Returns** as soon as the local cache has unread mail (marking it read), on
-  client abort, or when the deadline passes (`idle`); the agent re-calls to keep
-  watching.
-
-Note this is a local-cache poll with a network backstop, NOT the pure
-"await the next wake frame" design sketched above — the warmer owns the socket;
-`watch` just observes the cache the warmer (or its own backstop sync) fills.
+#### Live chat (the explicit hands-free mode — AS IMPLEMENTED)
+The explicit "lean back, read mail straight into context the instant it arrives"
+mode is the live inbox the user opens by saying **"chat"** — see `LIVE-INBOX.md`
+for the full design. In short: `start_chat` hands the agent a shell command for the
+`await-mail` **waker**, which the agent runs as a BACKGROUND task. The waker blocks
+on the warmer's pending snapshot and exits the moment unsurfaced mail lands; on each
+exit the agent calls `chat_batch` to drain the batch and relaunches the waker. This
+keeps the turn free while idle (the waker runs out of band, not inside a tool call)
+and works in any client that can background a process. The old in-call `watch`
+long-poll tool has been removed.
 
 ### Concurrency note (ties to the `db.ts` decision)
 Two processes touch `~/.cli-chat`: the long-lived MCP server (warmer, writing) and

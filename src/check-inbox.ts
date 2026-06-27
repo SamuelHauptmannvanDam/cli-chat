@@ -211,10 +211,10 @@ try {
   const senders = [...new Set(toShow.map((m) => m.from))];
   const noun = `${toShow.length} new message${toShow.length > 1 ? "s" : ""}`;
   let summary = `📬 ${noun} from ${senders.join(", ")} — want me to read ${toShow.length > 1 ? "them" : "it"}?`;
-  // On session open, also nudge the hands-free option: a watch loop that auto-reads
+  // On session open, also nudge the hands-free option: live chat, which auto-reads
   // incoming mail straight into the chat. Only on SessionStart so it doesn't repeat.
   if (hookEventName === "SessionStart") {
-    summary += `\n   ↳ Tip: write "watch" in a new terminal for auto-reading new messages into our chat.`;
+    summary += `\n   ↳ Tip: say "chat" for a live inbox that reads new messages into our chat as they arrive.`;
   }
   if (nudgeAsk) summary += `\n   ↳ ${nameAskUser}`;
 
@@ -230,9 +230,9 @@ try {
     `then print the relevant message in full. Do NOT call ` +
     `messages_available/read_message for these — use the bodies here. To ` +
     `reply, use draft_reply with the id, asking for any missing fact first. ` +
-    `The on-open summary already shows a "say watch" tip, so don't repeat ` +
-    `it; if the user says "watch", call the \`watch\` tool and auto-read new ` +
-    `mail in full as it arrives.\n` +
+    `The on-open summary already shows a "say chat" tip, so don't repeat ` +
+    `it; if the user says "chat" (or "watch"), open the live inbox and auto-read ` +
+    `new mail in full as it arrives.\n` +
     bodies.join("\n");
 
   if (hookEventName === "Stop") {
