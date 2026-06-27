@@ -27,7 +27,7 @@ import {
   pendingFile,
   pendingAckFile,
 } from "./paths.ts";
-import { resolveMailboxUrl } from "./config.ts";
+import { resolveMailboxUrl, DEFAULT_MAILBOX_URL } from "./config.ts";
 import { startWarmer } from "./warmer.ts";
 import { claimHandle } from "./provision.ts";
 import { INSTRUCTIONS } from "./instructions.ts";
@@ -566,14 +566,22 @@ server.registerTool(
 // await-mail listener as a BACKGROUND task. The tool only RETURNS the command —
 // it deliberately doesn't spawn anything, because only a process the agent itself
 // backgrounds gets the harness's exit→re-invoke that refreshes the feed hands-free
-// (an MCP server can't start the agent's turn). Env is embedded so the listener
-// targets the exact same account + mailbox + data dir as this server.
+// (an MCP server can't start the agent's turn).
+//
+// Keep the command CLEAN — the user sees it in the tool call, so don't leak
+// plumbing. The listener self-resolves the account (currentUser) and mailbox
+// (default), so we embed env ONLY when it's actually non-default: a pinned
+// MESSENGER_USER, a custom mailbox, a dev MESSENGER_HOME, or push disabled.
+// In a normal install that collapses to just `node <path>`.
 function listenerCommand(s: Session): string {
-  const parts = [`MESSENGER_USER=${s.user}`, `MESSENGER_MAILBOX_URL=${mailboxUrl}`];
+  const parts: string[] = [];
+  if (process.env.MESSENGER_USER?.trim()) parts.push(`MESSENGER_USER=${s.user}`);
+  if (mailboxUrl !== DEFAULT_MAILBOX_URL) parts.push(`MESSENGER_MAILBOX_URL=${mailboxUrl}`);
   const home = process.env.MESSENGER_HOME?.trim();
   if (home) parts.push(`MESSENGER_HOME=${JSON.stringify(home)}`);
   if (process.env.MESSENGER_PUSH) parts.push(`MESSENGER_PUSH=${process.env.MESSENGER_PUSH}`);
-  return `${parts.join(" ")} node ${JSON.stringify(listenerPath)}`;
+  const env = parts.length ? parts.join(" ") + " " : "";
+  return `${env}node ${JSON.stringify(listenerPath)}`;
 }
 
 server.registerTool(
@@ -596,8 +604,12 @@ server.registerTool(
     ok: true,
     command: listenerCommand(s),
     mode: process.env.MESSENGER_PUSH === "0" ? "poll" : "push",
+    label: "Listening for new messages",
     note:
-      "Run this in the BACKGROUND (don't block on it). When it exits it has printed " +
+      "Run this in the BACKGROUND with a short friendly description like " +
+      "'Listening for new messages' — do NOT narrate, print, or explain the raw " +
+      "command to the user; it's internal plumbing. Just show the feed. " +
+      "When it exits it has printed " +
       "one JSON line {event,count,messages}: render EVERY message as the live feed " +
       "(sender + body, keep each id), then run the SAME command again in the " +
       "background to keep listening. Let mail accumulate — show the whole batch and " +

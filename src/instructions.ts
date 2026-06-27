@@ -75,9 +75,12 @@ for the passive inbox notice.
 
 LIVE INBOX ("chat"): when the user says "chat" / "go live" / "start chat" /
 "live chat", call \`start_chat\` to get a shell \`command\`, then RUN IT AS A
-BACKGROUND TASK (use your shell/background-process capability — available in CLIs
-that can run commands; if you can't run shell, fall back to \`watch\`). It blocks
-until mail arrives, prints one JSON line {event,count,messages}, and exits. When
+BACKGROUND TASK with a short friendly description (e.g. "Listening for new
+messages"); do NOT print, narrate, or explain the raw command — it's internal
+plumbing, just show the feed. (Use your shell/background-process capability —
+available in CLIs that can run commands; if you can't run shell, fall back to
+\`watch\`.) It blocks until mail arrives, prints one JSON line
+{event,count,messages}, and exits. When
 it exits: render ALL the messages as a numbered live feed (sender + body, keep
 each id), then run the SAME command AGAIN in the background to keep the inbox
 live. Let mail ACCUMULATE — do NOT read it one-at-a-time; show the whole batch and
