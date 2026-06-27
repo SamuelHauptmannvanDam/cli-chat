@@ -124,11 +124,11 @@ The foundation everything above renders through.
    fallback) until new pending appears; prints the batch as JSON lines
    (`{id, from, body}`) to stdout; exits 0. Does **not** mark read — accumulate
    semantics; disposal happens when the user replies. Fails clean on `no_account`.
-2. **Spawn-command tool in `src/server-net.ts`.** A small MCP tool (e.g.
-   `start_listening`) that returns the exact local command to run
+2. **Spawn-command tool in `src/server-net.ts`.** A small MCP tool
+   (`start_chat`) that returns the exact local command to run
    (`node <dist>/await-mail.js` + env) so the agent never guesses a path.
 3. **Instructions (`src/instructions.ts` + CLAUDE.md).** Teach the trigger:
-   on "listen"/"go live" → call the tool → spawn backgrounded → on each
+   on "chat"/"go live" → call the tool → spawn backgrounded → on each
    completion render the pending **feed** and **relaunch**; on "stop" don't
    relaunch. Define the batch-reply behavior (freeform → `draft_reply` per id).
 4. **Reconcile with `check-inbox.ts`.** While the listener is active the feed
@@ -140,7 +140,7 @@ The foundation everything above renders through.
    batch on stdout → exit.
 7. **Docs.** README "Receiving messages": add the listener mode. Bump version.
 
-**Acceptance:** fresh install → say "listen" → one permission click → send a test
+**Acceptance:** fresh install → say "chat" → one permission click → send a test
 message from another account → feed appears hands-free → "reply to all: …" sends.
 
 ### What A1 requires server-side: nothing
@@ -157,10 +157,11 @@ relay load.
 ### Activation: on chat, by a word (no install)
 
 A user already on `cli-chat-mcp@latest` activates A1 by **saying it in chat** —
-e.g. "listen" / "go live". Nothing to install: the listener binary ships in
-`dist/` and the trigger behavior ships in the MCP `instructions`. Flow:
+the trigger word is **"chat"** (also "go live" / "start chat"). Nothing to
+install: the listener binary ships in `dist/` and the trigger behavior ships in
+the MCP `instructions`. Flow:
 
-1. User says **"listen"** in chat.
+1. User says **"chat"** in the session.
 2. Agent (per instructions) calls the MCP tool to get the exact spawn command,
    then runs it as a **backgrounded Bash task**.
 3. **One-time** shell-permission click (allow-always) on CLIs that gate shell.
@@ -172,8 +173,8 @@ one permission click ever**.
 
 ### Design principle: explicit, user-triggered start (don't auto-spawn)
 
-The listener is **started by the user each session**, on purpose — e.g. "watch"
-/ "go live" / a `/inbox` command → the agent launches it as a backgrounded Bash
+The listener is **started by the user each session**, on purpose — they say
+**"chat"** (or "go live") → the agent launches it as a backgrounded Bash
 task. It is deliberately **not** auto-spawned from a SessionStart hook or at
 MCP boot. The manual start is the feature: the user stays in control and *knows*
 the channel is live — "this is my chat terminal." Keep it that way; don't move

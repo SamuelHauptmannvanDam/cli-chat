@@ -10,6 +10,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { mkdirSync, writeFileSync } from "node:fs";
+import { extname, join } from "node:path";
 import { userInfo } from "node:os";
 import { initCrypto, generateIdentity } from "./crypto.ts";
 import { loadIdentity } from "./identity.ts";
@@ -45,6 +46,11 @@ import {
 const mailboxUrl = resolveMailboxUrl();
 const now = () => Date.now();
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// The live-inbox listener (await-mail) sits next to this file — bundled in dist/
+// in a published install, or src/ in a dev checkout. Same extension as us, so it
+// runs under the same `node` either way. start_chat hands the agent this path.
+const listenerPath = join(import.meta.dirname, `await-mail${extname(import.meta.filename)}`);
 
 // How long a single `watch` long-poll blocks before returning `idle`. The MCP
 // client (Claude Code) normally aborts a tool call after ~60s, but we emit a
@@ -554,6 +560,52 @@ server.registerTool(
       }
     }
   }),
+);
+
+// The live inbox ("chat"): hand the agent the exact local command to run the
+// await-mail listener as a BACKGROUND task. The tool only RETURNS the command —
+// it deliberately doesn't spawn anything, because only a process the agent itself
+// backgrounds gets the harness's exit→re-invoke that refreshes the feed hands-free
+// (an MCP server can't start the agent's turn). Env is embedded so the listener
+// targets the exact same account + mailbox + data dir as this server.
+function listenerCommand(s: Session): string {
+  const parts = [`MESSENGER_USER=${s.user}`, `MESSENGER_MAILBOX_URL=${mailboxUrl}`];
+  const home = process.env.MESSENGER_HOME?.trim();
+  if (home) parts.push(`MESSENGER_HOME=${JSON.stringify(home)}`);
+  if (process.env.MESSENGER_PUSH) parts.push(`MESSENGER_PUSH=${process.env.MESSENGER_PUSH}`);
+  return `${parts.join(" ")} node ${JSON.stringify(listenerPath)}`;
+}
+
+server.registerTool(
+  "start_chat",
+  {
+    title: "Open the live inbox (background listener)",
+    description:
+      "Return the exact local shell command for the live-inbox listener: a process " +
+      "to run in the BACKGROUND that blocks until new mail arrives, prints the " +
+      "waiting batch as one JSON line, and exits. Use when the user says 'chat' / " +
+      "'go live' / 'start chat' — their explicit, per-session 'my chat terminal'. " +
+      "Run the returned `command` as a background task; each time it exits it has " +
+      "printed a JSON batch {event,count,messages} — render those as the live feed, " +
+      "then run the SAME command again in the background to keep the inbox live. " +
+      "(Full choreography — accumulate, batch-reply, stop — is in the server " +
+      "instructions.)",
+    inputSchema: {},
+  },
+  guard(async (s) => ({
+    ok: true,
+    command: listenerCommand(s),
+    mode: process.env.MESSENGER_PUSH === "0" ? "poll" : "push",
+    note:
+      "Run this in the BACKGROUND (don't block on it). When it exits it has printed " +
+      "one JSON line {event,count,messages}: render EVERY message as the live feed " +
+      "(sender + body, keep each id), then run the SAME command again in the " +
+      "background to keep listening. Let mail accumulate — show the whole batch and " +
+      "let the user reply to one/some/all in a single turn (draft_reply per id); " +
+      "anything they don't address stays in the feed. On 'stop', stop relaunching " +
+      "and kill the running background task. If event is 'no_account', tell the user " +
+      "to set up first (create_account).",
+  })),
 );
 
 const transport = new StdioServerTransport();
