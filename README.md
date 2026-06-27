@@ -29,6 +29,9 @@ gemini mcp add -s user cli-chat npx -y cli-chat-mcp@latest
 
 # Copilot CLI
 copilot mcp add cli-chat -- npx -y cli-chat-mcp@latest
+
+# Codex CLI
+codex mcp add cli-chat -- npx -y cli-chat-mcp@latest
 ```
 Any other MCP-capable CLI: point it at `npx -y cli-chat-mcp@latest`.
 
