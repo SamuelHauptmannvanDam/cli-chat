@@ -117,16 +117,18 @@ The foundation everything above renders through.
 
 ### Build steps (in order)
 
-1. **`src/await-mail.ts` — the listener.** Loads identity/contacts like
-   `check-inbox.ts`. Reads the warmer's pending snapshot (never opens `inbox.db`
-   directly — avoids the two-writer wasm-SQLite hazard). Computes the diff vs a
-   last-surfaced marker; **blocks** (watch the snapshot file + slow poll
-   fallback) until new pending appears; prints the batch as JSON lines
-   (`{id, from, body}`) to stdout; exits 0. Does **not** mark read — accumulate
-   semantics; disposal happens when the user replies. Fails clean on `no_account`.
-2. **Spawn-command tool in `src/server-net.ts`.** A small MCP tool
-   (`start_chat`) that returns the exact local command to run
-   (`node <dist>/await-mail.js` + env) so the agent never guesses a path.
+1. **`src/await-mail.ts` — the chat WAKER.** A detector, not a deliverer. In push
+   mode it only WATCHES the warmer's pending snapshot (never opens `inbox.db`) and
+   **blocks** until the snapshot shows mail not yet acked, then **exits 0** —
+   carrying no output the agent reads. In poll mode (no warmer) it drains until
+   unread appears and exits, without marking read. Heartbeats `chat.lock` each
+   tick. Fails clean on `no_account` (just exits). *Why waker-not-printer: the
+   agent never reads its stdout, so the temp output-file path stays off screen.*
+2. **`src/server-net.ts` — `start_chat` + `chat_batch`.** `start_chat` returns the
+   waker command (env embedded only when non-default, so the shown command stays
+   clean). `chat_batch` DELIVERS the batch — reads the pending snapshot and acks
+   it (or drains directly when no warmer) — so the feed's content arrives via a
+   clean named tool call instead of the agent reading the waker's temp file.
 3. **Instructions (`src/instructions.ts` + CLAUDE.md).** Teach the trigger:
    on "chat"/"go live" → call the tool → spawn backgrounded → on each
    completion render the pending **feed** and **relaunch**; on "stop" don't

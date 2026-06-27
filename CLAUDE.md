@@ -101,21 +101,22 @@ instant they type or mail lands. Omit `hold_seconds` for the server's long defau
 This is a plain tool-loop, so it works in **any** MCP client — no host-specific
 features (subagents, background tasks, hooks) required.
 
-## Live chat — the `chat` trigger (background listener)
+## Live chat — the `chat` trigger (background waker + `chat_batch`)
 When the user says **"chat"** (or "go live" / "start chat"), open the live inbox:
 call `start_chat` to get a shell `command` and run it as a **background task**
-with a short friendly description (e.g. "Listening for new messages") — **don't
-print, narrate, or explain the raw command**, it's internal plumbing; just show
-the feed. (Your shell / background-process capability; if the client can't run
-shell, fall back to `watch`.) It blocks until mail arrives, prints one JSON line
-`{event,count,messages}`, and exits — at which point you **render the whole batch
-as a numbered feed** (sender + body, keep each id) and **run the same command
-again** in the background to keep the inbox live. Let mail **accumulate**: don't
-read one at a time — show the batch and let the user reply to one, some, or all in
-a single freeform turn (`draft_reply` per id; anything they don't address stays in
-the feed). On "stop", stop relaunching and kill the running task. This is the
-user's explicit, per-session **"my chat terminal"** — they start it by hand and
-stay in control; never auto-start it.
+under a short friendly description (e.g. "Listening for new messages") — **don't
+narrate or explain the raw command, and don't read the background task's output
+file**; it's internal plumbing. The command is a **waker**: it blocks until new
+mail arrives, then exits. Each time it **exits**, call the **`chat_batch`** tool to
+fetch the waiting messages, **render the whole batch as a numbered feed** (sender +
+body, keep each id), then **run the same command again** in the background to keep
+the inbox live. Let mail **accumulate**: don't read one at a time — show the batch
+and let the user reply to one, some, or all in a single freeform turn
+(`draft_reply` per id; anything they don't address stays in the feed). On "stop",
+stop relaunching and kill the task. If `chat_batch` returns `no_account`, tell the
+user to set up first and don't relaunch. This is the user's explicit, per-session
+**"my chat terminal"** — they start it by hand and stay in control; never
+auto-start it.
 
 ## Replying — the important part
 Draft a reply that fits the message and **send it** with `draft_reply`
