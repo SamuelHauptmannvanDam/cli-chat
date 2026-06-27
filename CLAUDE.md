@@ -103,10 +103,12 @@ features (subagents, background tasks, hooks) required.
 
 ## Live chat — the `chat` trigger (background waker + `chat_batch`)
 When the user says **"chat"** (or "go live" / "start chat"), open the live inbox:
-call `start_chat` to get a shell `command` and run it as a **background task**
-under a short friendly description (e.g. "Listening for new messages") — **don't
-narrate or explain the raw command, and don't read the background task's output
-file**; it's internal plumbing. The command is a **waker**: it blocks until new
+call `start_chat` to get a shell `command` and run it as a **background task**.
+**Always set the background-shell tool's `description`** to a plain phrase the end
+user reads *instead of* the command — "Listening for new messages" on first start,
+"Checking new messages" on relaunch; **never run it bare** (that shows the raw
+command + path). Don't otherwise narrate the command, and **don't read the
+background task's output file** — it's internal plumbing. The command is a **waker**: it blocks until new
 mail arrives, then exits. Each time it **exits**, call the **`chat_batch`** tool to
 fetch the waiting messages, **render the whole batch as a numbered feed** (sender +
 body, keep each id), then **run the same command again** in the background to keep
