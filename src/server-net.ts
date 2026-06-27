@@ -10,6 +10,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { mkdirSync, writeFileSync } from "node:fs";
+import { extname, join } from "node:path";
 import { userInfo } from "node:os";
 import { initCrypto, generateIdentity } from "./crypto.ts";
 import { loadIdentity } from "./identity.ts";
@@ -26,7 +27,7 @@ import {
   pendingFile,
   pendingAckFile,
 } from "./paths.ts";
-import { resolveMailboxUrl } from "./config.ts";
+import { resolveMailboxUrl, DEFAULT_MAILBOX_URL } from "./config.ts";
 import { startWarmer } from "./warmer.ts";
 import { claimHandle } from "./provision.ts";
 import { INSTRUCTIONS } from "./instructions.ts";
@@ -36,6 +37,9 @@ import {
   draftReply,
   messagesAvailable,
   readMessage,
+  readPending,
+  readAck,
+  writePendingAck,
   sendMessage,
   sync,
   takeUnread,
@@ -45,6 +49,11 @@ import {
 const mailboxUrl = resolveMailboxUrl();
 const now = () => Date.now();
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// The live-inbox listener (await-mail) sits next to this file — bundled in dist/
+// in a published install, or src/ in a dev checkout. Same extension as us, so it
+// runs under the same `node` either way. start_chat hands the agent this path.
+const listenerPath = join(import.meta.dirname, `await-mail${extname(import.meta.filename)}`);
 
 // How long a single `watch` long-poll blocks before returning `idle`. The MCP
 // client (Claude Code) normally aborts a tool call after ~60s, but we emit a
@@ -433,6 +442,19 @@ const TOOLS: {
     },
     run: (s, { in_reply_to, body }) => draftReply(s.ctx, { in_reply_to, body }),
   },
+  {
+    name: "chat_batch",
+    title: "Fetch the waiting live-inbox messages",
+    description:
+      "Deliver the messages currently waiting for the live inbox ('chat') and mark " +
+      "them surfaced. Call this right after the chat WAKER (start_chat's command) " +
+      "exits — it's how the feed gets its content WITHOUT reading the waker's raw " +
+      "output file. Returns {count, messages:[{id,from,body,...}]}; render them as " +
+      "the feed and reply with draft_reply by id. After fetching, relaunch the " +
+      "waker in the background.",
+    inputSchema: {},
+    run: (s) => chatBatch(s),
+  },
 ];
 
 // Just-in-time choreography attached to tool RESULTS. Unlike the server
@@ -457,6 +479,10 @@ const resultNote = (name: string, r: any): string | undefined => {
     case "draft_reply":
       if (r.ok) return "Confirm in one line what you sent.";
       return undefined;
+    case "chat_batch":
+      return r.count > 0
+        ? "Render these as the live feed (sender + body, keep each id); reply with draft_reply by id. Then relaunch the chat waker in the background."
+        : "Nothing new. Relaunch the chat waker in the background to keep listening.";
     case "contacts":
       return "Show the user's own entry (me) first, then list the saved contacts.";
     default:
@@ -554,6 +580,90 @@ server.registerTool(
       }
     }
   }),
+);
+
+// The live inbox ("chat"): hand the agent the exact local command to run the
+// await-mail listener as a BACKGROUND task. The tool only RETURNS the command —
+// it deliberately doesn't spawn anything, because only a process the agent itself
+// backgrounds gets the harness's exit→re-invoke that refreshes the feed hands-free
+// (an MCP server can't start the agent's turn).
+//
+// Keep the command CLEAN — the user sees it in the tool call, so don't leak
+// plumbing. The waker self-resolves the account: currentUser() reads MESSENGER_USER
+// from the ambient shell (inherited by the agent's background task) or falls back
+// to the device default (.current / the sole identity), so we DON'T spell out the
+// handle in the visible command. We embed env only for genuinely non-default infra
+// the waker can't infer on its own: a custom mailbox, a dev MESSENGER_HOME, or push
+// disabled. In a normal install that collapses to just `node <path>`.
+function listenerCommand(_s: Session): string {
+  const parts: string[] = [];
+  if (mailboxUrl !== DEFAULT_MAILBOX_URL) parts.push(`MESSENGER_MAILBOX_URL=${mailboxUrl}`);
+  const home = process.env.MESSENGER_HOME?.trim();
+  if (home) parts.push(`MESSENGER_HOME=${JSON.stringify(home)}`);
+  if (process.env.MESSENGER_PUSH) parts.push(`MESSENGER_PUSH=${process.env.MESSENGER_PUSH}`);
+  const env = parts.length ? parts.join(" ") + " " : "";
+  return `${env}node ${JSON.stringify(listenerPath)}`;
+}
+
+// Deliver the waiting live-inbox batch to the agent and mark it surfaced. This is
+// how the feed gets its content WITHOUT the agent reading the waker's raw output
+// file (the temp path that read like the machine room). Mirrors the check-inbox
+// hook's two paths: prefer the warmer's pending snapshot (ack it so it won't
+// resurface); fall back to a direct drain when no warmer maintains the snapshot.
+const PENDING_STALE_MS = 120_000; // matches check-inbox / the waker
+async function chatBatch(s: Session) {
+  const pendingPath = pendingFile(s.user);
+  const ackPath = pendingAckFile(s.user);
+  const snap = readPending(pendingPath);
+  const fresh = snap && snap.synced !== false && now() - snap.writtenAt < PENDING_STALE_MS;
+  if (fresh) {
+    const acked = new Set(readAck(ackPath));
+    const messages = snap!.messages.filter((m) => !acked.has(m.id));
+    writePendingAck(ackPath, snap!.messages.map((m) => m.id)); // warmer marks read next tick
+    return { count: messages.length, messages };
+  }
+  await sync(s.ctx); // no warmer snapshot → drain directly, marking read as we take
+  const messages = takeUnread(s.ctx);
+  return { count: messages.length, messages };
+}
+
+server.registerTool(
+  "start_chat",
+  {
+    title: "Open the live inbox (background waker)",
+    description:
+      "Return the local shell command for the live-inbox WAKER: a process to run in " +
+      "the BACKGROUND that blocks until new mail arrives and then exits — it carries " +
+      "NO output you need to read. Use when the user says 'chat' / 'go live' / " +
+      "'start chat' — their explicit, per-session 'my chat terminal'. Run the " +
+      "`command` as a background task; when it EXITS, call `chat_batch` to fetch the " +
+      "waiting messages, render them as the live feed, then run the SAME command " +
+      "again in the background to keep the inbox live. Do NOT read the waker's output " +
+      "file or narrate the raw command. (Full choreography is in the server " +
+      "instructions.)",
+    inputSchema: {},
+  },
+  guard(async (s) => ({
+    ok: true,
+    command: listenerCommand(s),
+    mode: process.env.MESSENGER_PUSH === "0" ? "poll" : "push",
+    label: "Listening for new messages",
+    note:
+      "Run this with your background-shell tool, and ALWAYS set that tool's " +
+      "`description` field to a plain phrase the END USER reads INSTEAD of the " +
+      "command — use 'Listening for new messages' on first start and 'Checking new " +
+      "messages' on each relaunch. NEVER run it without a description (a bare run " +
+      "shows the user the raw command + path, which is exactly what to avoid). Do " +
+      "NOT otherwise narrate or explain the command, and do NOT read the background " +
+      "task's output file; it's internal plumbing. The command is a " +
+      "WAKER: it blocks until mail arrives, then exits. When it EXITS, call " +
+      "`chat_batch` to get the waiting messages, render them as the live feed " +
+      "(sender + body, keep each id), let the user reply to one/some/all in a single " +
+      "turn (draft_reply per id; anything they don't address stays pending), then " +
+      "run the SAME command again in the background. On 'stop', stop relaunching and " +
+      "kill the background task. If chat_batch returns no_account, tell the user to " +
+      "set up first and don't relaunch.",
+  })),
 );
 
 const transport = new StdioServerTransport();
