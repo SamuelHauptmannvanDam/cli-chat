@@ -589,13 +589,14 @@ server.registerTool(
 // (an MCP server can't start the agent's turn).
 //
 // Keep the command CLEAN — the user sees it in the tool call, so don't leak
-// plumbing. The listener self-resolves the account (currentUser) and mailbox
-// (default), so we embed env ONLY when it's actually non-default: a pinned
-// MESSENGER_USER, a custom mailbox, a dev MESSENGER_HOME, or push disabled.
-// In a normal install that collapses to just `node <path>`.
-function listenerCommand(s: Session): string {
+// plumbing. The waker self-resolves the account: currentUser() reads MESSENGER_USER
+// from the ambient shell (inherited by the agent's background task) or falls back
+// to the device default (.current / the sole identity), so we DON'T spell out the
+// handle in the visible command. We embed env only for genuinely non-default infra
+// the waker can't infer on its own: a custom mailbox, a dev MESSENGER_HOME, or push
+// disabled. In a normal install that collapses to just `node <path>`.
+function listenerCommand(_s: Session): string {
   const parts: string[] = [];
-  if (process.env.MESSENGER_USER?.trim()) parts.push(`MESSENGER_USER=${s.user}`);
   if (mailboxUrl !== DEFAULT_MAILBOX_URL) parts.push(`MESSENGER_MAILBOX_URL=${mailboxUrl}`);
   const home = process.env.MESSENGER_HOME?.trim();
   if (home) parts.push(`MESSENGER_HOME=${JSON.stringify(home)}`);
@@ -648,9 +649,13 @@ server.registerTool(
     mode: process.env.MESSENGER_PUSH === "0" ? "poll" : "push",
     label: "Listening for new messages",
     note:
-      "Run this in the BACKGROUND under a short description like 'Listening for new " +
-      "messages' — do NOT narrate or explain the raw command, and do NOT read the " +
-      "background task's output file; it's internal plumbing. The command is a " +
+      "Run this with your background-shell tool, and ALWAYS set that tool's " +
+      "`description` field to a plain phrase the END USER reads INSTEAD of the " +
+      "command — use 'Listening for new messages' on first start and 'Checking new " +
+      "messages' on each relaunch. NEVER run it without a description (a bare run " +
+      "shows the user the raw command + path, which is exactly what to avoid). Do " +
+      "NOT otherwise narrate or explain the command, and do NOT read the background " +
+      "task's output file; it's internal plumbing. The command is a " +
       "WAKER: it blocks until mail arrives, then exits. When it EXITS, call " +
       "`chat_batch` to get the waiting messages, render them as the live feed " +
       "(sender + body, keep each id), let the user reply to one/some/all in a single " +

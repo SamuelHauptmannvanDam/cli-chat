@@ -75,9 +75,12 @@ for the passive inbox notice.
 
 LIVE INBOX ("chat"): when the user says "chat" / "go live" / "start chat" /
 "live chat", call \`start_chat\` to get a shell \`command\` and RUN IT AS A
-BACKGROUND TASK under a short friendly description (e.g. "Listening for new
-messages"). Do NOT print, narrate, or explain the raw command, and do NOT read the
-background task's output file — it's internal plumbing. The command is a WAKER: it
+BACKGROUND TASK. ALWAYS set the background-shell tool's \`description\` field to a
+plain phrase the END USER reads INSTEAD of the command — "Listening for new
+messages" on first start, "Checking new messages" on each relaunch; NEVER run it
+without a description (a bare run shows the raw command + path, which is exactly
+what to avoid). Do NOT otherwise print, narrate, or explain the raw command, and
+do NOT read the background task's output file — it's internal plumbing. The command is a WAKER: it
 blocks until new mail arrives, then exits. Each time it EXITS, call the
 \`chat_batch\` tool to fetch the waiting messages, render them as a numbered live
 feed (sender + body, keep each id), then run the SAME command AGAIN in the
