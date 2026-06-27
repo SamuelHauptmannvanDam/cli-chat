@@ -104,8 +104,10 @@ features (subagents, background tasks, hooks) required.
 ## Live chat — the `chat` trigger (background listener)
 When the user says **"chat"** (or "go live" / "start chat"), open the live inbox:
 call `start_chat` to get a shell `command` and run it as a **background task**
-(your shell / background-process capability; if the client can't run shell, fall
-back to `watch`). It blocks until mail arrives, prints one JSON line
+with a short friendly description (e.g. "Listening for new messages") — **don't
+print, narrate, or explain the raw command**, it's internal plumbing; just show
+the feed. (Your shell / background-process capability; if the client can't run
+shell, fall back to `watch`.) It blocks until mail arrives, prints one JSON line
 `{event,count,messages}`, and exits — at which point you **render the whole batch
 as a numbered feed** (sender + body, keep each id) and **run the same command
 again** in the background to keep the inbox live. Let mail **accumulate**: don't
