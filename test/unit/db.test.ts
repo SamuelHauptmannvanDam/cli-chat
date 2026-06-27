@@ -72,7 +72,7 @@ test("markFetched only sets fetched_at the first time (COALESCE)", () => {
 });
 
 test("inserting a duplicate id is a no-op, keeping the first row (INSERT OR IGNORE)", () => {
-  // The warmer and watch loop can both drain + insert the same id concurrently,
+  // The warmer and chat_batch can both drain + insert the same id concurrently,
   // so a duplicate must be ignored rather than throw a PRIMARY KEY error.
   const db = openMailbox(":memory:");
   insertMessage(db, row());

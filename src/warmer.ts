@@ -2,7 +2,8 @@
 // own event loop — independent of any tool call, so it NEVER occupies the agent's
 // turn. Holds a WebSocket to the recipient's inbox Durable Object; on a "wake"
 // frame it drains new mail into the local cache (and optionally desktop-notifies).
-// The agent surfaces it on the next turn (check-inbox hook) or via the watch tool.
+// The agent surfaces it on the next turn (check-inbox hook) or live (the chat
+// waker / chat_batch).
 //
 // Push is an accelerator, not the source of truth:
 //   - on (re)connect it does a catch-up `sync` (anything missed while offline),

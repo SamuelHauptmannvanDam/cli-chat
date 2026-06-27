@@ -56,7 +56,7 @@ test("refreshPending mirrors unread to pending.json; an ack marks read and drops
     assert.equal(snap?.messages.length, 2);
     assert.equal(snap?.messages[0]?.from, "Ann"); // senderLabel applied warmer-side
     assert.equal(snap?.messages[0]?.body, "body m1");
-    // Mirroring alone must NOT mark anything read (else watch would be starved).
+    // Mirroring alone must NOT mark anything read (else chat_batch would be starved).
     assert.equal(unreadFor(cache, me.signPub).length, 2);
 
     // Hook surfaced m1 and acked it; the warmer's next refresh applies the ack.
