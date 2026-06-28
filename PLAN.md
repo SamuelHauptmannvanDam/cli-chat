@@ -265,7 +265,8 @@ pricing before betting on a number.
   by the in-session `watch` tool (a long-poll loop the agent re-calls), which
   needs no OS service and works in any MCP CLI. Dropped the
   `enable_auto_delivery`/`disable_auto_delivery`/`delivery_status` tools and
-  `src/watch.ts`.
+  `src/watch.ts`. (The `watch` tool was itself removed 2026-06-27 in favour of the
+  live `chat` inbox — the `await-mail` waker + `chat_batch`.)
 - **Cleanup (2026-06-16):** removed the superseded Phase 0 local stack
   (`server.ts`, `core.ts`, `config.ts`, `setup-identities.ts`, `AGENT.md`,
   `test/roundtrip.ts`, `test/live.ts`). Stack is Node/TS throughout.

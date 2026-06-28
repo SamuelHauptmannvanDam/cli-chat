@@ -124,7 +124,7 @@ ensureWarmer();
 // Behavior travels WITH the server (MCP `instructions`, sent on connect) so it
 // works in any MCP-capable CLI — not just Claude Code's CLAUDE.md. The text is
 // the single source in ./instructions.ts; esbuild inlines it into the bundle.
-const server = new McpServer({ name: "cli-chat", version: "0.4.11" }, { instructions: INSTRUCTIONS });
+const server = new McpServer({ name: "cli-chat", version: "0.5.0" }, { instructions: INSTRUCTIONS });
 const ok = (data: unknown) => ({
   content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }],
 });
