@@ -13,6 +13,7 @@ import {
   saveContacts,
   senderLabel,
   resolve,
+  cleanName,
   type Contact,
   type ContactBook,
 } from "./contacts.ts";
@@ -38,12 +39,17 @@ export interface NetContext {
 // not a nick you chose); a manual save/rename leaves it off so the nick wins.
 export function rememberContact(
   ctx: NetContext,
-  c: { name: string; signPub: string; boxPub: string; handle?: string; auto?: boolean },
+  c: { name: string; signPub: string; boxPub: string; handle?: string; auto?: boolean; selfName?: string },
 ): void {
+  // Upsert by key: drop any existing entry, but carry its self-name forward so a
+  // rename (re-add with a new nick) doesn't lose what THEY call themselves.
+  const prev = contactByKey(ctx.book, c.signPub);
   ctx.book.contacts = ctx.book.contacts.filter((x) => x.signPub !== c.signPub);
-  const entry: Contact = { name: c.name, signPub: c.signPub, boxPub: c.boxPub };
+  const entry: Contact = { name: cleanName(c.name) || c.name, signPub: c.signPub, boxPub: c.boxPub };
   if (c.handle) entry.handle = c.handle;
   if (c.auto) entry.auto = true;
+  const self = cleanName(c.selfName) || prev?.selfName;
+  if (self) entry.selfName = self;
   ctx.book.contacts.push(entry);
   if (ctx.contactsPath) saveContacts(ctx.contactsPath, ctx.book);
 }
@@ -116,8 +122,9 @@ export async function addContact(
   if (!parseKey(args.key) && !isHandle(args.key)) return { ok: false, reason: "bad_key" };
   const keys = await resolveCode(ctx, args.key);
   if (!keys) return { ok: false, reason: "not_found" };
-  rememberContact(ctx, { name: args.name, signPub: keys.signPub, boxPub: keys.boxPub, handle: keys.handle });
-  return { ok: true, name: args.name };
+  const name = cleanName(args.name) || args.name;
+  rememberContact(ctx, { name, signPub: keys.signPub, boxPub: keys.boxPub, handle: keys.handle });
+  return { ok: true, name };
 }
 
 export type DeleteContactResult =
@@ -175,20 +182,32 @@ export async function sync(ctx: NetContext): Promise<number> {
     // clobber someone you already know — your nick for them wins.
     const known = b.sender ? contactByKey(ctx.book, b.sender) : undefined;
     if (env.boxPub && b.sender && !known) {
-      const name = env.name || env.handle || `${b.sender.slice(0, 8)}…`;
+      const self = cleanName(env.name);
+      const name = self || env.handle || `${b.sender.slice(0, 8)}…`;
       rememberContact(ctx, {
         name,
         signPub: b.sender,
         boxPub: env.boxPub,
         handle: env.handle,
         auto: true,
+        selfName: self || undefined,
       });
-    } else if (known && env.handle && !known.handle) {
-      // Known contact missing a handle (e.g. saved before self-introductions
-      // existed). Backfill ONLY the handle from their new-style envelope —
-      // never touch name/nick/auto, so "your nick wins" still holds.
-      known.handle = env.handle;
-      if (ctx.contactsPath) saveContacts(ctx.contactsPath, ctx.book);
+    } else if (known) {
+      // Known contact: NEVER touch name/nick/auto ("your nick wins"), but keep the
+      // ambient facts current — backfill a missing handle, and refresh selfName from
+      // their envelope so the contacts list reflects what they currently call
+      // themselves even after you've renamed them.
+      let changed = false;
+      if (env.handle && !known.handle) {
+        known.handle = env.handle;
+        changed = true;
+      }
+      const self = cleanName(env.name);
+      if (self && self !== known.selfName) {
+        known.selfName = self;
+        changed = true;
+      }
+      if (changed && ctx.contactsPath) saveContacts(ctx.contactsPath, ctx.book);
     }
     const row: MessageRow = {
       id: b.id,

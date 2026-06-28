@@ -4,10 +4,29 @@
 
 import { readFileSync, writeFileSync, renameSync } from "node:fs";
 
+// Display names (the user's own, a nickname, a contact's self-name) are capped at
+// this many characters. Generous for any real name, but a hard limit so nobody can
+// stuff extra data into a name — which matters because a sender's self-name rides
+// in EVERY message envelope through the server (payload you pay for per message).
+export const NAME_MAX = 128;
+
+// Normalise a display name before storing it: trim, strip control characters
+// (incl. newlines — a self-name from another client is untrusted and shown in the
+// terminal), and cap to NAME_MAX. Truncates rather than rejecting, so a too-long
+// name is just shortened. Returns "" for empty/whitespace-only input.
+export function cleanName(raw: string | undefined | null): string {
+  if (!raw) return "";
+  // eslint-disable-next-line no-control-regex
+  return raw.replace(/[\x00-\x1f\x7f]+/g, " ").trim().slice(0, NAME_MAX);
+}
+
 export interface Contact {
   // signPub (below) is the sole identity — there is no separate id. `name` is just
   // a label and may repeat: two different people can both be "Sam", told apart by key.
   name: string; // YOUR nickname for them — what you see in the terminal, e.g. "Niels"
+  selfName?: string; // what THEY call themselves (from their message envelopes). Kept
+  // separate from your nick so the contacts list can show both, and preserved even
+  // after you rename them. Untrusted (another client sets it) → always cleanName'd.
   aliases?: string[]; // alternative spellings the resolver also matches
   signPub?: string; // Phase 1: contact's Ed25519 address (mailbox key)
   boxPub?: string; // Phase 1: contact's X25519 key we seal messages to

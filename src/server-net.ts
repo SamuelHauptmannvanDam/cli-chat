@@ -14,7 +14,7 @@ import { extname, join, relative, isAbsolute, resolve } from "node:path";
 import { userInfo } from "node:os";
 import { initCrypto, generateIdentity } from "./crypto.ts";
 import { loadIdentity } from "./identity.ts";
-import { loadContacts, saveContacts, orderedContacts } from "./contacts.ts";
+import { loadContacts, saveContacts, orderedContacts, cleanName } from "./contacts.ts";
 import { openMailbox } from "./db.ts";
 import { createMailboxClient } from "./mailbox-client.ts";
 import { encodeKey } from "./key-code.ts";
@@ -124,7 +124,7 @@ ensureWarmer();
 // Behavior travels WITH the server (MCP `instructions`, sent on connect) so it
 // works in any MCP-capable CLI — not just Claude Code's CLAUDE.md. The text is
 // the single source in ./instructions.ts; esbuild inlines it into the bundle.
-const server = new McpServer({ name: "cli-chat", version: "0.5.1" }, { instructions: INSTRUCTIONS });
+const server = new McpServer({ name: "cli-chat", version: "0.5.2" }, { instructions: INSTRUCTIONS });
 const ok = (data: unknown) => ({
   content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }],
 });
@@ -181,8 +181,9 @@ server.registerTool(
   async ({ name }) => {
     if (S) {
       let changed = false;
-      if (name && name.trim() && S.me.name !== name.trim()) {
-        S.me.name = name.trim(); // let the user (re)set their display name
+      const clean = cleanName(name);
+      if (clean && S.me.name !== clean) {
+        S.me.name = clean; // let the user (re)set their display name (trimmed + capped)
         changed = true;
       } else if (!S.me.name) {
         S.me.name = S.user; // backfill from the folder name for older identities
@@ -206,8 +207,7 @@ server.registerTool(
     }
 
     // Display name is cosmetic; the identity is keyed on disk by its handle.
-    const display =
-      (name ?? process.env.MESSENGER_USER ?? userInfo().username ?? "me").trim() || "me";
+    const display = cleanName(name ?? process.env.MESSENGER_USER ?? userInfo().username) || "me";
 
     // Idempotency guard: if a selector (the requested name or the MESSENGER_USER
     // pin) already names an identity on disk, ADOPT it instead of minting a fresh
@@ -348,9 +348,12 @@ const TOOLS: {
     title: "List my contacts (me first, then saved people)",
     description:
       "Return the user's own entry (`me`: their display name, 6-char handle, and " +
-      "shareable full key) followed by everyone they've saved — each with the " +
-      "nickname to address them by, any aliases, their 6-char handle (when known), " +
-      "and their full key. ALWAYS show the user's own entry FIRST so they can see " +
+      "shareable full key) followed by everyone they've saved — each with `name` " +
+      "(the nickname to address them by), `selfName` (what they call themselves, " +
+      "when known), any aliases, their 6-char handle (when known), and their full " +
+      "key. Render each saved person as their self-name, then your nickname as " +
+      "'aka <nick>' (only when it differs from the self-name), then their handle — " +
+      "e.g. 'Niels Bohr · aka Niels · AbC123'. ALWAYS show the user's own entry FIRST so they can see " +
       "their own name + handle at a glance (and update the name with create_account " +
       "if it's wrong). Use when the user asks 'who are my contacts?', 'show my " +
       "address book', or 'what's my name/handle?'. Saved people come back in two " +
@@ -360,7 +363,11 @@ const TOOLS: {
     inputSchema: {},
     run: (s) => {
       const fmt = (c: (typeof s.book.contacts)[number]) => ({
-        name: c.name,
+        name: c.name, // YOUR nickname (what you address them by)
+        // What THEY call themselves. For an auto-saved contact `name` already IS
+        // their self-name, so mirror it; once you've given a real nick, this is the
+        // separately-kept self-name (null until one of their messages carries it).
+        selfName: c.selfName ?? (c.auto ? c.name : null),
         aliases: c.aliases ?? [],
         handle: c.handle ?? null,
         fullKey: c.signPub && c.boxPub ? encodeKey(c.signPub, c.boxPub) : null,
