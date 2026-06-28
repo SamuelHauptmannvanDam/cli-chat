@@ -10,7 +10,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { extname, join } from "node:path";
+import { extname, join, relative, isAbsolute, resolve } from "node:path";
 import { userInfo } from "node:os";
 import { initCrypto, generateIdentity } from "./crypto.ts";
 import { loadIdentity } from "./identity.ts";
@@ -124,7 +124,7 @@ ensureWarmer();
 // Behavior travels WITH the server (MCP `instructions`, sent on connect) so it
 // works in any MCP-capable CLI — not just Claude Code's CLAUDE.md. The text is
 // the single source in ./instructions.ts; esbuild inlines it into the bundle.
-const server = new McpServer({ name: "cli-chat", version: "0.5.0" }, { instructions: INSTRUCTIONS });
+const server = new McpServer({ name: "cli-chat", version: "0.5.1" }, { instructions: INSTRUCTIONS });
 const ok = (data: unknown) => ({
   content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }],
 });
@@ -492,14 +492,29 @@ for (const t of TOOLS) {
 // handle in the visible command. We embed env only for genuinely non-default infra
 // the waker can't infer on its own: a custom mailbox, a dev MESSENGER_HOME, or push
 // disabled. In a normal install that collapses to just `node <path>`.
+//
+// We show every filesystem path RELATIVE to the launch dir (the agent runs the
+// command with the same cwd the server was started in), so the user sees
+// `node src/await-mail.ts` instead of an absolute home path. Only when the path
+// sits under the cwd — otherwise (a global install, a different cwd) the relative
+// form would be a messy `../../…`, so we keep the absolute path, which always
+// resolves. Because the backgrounded process shares that cwd, a relative path it
+// receives resolves to the same place.
+function friendlyPath(p: string): string {
+  const abs = resolve(p);
+  const rel = relative(process.cwd(), abs);
+  return rel && !rel.startsWith("..") && !isAbsolute(rel) ? rel : abs;
+}
+// Quote a token only when it contains spaces, so clean paths show unquoted.
+const quoteArg = (s: string) => (s.includes(" ") ? JSON.stringify(s) : s);
 function listenerCommand(_s: Session): string {
   const parts: string[] = [];
   if (mailboxUrl !== DEFAULT_MAILBOX_URL) parts.push(`MESSENGER_MAILBOX_URL=${mailboxUrl}`);
   const home = process.env.MESSENGER_HOME?.trim();
-  if (home) parts.push(`MESSENGER_HOME=${JSON.stringify(home)}`);
+  if (home) parts.push(`MESSENGER_HOME=${quoteArg(friendlyPath(home))}`);
   if (process.env.MESSENGER_PUSH) parts.push(`MESSENGER_PUSH=${process.env.MESSENGER_PUSH}`);
   const env = parts.length ? parts.join(" ") + " " : "";
-  return `${env}node ${JSON.stringify(listenerPath)}`;
+  return `${env}node ${quoteArg(friendlyPath(listenerPath))}`;
 }
 
 // Deliver the waiting live-inbox batch to the agent and mark it surfaced. This is
