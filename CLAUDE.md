@@ -185,15 +185,17 @@ standup/sprint/deploy/PR/Jira/release/"the office" → `work`; LAN/raid/game/lob
 yourself ("coworker"/"office" → `work`). Don't re-tag a tag a contact already has, so
 most messages need no tagging work.
 
-**The mode** (read/set with the `tagging` tool) governs this: `auto` (DEFAULT — apply
-obvious tags silently), `suggest` (propose a tag, apply only on the user's OK), or
-`off` (never tag automatically and never ask; manual `tag_contact` still works).
-CHECK the mode before auto-tagging and honour it. The FIRST time you auto-apply a tag
-in a session, add a one-line reminder it's automatic and changeable ("tagged Niels
-work — I do this automatically; say 'just suggest' or 'stop auto-tagging' to change
-that"); after that, mention tags plainly without the reminder. When the user ASKS
-about tagging ("are you tagging people?", "what's Niels tagged as?"), answer from the
-`tagging` mode and/or `contacts` — don't stay silent.
+**The mode** (read/set with the `tagging` tool) governs this: `auto` (DEFAULT),
+`suggest` (propose a tag, apply only on the user's OK), or `off` (never tag
+automatically and never ask). CHECK the mode before auto-tagging and honour it.
+In `auto`, apply obvious tags **silently, with ONE exception: the first time a given
+contact is tagged** (they had no tags before), say it in one line ("tagged Niels
+`work`"). Every tag after that, on an already-tagged person, is silent. On the
+session's *first* such line, also add the opt-out hint ("— I do this automatically;
+say 'stop auto-tagging' to change that") so the off switch is discoverable. A MANUAL
+tag (the user said "tag Niels as work") is always confirmed in one line, in any mode.
+When the user ASKS about tagging ("are you tagging people?", "what's Niels tagged
+as?"), answer from the `tagging` mode and/or `contacts` — don't stay silent.
 
 **Group send:** when the user says "write everyone from <tag>", filter `contacts` for
 that tag, then ALWAYS show the roster and confirm BEFORE sending ("I've tagged Niels,

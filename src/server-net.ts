@@ -128,7 +128,7 @@ ensureWarmer();
 // Behavior travels WITH the server (MCP `instructions`, sent on connect) so it
 // works in any MCP-capable CLI — not just Claude Code's CLAUDE.md. The text is
 // the single source in ./instructions.ts; esbuild inlines it into the bundle.
-const server = new McpServer({ name: "cli-chat", version: "0.6.1" }, { instructions: INSTRUCTIONS });
+const server = new McpServer({ name: "cli-chat", version: "0.6.2" }, { instructions: INSTRUCTIONS });
 const ok = (data: unknown) => ({
   content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }],
 });
@@ -517,7 +517,8 @@ const resultNote = (name: string, r: any): string | undefined => {
           "Sent. Tell the user in one line what you sent — don't ask to confirm. " +
           `AUTO-TAG (unless tagging mode is 'off'): if this message clearly signals a circle ` +
           `(work/family/gaming) and ${r.to?.name ?? "the recipient"} isn't already tagged it, ` +
-          "call tag_contact now — add the one-line opt-out reminder on the session's first auto-tag."
+          "call tag_contact. In 'auto' do it SILENTLY unless it's that contact's FIRST tag " +
+          "(then one line); in 'suggest', ask first."
         );
       if (r.reason === "no_contact") return "No contact matched. Offer to add them with their 6-char code.";
       if (r.reason === "ambiguous") return "Several matched: name the candidates and ask the user which — don't guess.";
@@ -526,10 +527,16 @@ const resultNote = (name: string, r: any): string | undefined => {
       if (r.ok) return "Confirm in one line, e.g. 'Deleted Niels.'";
       return undefined;
     case "tag_contact":
-      if (r.ok)
-        return r.changed
-          ? "Confirm in one line, e.g. 'Tagged Niels work.'"
-          : "They already had that tag — say so in one line; nothing to do.";
+      if (r.ok) {
+        if (!r.changed)
+          return "Already had that tag — nothing to do (only mention it if the user explicitly asked).";
+        return Array.isArray(r.tags) && r.tags.length === 1
+          ? "If you applied this automatically: it's the contact's FIRST tag, so mention it in one " +
+              "line (add the opt-out hint on the session's first such mention). If the user asked, " +
+              "confirm in one line, e.g. 'Tagged Niels work.'"
+          : "If you applied this automatically: stay SILENT (the contact was already tagged). If the " +
+              "user asked, confirm in one line.";
+      }
       if (r.reason === "no_contact") return "No contact matched. Say so; offer to add them by code.";
       if (r.reason === "ambiguous") return "Several matched: name the candidates and ask which — don't guess.";
       return undefined;
@@ -550,7 +557,8 @@ const resultNote = (name: string, r: any): string | undefined => {
         return (
           "Read this out to the user (sender + body); to reply, use draft_reply with this id. " +
           "AUTO-TAG (unless tagging mode is 'off'): if the message clearly signals a circle " +
-          "(work/family/gaming) and the sender isn't already tagged it, call tag_contact."
+          "(work/family/gaming) and the sender isn't already tagged it, call tag_contact — " +
+          "silently in 'auto' unless it's that contact's first tag, or ask first in 'suggest'."
         );
       return undefined;
     case "draft_reply":
