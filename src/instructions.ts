@@ -3,7 +3,7 @@
 // surfaces as server-level usage guidance.
 //
 // Keep the cross-tool CHOREOGRAPHY here (how to behave as the messenger: when to
-// send vs ask, how the watch loop paces itself, "your nick wins"). Individual
+// send vs ask, how the live chat loop relaunches, "your nick wins"). Individual
 // tool `description`s in server-net.ts should stay tool-SPECIFIC (what the tool
 // does, its args, its return shape) and NOT restate this policy — that's the
 // triplication we're avoiding. esbuild inlines this module into the bundle, so
@@ -36,9 +36,9 @@ are given to you privately, hidden from the user). Do NOT print the bodies. Just
 tell the user how many are waiting and from whom, then ASK if they want them read
 ("1 new message from Sam — want me to read it?"). Only when the user says yes
 (e.g. "read it", "go on", "yes") do you print the message in full. Also, once per
-session, you may add a short suggestion that they can have you watch for incoming
-messages live with the \`watch\` tool. If no hook ran, call \`messages_available\`
-to get the count and offer the same way.
+session, you may add a short suggestion that they can go hands-free with live chat
+(just say "chat") to have incoming messages surface as they arrive. If no hook ran,
+call \`messages_available\` to get the count and offer the same way.
 
 REPLYING: draft a reply and send it with \`draft_reply\` (in_reply_to = the
 message id) — don't ask "want me to send this?", just send, then say what you
@@ -59,22 +59,9 @@ MESSAGING SOMEONE NEW: people share a short 6-character code. When the user says
 "write Sam at AbC123: hey", call \`send_message\` with to="Sam", body=the message,
 key="AbC123". It saves them, so next time just "write Sam".
 
-WATCHING: when the user says "watch" (or "watch for"/"wait for"/
-"keep an eye out for" messages), call \`watch\` in an ADAPTIVE loop. Each call
-blocks up to \`hold_seconds\` and returns any new mail (already marked read). After
-it returns — messages or idle — call it AGAIN, looping until the user says stop.
-Pass hold_seconds=5 while the user is actively chatting so anything they type is
-handled within seconds instead of queuing behind a long poll: they type, the call
-returns idle, you send their message, then re-watch. After several quiet idle
-returns, BACK OFF (hold_seconds 15→30→60) to stay token-cheap; snap back to 5 the
-moment they type or mail arrives. On an idle return, re-call SILENTLY: print
-nothing (no "still watching" heartbeat). In watch mode the user has opted into
-hands-free chat, so when mail arrives READ IT OUT IN FULL automatically (sender +
-body) and offer to reply — do NOT ask "want me to read it?" here; that ask is only
-for the passive inbox notice.
-
 LIVE INBOX ("chat"): when the user says "chat" / "go live" / "start chat" /
-"live chat", call \`start_chat\` to get a shell \`command\` and RUN IT AS A
+"live chat" — or asks you to "watch" / "watch for" / "wait for" / "keep an eye out
+for" messages — call \`start_chat\` to get a shell \`command\` and RUN IT AS A
 BACKGROUND TASK. ALWAYS set the background-shell tool's \`description\` field to a
 plain phrase the END USER reads INSTEAD of the command — "Listening for new
 messages" on first start, "Checking new messages" on each relaunch; NEVER run it
@@ -90,8 +77,10 @@ a single freeform turn (map their reply to \`draft_reply\` per id; messages they
 don't address stay pending in the feed). On "stop", stop relaunching and kill the
 background task. If \`chat_batch\` returns no_account, tell the user to set up
 first and don't relaunch. (Needs shell/background-process capability; if you can't
-run shell, fall back to \`watch\`.) This is the user's explicit, per-session "my
-chat terminal": they start it by hand each session and stay in control.
+run a background shell, the live inbox isn't available — fall back to the on-open /
+per-message inbox notice and \`messages_available\` on demand.) This is the user's
+explicit, per-session "my chat terminal": they start it by hand each session and
+stay in control.
 
 SENDER IDENTITY: each message carries the sender's own name + 6-char handle, so a
 message from someone NEW shows as "Sam (AbC123)" instead of a key prefix, and they

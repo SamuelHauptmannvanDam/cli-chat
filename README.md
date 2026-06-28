@@ -62,16 +62,11 @@ automatic to fully on-demand:
 > read — say *"read it"* and the agent reads it out. Nothing to turn on, no
 > background cost.
 
-**👀 Hands-free — `watch` (real-time)**
-> Say *"watch"* and the agent keeps an eye out, reading new messages into the chat
-> the instant they arrive. Great while you're waiting on a reply. Say *"stop"*
-> when you're done.
-
 **🗨️ Live chat — say *"chat"* (your inbox, in the session)**
-> Say *"chat"* to open a live inbox: incoming messages stream into the
-> conversation and pile up as a list, so you can reply to one, some, or all
-> whenever you like. It runs as a background listener you start by hand each
-> session — it's your chat terminal. Say *"stop"* to close it.
+> Say *"chat"* (or *"watch"* / *"keep an eye out"*) to open a live inbox: incoming
+> messages stream into the conversation and pile up as a list, so you can reply to
+> one, some, or all whenever you like. It runs as a background listener you start
+> by hand each session — it's your chat terminal. Say *"stop"* to close it.
 
 **💬 On demand — just ask**
 > Ask *"any messages?"* whenever you like and the agent checks for you.
@@ -83,8 +78,7 @@ contact always wins on screen.
 ## What you can ask your agent to do
 - *"what's my code?"* — show your handle to share
 - *"write Sam at AbC123: …"* / *"write Sam: …"* — send a message
-- *"watch"* — go hands-free
-- *"chat"* — open your live inbox (messages stream in; reply to all when you like)
+- *"chat"* (or *"watch"*) — open your live inbox (messages stream in; reply to all when you like)
 - *"who are my contacts?"* — list your address book
 - *"rename Sam to …"* / *"delete Sam"* — manage contacts
 - *"call me …"* — change the name others see

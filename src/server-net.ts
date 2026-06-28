@@ -48,36 +48,11 @@ import {
 
 const mailboxUrl = resolveMailboxUrl();
 const now = () => Date.now();
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // The live-inbox listener (await-mail) sits next to this file — bundled in dist/
 // in a published install, or src/ in a dev checkout. Same extension as us, so it
 // runs under the same `node` either way. start_chat hands the agent this path.
 const listenerPath = join(import.meta.dirname, `await-mail${extname(import.meta.filename)}`);
-
-// How long a single `watch` long-poll blocks before returning `idle`. The MCP
-// client (Claude Code) normally aborts a tool call after ~60s, but we emit a
-// progress notification on every inner tick (see WATCH_PING_MS) — clients that
-// honor MCP progress reset their timeout on each one, so the call can safely
-// outlive 60s. While watch blocks, the agent can't process the user's next
-// message (incl. "stop") until it returns, but an aborted call returns at once.
-//
-// Override with MESSENGER_WATCH_MS. We parse defensively: an unset, empty, or
-// non-numeric value (e.g. a Windows shell that doesn't expand the "${VAR:-…}"
-// default form in .mcp.json) falls back to DEFAULT_WATCH_MS instead of silently
-// becoming 0/NaN — the bug behind "watch re-fires every ~minute" on Windows.
-const DEFAULT_WATCH_MS = 550_000; // ~9.2 min
-const parsedWatchMs = Number(process.env.MESSENGER_WATCH_MS);
-const WATCH_MS = Number.isFinite(parsedWatchMs) && parsedWatchMs > 0 ? parsedWatchMs : DEFAULT_WATCH_MS;
-// How often the watch loop wakes to re-check the local cache, send the client
-// keepalive ping, and (every WATCH_SYNC_MS) re-drain the mailbox as a network
-// backstop for when push (the warmer WebSocket) is off or blocked.
-const WATCH_PING_MS = 3_000;
-const WATCH_SYNC_MS = 15_000;
-// Floor for a caller-requested adaptive hold (see the watch tool's `hold_seconds`).
-// WATCH_MS stays the ceiling: a caller can ask for a SHORTER hold to stay
-// responsive while the user is actively chatting, never a longer one.
-const WATCH_MIN_MS = 2_000;
 
 await initCrypto();
 
@@ -128,7 +103,7 @@ if (existing) {
 // Background push warmer (PUSH.md): a WebSocket to the inbox Durable Object that
 // drains new mail into the cache without occupying the agent's turn. Runs for the
 // active session; restarted when create_account establishes one. Opt out with
-// MESSENGER_PUSH=0 (falls back to the on-open / per-prompt hook + watch tool).
+// MESSENGER_PUSH=0 (falls back to the on-open / per-prompt hook + live chat).
 let stopWarmer: (() => void) | null = null;
 function ensureWarmer(): void {
   if (process.env.MESSENGER_PUSH === "0") return;
@@ -285,8 +260,8 @@ server.registerTool(
 // the session. Listed as a table so registration is a single uniform loop —
 // every entry gets the same `guard` (no_account) wrapper, and the handler just
 // returns plain data. The two genuinely special tools live outside this table:
-// `create_account` (the only one that runs WITHOUT an account) and `watch` (a
-// long-poll loop that needs the request's `extra`), registered below.
+// `create_account` (the only one that runs WITHOUT an account) and `start_chat`
+// (returns a shell command rather than data), registered below.
 const TOOLS: {
   name: string;
   title: string;
@@ -503,84 +478,6 @@ for (const t of TOOLS) {
     guard(async (s, args) => attachNote(t.name, await t.run(s, args))),
   );
 }
-
-server.registerTool(
-  "watch",
-  {
-    title: "Watch for incoming messages (adaptive long-poll loop)",
-    description:
-      "Block up to `hold_seconds` waiting for new mail, then return it (already " +
-      "marked read) or report idle if none arrived. The building block of a watch " +
-      "loop: call it again after each return to keep watching. Each returned " +
-      "`from` is the user's nickname for the sender, or 'Name (handle)' for " +
-      "someone new (auto-saved on arrival, so you can reply by name). Use when the " +
-      "user asks to watch for / wait for / keep an eye out for messages. (How to " +
-      "pace the loop — adaptive hold, backing off when idle, reading mail out in " +
-      "full — is in the server instructions.)",
-    inputSchema: {
-      hold_seconds: z
-        .number()
-        .optional()
-        .describe(
-          "How long THIS call blocks before returning idle. Use ~5 while the user " +
-            "is actively chatting (responsive), backing off (15/30/60…) when idle. " +
-            "Clamped to [2s, server max]; omit for the long default.",
-        ),
-    },
-  },
-  guard(async (s, { hold_seconds }, extra) => {
-    const requestedMs = Number(hold_seconds) * 1000;
-    const holdMs =
-      Number.isFinite(requestedMs) && requestedMs > 0
-        ? Math.min(Math.max(requestedMs, WATCH_MIN_MS), WATCH_MS)
-        : WATCH_MS;
-    const deadline = now() + holdMs;
-    const progressToken = extra?._meta?.progressToken;
-    let ticks = 0;
-    // The background warmer (PUSH.md) drains new mail into the cache via push, so
-    // each tick just reads the LOCAL cache (cheap, no network). As a backstop for
-    // when push is off/unavailable (MESSENGER_PUSH=0, or the WebSocket is blocked
-    // by a firewall/proxy — common on Windows), we ALSO re-drain the mailbox over
-    // the network every WATCH_SYNC_MS so mail still surfaces within a single call.
-    await sync(s.ctx); // initial catch-up
-    let sinceSync = 0;
-    for (;;) {
-      if (extra?.signal?.aborted) return { status: "idle", count: 0, note: "Watch cancelled." };
-      const messages = takeUnread(s.ctx);
-      if (messages.length > 0) {
-        return {
-          status: "messages",
-          count: messages.length,
-          messages,
-          note: "Read these out in full (sender + body) and offer to reply (draft_reply). Call watch again to keep watching.",
-        };
-      }
-      if (now() >= deadline) {
-        return {
-          status: "idle",
-          count: 0,
-          note: "No new messages. Silently call watch again to keep watching — do NOT print anything to the user on idle (no heartbeat); only speak when mail actually arrives or the user is done. If the user has been quiet, raise hold_seconds (e.g. 15/30/60) to stay cheap; drop back to ~5 the instant they type or mail lands.",
-        };
-      }
-      // Keep the client's request timeout alive across long idle windows.
-      if (progressToken !== undefined) {
-        await extra.sendNotification({
-          method: "notifications/progress",
-          params: { progressToken, progress: ++ticks },
-        });
-      }
-      await sleep(WATCH_PING_MS);
-      // Network backstop: when push didn't deliver (warmer off or socket blocked),
-      // re-drain the mailbox periodically so mail surfaces within THIS call instead
-      // of only on the next re-invocation. The next loop turn reads it from cache.
-      sinceSync += WATCH_PING_MS;
-      if (sinceSync >= WATCH_SYNC_MS) {
-        sinceSync = 0;
-        await sync(s.ctx);
-      }
-    }
-  }),
-);
 
 // The live inbox ("chat"): hand the agent the exact local command to run the
 // await-mail listener as a BACKGROUND task. The tool only RETURNS the command —
