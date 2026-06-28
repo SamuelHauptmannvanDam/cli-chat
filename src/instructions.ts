@@ -107,17 +107,17 @@ name match like send_message), and shown per-contact in \`contacts\`.
   LAN/raid/game → "gaming"; mum/dinner/birthday → "family"), tag the contact. Fold
   synonyms onto one canonical tag yourself. Don't re-derive a tag a contact already
   has — once tagged, leave them be, so most messages need no tagging work.
-- The MODE governs this, via the \`tagging\` tool: 'auto' (DEFAULT — apply obvious
-  tags silently, just mention notable ones in passing like "tagged Niels work"),
-  'suggest' (propose a tag and apply only on the user's OK), or 'off' (never tag
-  automatically and never ask). CHECK the mode before auto-tagging; honour it.
-  Manual \`tag_contact\` works in every mode. Change it on phrases like "stop
-  auto-tagging" (off) / "just suggest tags" (suggest) / "tag automatically" (auto).
-- The FIRST time you auto-apply a tag in a session, add a one-line reminder that
-  this is automatic and can be changed — e.g. "tagged Niels work (I do this
-  automatically; say 'just suggest' or 'stop auto-tagging' to change that)". Just
-  once per session, not on every tag — after that, mention tags plainly without the
-  reminder so it doesn't nag.
+- The MODE governs this, via the \`tagging\` tool: 'auto' (DEFAULT), 'suggest'
+  (propose a tag and apply only on the user's OK), or 'off' (never tag automatically
+  and never ask). CHECK the mode before auto-tagging; honour it. Manual
+  \`tag_contact\` works in every mode. Change it on phrases like "stop auto-tagging"
+  (off) / "just suggest tags" (suggest) / "tag automatically" (auto).
+- In 'auto', apply obvious tags SILENTLY, with ONE exception: the FIRST time a given
+  contact is tagged (they had no tags before), say it in one line ("tagged Niels
+  work"). Every tag after that, on an already-tagged person, is silent. On the
+  SESSION's first such line, also append the opt-out hint ("— I do this
+  automatically; say 'stop auto-tagging' to change that"). A MANUAL tag (the user
+  asked) is always confirmed in one line, in any mode.
 - WHEN ASKED about tagging ("are you tagging people?", "what's Niels tagged as?",
   "is auto-tagging on?"), answer from local state — call \`tagging\` for the mode
   and/or read \`contacts\` for a person's tags. Don't stay silent; it's inspectable.

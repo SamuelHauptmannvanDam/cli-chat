@@ -413,14 +413,18 @@ cheap and quiet:
   default.
 
 ### Confirmation discipline (the trust rule)
-- **Tagging is auto by default** (see setting below). Because a tag is local,
-  private, and trivially reversible (`untag_contact`), the agent applies an obvious
-  tag silently — it doesn't ask first. It should still *mention* notable tags it
-  applies in passing ("tagged Niels `work`") so the behaviour is visible, and the
-  user can drop to `suggest`/`off` any time. The FIRST auto-tag of a session also
-  carries a one-line reminder that it's automatic and changeable ("…I do this
-  automatically; say 'just suggest' or 'stop auto-tagging' to change that") — once
-  per session only, so it surfaces the opt-out without nagging.
+- **Tagging is auto by default; `auto` is silent EXCEPT a person's first tag**
+  (decided 2026-06-28). A tag is local, private, and trivially reversible
+  (`untag_contact`), so in `auto` the agent just applies obvious tags — with one
+  exception for visibility: the **first time a given contact is tagged** (they had no
+  tags before), the agent says it in one line ("tagged Niels `work`"). Every tag
+  after that, on an already-tagged person, is silent. The session's *first* such
+  line also notes it can be turned off ("…I do this automatically — say 'stop
+  auto-tagging' to change that"), so the opt-out is discoverable without nagging. The
+  agent also always answers honestly when the user ASKS ("are you tagging people?").
+  `suggest` proposes every tag before applying; `off` disables automatic tagging.
+  A MANUAL tag (the user said "tag Niels as work") is always confirmed in one line,
+  in any mode.
 - **Group send ALWAYS shows the roster and confirms before sending** — this rule is
   unchanged and independent of the tagging mode. Auto-*tagging* ≠ auto-*sending*:
   applying a local label is cheap and reversible; firing N messages is not. "write
@@ -449,8 +453,9 @@ tags in `contacts`. Everything else (suggesting, group-send confirm) is instruct
 Auto-tagging must be switchable off — same "never auto-fire without consent" ethos
 as the user-triggered live inbox. A local setting (stored in config, next to the
 contact book; never sent to the server) with levels:
-- **`auto`** (DEFAULT) — agent applies obvious tags silently (mentioning notable
-  ones in passing). Cheap because a tag is local + reversible.
+- **`auto`** (DEFAULT) — agent applies obvious tags silently, except a one-line note
+  the first time a given person is tagged (everything after, silent). Cheap because a
+  tag is local + reversible.
 - **`suggest`** — agent proposes tags from conversation, applied only on confirm.
 - **`off`** — agent never tags automatically and never asks. Manual `tag_contact`
   still works.
@@ -516,11 +521,16 @@ sections: when to suggest a tag, the confirm-the-roster rule for group send, and
 > Niels's standup/sprint/employer context, and Niels is `work` → Tobias is probably
 > `work` too"). It turns a pile of independent labels into circles.
 
-**Held to a higher bar than self-tagging.** Guilt-by-association is weaker evidence
-than someone's own words, so cross-inference is **suggest-only — it never silently
-auto-applies, even in `auto` mode.** `auto` governs self-tagging (2a-ii); cross-tagging
-always asks. This is the single most important guard (it's the layer most prone to
-over-tagging).
+**Held to a higher CONFIDENCE bar than self-tagging — not a louder one** (revised
+2026-06-28). Guilt-by-association is weaker evidence than someone's own words, so the
+guard against over-tagging is a *higher confidence threshold*, NOT extra prompting.
+In `auto`, a cross-tag behaves like any other auto-tag once it clears that higher bar
+— silent, except the one-line note if it's that person's first tag. The safety net is
+precision (only tag when quite sure) plus reversibility (`untag_contact`) plus
+decline-memory (below), not a question. `suggest` mode still proposes it first, same
+as self-tags. This keeps `auto` consistent — trusted means quiet — while precision
+keeps the riskiest layer honest. The one accepted trade-off: a silent cross-tag can
+occasionally be wrong without asking; cheap to undo.
 
 #### Data model — the evidence store
 Today a tag is a bare string (`tags: ["work"]`), with no record of WHY. Cross-inference
