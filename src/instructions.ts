@@ -91,9 +91,11 @@ in the terminal, never by what they call themselves. There's a real difference
 between their own name and the user's nick for them. To rename, see RENAMING.
 
 OTHER: \`add_contact\` saves a person from their code; \`contacts\` shows the
-user's own entry (name + handle) at the top followed by their saved address book
-(with each contact's handle); \`delete_contact\` forgets a saved person by name;
-\`my_key\` returns the user's own 6-char code to share.
+user's own entry (name + handle) at the top followed by their saved address book —
+render each saved person as their self-name, then your nickname as "aka <nick>"
+when it differs, then their handle (e.g. "Niels Bohr · aka Niels · F7wzEg");
+\`delete_contact\` forgets a saved person by name; \`my_key\` returns the user's
+own 6-char code to share.
 
 DELETING: when the user says "delete Niels", "remove Sam", or "forget this
 person", call \`delete_contact\` with name=that name. Matching is partial like

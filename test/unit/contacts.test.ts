@@ -11,6 +11,8 @@ import {
   removeContactByKey,
   loadContacts,
   orderedContacts,
+  cleanName,
+  NAME_MAX,
   type Contact,
   type ContactBook,
 } from "../../src/contacts.ts";
@@ -225,4 +227,17 @@ test("orderedContacts: does not mutate the input array", () => {
   const contacts = mkContacts(3, { C: { sent: 9, days: 1 } });
   orderedContacts(contacts, NOW);
   assert.deepEqual(contacts.map((c) => c.name), ["A", "B", "C"]); // original order untouched
+});
+
+test("cleanName trims, drops empties, and caps at NAME_MAX", () => {
+  assert.equal(cleanName("  Niels Bohr  "), "Niels Bohr");
+  assert.equal(cleanName(""), "");
+  assert.equal(cleanName(undefined), "");
+  assert.equal(cleanName(null), "");
+  assert.equal(cleanName("x".repeat(NAME_MAX + 50)).length, NAME_MAX);
+});
+
+test("cleanName strips control characters and newlines (untrusted self-names)", () => {
+  assert.equal(cleanName("Niels\nBohr"), "Niels Bohr"); // newline → single space
+  assert.equal(cleanName("a\t\tb"), "a b"); // run of control chars → one space
 });
