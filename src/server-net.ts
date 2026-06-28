@@ -128,7 +128,7 @@ ensureWarmer();
 // Behavior travels WITH the server (MCP `instructions`, sent on connect) so it
 // works in any MCP-capable CLI — not just Claude Code's CLAUDE.md. The text is
 // the single source in ./instructions.ts; esbuild inlines it into the bundle.
-const server = new McpServer({ name: "cli-chat", version: "0.6.0" }, { instructions: INSTRUCTIONS });
+const server = new McpServer({ name: "cli-chat", version: "0.6.1" }, { instructions: INSTRUCTIONS });
 const ok = (data: unknown) => ({
   content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }],
 });
@@ -512,7 +512,13 @@ const TOOLS: {
 const resultNote = (name: string, r: any): string | undefined => {
   switch (name) {
     case "send_message":
-      if (r.ok) return "Sent. Tell the user in one line what you sent — don't ask to confirm.";
+      if (r.ok)
+        return (
+          "Sent. Tell the user in one line what you sent — don't ask to confirm. " +
+          `AUTO-TAG (unless tagging mode is 'off'): if this message clearly signals a circle ` +
+          `(work/family/gaming) and ${r.to?.name ?? "the recipient"} isn't already tagged it, ` +
+          "call tag_contact now — add the one-line opt-out reminder on the session's first auto-tag."
+        );
       if (r.reason === "no_contact") return "No contact matched. Offer to add them with their 6-char code.";
       if (r.reason === "ambiguous") return "Several matched: name the candidates and ask the user which — don't guess.";
       return undefined;
@@ -540,15 +546,27 @@ const resultNote = (name: string, r: any): string | undefined => {
         ? `Auto-tagging is now '${r.mode}'. Confirm in one line.`
         : `Auto-tagging mode is '${r.mode}'. Tell the user, and that it can be auto / suggest / off.`;
     case "read_message":
-      if (r.ok) return "Read this out to the user (sender + body); to reply, use draft_reply with this id.";
+      if (r.ok)
+        return (
+          "Read this out to the user (sender + body); to reply, use draft_reply with this id. " +
+          "AUTO-TAG (unless tagging mode is 'off'): if the message clearly signals a circle " +
+          "(work/family/gaming) and the sender isn't already tagged it, call tag_contact."
+        );
       return undefined;
     case "draft_reply":
       if (r.ok) return "Confirm in one line what you sent.";
       return undefined;
     case "chat_batch":
       return r.count > 0
-        ? "Render these as the live feed (sender + body, keep each id); reply with draft_reply by id. Then relaunch the chat waker in the background."
+        ? "Render these as the live feed (sender + body, keep each id); reply with draft_reply by id. " +
+            "AUTO-TAG (unless tagging mode is 'off'): for any message that clearly signals a circle " +
+            "(work/family/gaming), tag that sender with tag_contact. Then relaunch the chat waker in the background."
         : "Nothing new. Relaunch the chat waker in the background to keep listening.";
+    case "messages_available":
+      return r.count > 0
+        ? "AUTO-TAG (unless tagging mode is 'off'): when you read these out, if a message clearly " +
+            "signals a circle (work/family/gaming), tag that sender with tag_contact."
+        : undefined;
     case "contacts":
       return "Show the user's own entry (me) first, then list the saved contacts.";
     default:
