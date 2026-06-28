@@ -19,9 +19,12 @@ import {
   removeTag,
   recordTagMeta,
   removeTagMeta,
+  declineTag,
+  suggestTagsFor,
   type Contact,
   type ContactBook,
   type TagSource,
+  type TagSuggestion,
 } from "./contacts.ts";
 import { open, seal, type Identity } from "./crypto.ts";
 import { isHandle, parseKey } from "./key-code.ts";
@@ -224,6 +227,46 @@ function resolveForTag(
       err: { ok: false, reason: "ambiguous", query: args.name, candidates: r.candidates.map((c) => c.name) },
     };
   return { ok: true, contact: r.contact };
+}
+
+export type DeclineTagResult =
+  | { ok: true; name: string; tag: string; removed: boolean; declined: boolean }
+  | { ok: false; reason: "no_contact" | "ambiguous" | "bad_tag"; query: string; candidates?: string[] };
+
+// Reject a tag for a contact: remove it if it was applied AND record the decline so
+// cross-inference never re-suggests it. Covers both "no thanks" to a proposal (tag
+// not present → just declined) and "remove this wrong auto-tag for good" (present →
+// removed + declined). `untag_contact` stays a plain removal that CAN be re-suggested.
+export function declineTagContact(
+  ctx: NetContext,
+  args: { name: string; tag: string },
+): DeclineTagResult {
+  const found = resolveForTag(ctx, args);
+  if (!found.ok) return found.err as DeclineTagResult;
+  const c = found.contact;
+  const removed = removeTag(c, args.tag);
+  removeTagMeta(c, args.tag);
+  const declined = declineTag(c, args.tag);
+  if ((removed || declined) && ctx.contactsPath) saveContacts(ctx.contactsPath, ctx.book);
+  return { ok: true, name: c.name, tag: cleanTag(args.tag), removed, declined };
+}
+
+export type SuggestTagsResult =
+  | { ok: true; name: string; suggestions: TagSuggestion[] }
+  | { ok: false; reason: "no_contact" | "ambiguous"; query: string; candidates?: string[] };
+
+// Score a contact against your existing tag clusters and return likely tags (above
+// the confidence bar). `signals` are tokens from their current message — topics plus
+// any contact names they mention. Read-only: it suggests, it never applies.
+export function suggestTags(
+  ctx: NetContext,
+  args: { name: string; signals?: string[] },
+): SuggestTagsResult {
+  const r = resolve(ctx.book, args.name);
+  if (r.status === "none") return { ok: false, reason: "no_contact", query: args.name };
+  if (r.status === "ambiguous")
+    return { ok: false, reason: "ambiguous", query: args.name, candidates: r.candidates.map((c) => c.name) };
+  return { ok: true, name: r.contact.name, suggestions: suggestTagsFor(ctx.book, r.contact, args.signals ?? []) };
 }
 
 // Pull any waiting blobs, decrypt, and store in the local cache. Idempotent:

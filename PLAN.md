@@ -591,11 +591,18 @@ local-only, but call it out; if ever uncomfortable, evidence can be coarsened (s
 only mutual-contact links, not free-text topics).
 
 #### Build order within 2a-iii
-- **2a-iii-a** — evidence store: `tagMeta`/`declinedTags` fields, `tag_contact`
-  gains `evidence`/`source`, 2a-ii starts populating it. Invisible, foundational.
-- **2a-iii-b** — matching + suggestion: scoring, the suggest flow, decline-memory.
-- **2a-iii-c** — tuning: token weighting, mutual-contact signals, threshold, the
-  metered cadence. Needs real tagged data to calibrate.
+- **2a-iii-a — ✅ BUILT (v0.6.3).** Evidence store: `tagMeta`/`declinedTags` fields,
+  `tag_contact` gains `evidence`/`source`, 2a-ii populates it. Invisible foundation.
+- **2a-iii-b — ✅ BUILT (v0.7.0).** Matching + suggestion: `suggestTagsFor`
+  (cluster fingerprint from others' `tagMeta` — evidence tokens + member names;
+  candidate = message signals + target's own evidence; score topics + mutual-name
+  bonus; exclude already-have/declined). Surfaced via the `suggest_tags` tool;
+  `decline_tag` tool removes-and-remembers (decline-memory now live).
+- **2a-iii-c — ✅ BUILT (v0.7.0), tunable.** Weights + threshold live as
+  `CROSS_TOPIC_WEIGHT` (1) / `CROSS_MUTUAL_WEIGHT` (2) / `CROSS_SUGGEST_THRESHOLD`
+  (3) / `CROSS_MAX_SUGGESTIONS` (3) in `contacts.ts`. Metered cadence is behavioural
+  (instructions: call `suggest_tags` occasionally, not per-message). The dials are
+  conservative defaults — recalibrate against real tagged data as it accrues.
 
 #### Open questions
 1. **Untagged-contact profiles:** match only on a candidate's CURRENT message
@@ -614,4 +621,6 @@ only mutual-contact links, not free-text topics).
 revisited is encrypted contact-list blobs on the server with friend-held keys
 (server stays blind, sync without the friend being online). Auto-tagging (§9):
 2a-i + 2a-ii BUILT & verified (v0.6.0/0.6.1); 2a-iii (cross-contact inference)
-specced in §9, not yet built.*
+BUILT (v0.6.3 store + v0.7.0 matching/suggest/decline) — all four features
+(evidence store, declined tags, cluster fingerprint, metered cadence) shipped;
+thresholds are conservative defaults to recalibrate against real data.*
