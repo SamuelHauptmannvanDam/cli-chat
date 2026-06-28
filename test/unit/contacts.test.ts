@@ -15,8 +15,13 @@ import {
   cleanTag,
   addTag,
   removeTag,
+  recordTagMeta,
+  removeTagMeta,
+  declineTag,
+  isTagDeclined,
   NAME_MAX,
   TAG_MAX,
+  EVIDENCE_PER_TAG_MAX,
   type Contact,
   type ContactBook,
 } from "../../src/contacts.ts";
@@ -272,4 +277,57 @@ test("removeTag removes case-insensitively and drops the array when empty", () =
   assert.equal(removeTag(c, "missing"), false); // not present → no-op
   assert.equal(removeTag(c, "gaming"), true);
   assert.equal(c.tags, undefined); // last tag gone → no empty array left behind
+});
+
+test("recordTagMeta creates an entry with source + evidence, then merges + dedupes", () => {
+  const c: Contact = { name: "Niels", signPub: "n", boxPub: "b" };
+  assert.equal(recordTagMeta(c, "Work", { source: "self", evidence: ["Standup"], now: 100 }), true);
+  assert.equal(c.tagMeta?.length, 1);
+  assert.equal(c.tagMeta?.[0]?.tag, "work"); // normalised
+  assert.equal(c.tagMeta?.[0]?.source, "self");
+  assert.deepEqual(c.tagMeta?.[0]?.evidence, ["standup"]); // normalised
+  assert.equal(c.tagMeta?.[0]?.addedAt, 100);
+
+  // merge new evidence; dedupe the repeat; bump updatedAt; source unchanged
+  assert.equal(recordTagMeta(c, "work", { source: "manual", evidence: ["deploy", "standup"], now: 200 }), true);
+  assert.deepEqual(c.tagMeta?.[0]?.evidence, ["standup", "deploy"]);
+  assert.equal(c.tagMeta?.[0]?.source, "self"); // first-write-wins, not downgraded
+  assert.equal(c.tagMeta?.[0]?.updatedAt, 200);
+
+  // no new evidence → no change
+  assert.equal(recordTagMeta(c, "work", { source: "self", evidence: ["deploy"], now: 300 }), false);
+});
+
+test("recordTagMeta caps evidence at EVIDENCE_PER_TAG_MAX, keeping the most recent", () => {
+  const c: Contact = { name: "Niels", signPub: "n", boxPub: "b" };
+  const many = Array.from({ length: EVIDENCE_PER_TAG_MAX + 5 }, (_, i) => `t${i}`);
+  recordTagMeta(c, "work", { source: "self", evidence: many, now: 1 });
+  const ev = c.tagMeta?.[0]?.evidence ?? [];
+  assert.equal(ev.length, EVIDENCE_PER_TAG_MAX);
+  assert.equal(ev[ev.length - 1], `t${EVIDENCE_PER_TAG_MAX + 4}`); // newest kept
+  assert.equal(ev.includes("t0"), false); // oldest dropped
+});
+
+test("removeTagMeta drops the entry and clears the array when empty", () => {
+  const c: Contact = {
+    name: "Niels", signPub: "n", boxPub: "b",
+    tagMeta: [
+      { tag: "work", source: "self", addedAt: 1 },
+      { tag: "gaming", source: "manual", addedAt: 1 },
+    ],
+  };
+  assert.equal(removeTagMeta(c, "WORK"), true);
+  assert.equal(c.tagMeta?.length, 1);
+  assert.equal(removeTagMeta(c, "nope"), false);
+  assert.equal(removeTagMeta(c, "gaming"), true);
+  assert.equal(c.tagMeta, undefined);
+});
+
+test("declineTag records a rejection once; isTagDeclined reads it case-insensitively", () => {
+  const c: Contact = { name: "Tobias", signPub: "t", boxPub: "b" };
+  assert.equal(declineTag(c, "Work"), true);
+  assert.deepEqual(c.declinedTags, ["work"]);
+  assert.equal(declineTag(c, "work"), false); // already declined
+  assert.equal(isTagDeclined(c, "WORK"), true);
+  assert.equal(isTagDeclined(c, "family"), false);
 });

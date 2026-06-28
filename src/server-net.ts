@@ -128,7 +128,7 @@ ensureWarmer();
 // Behavior travels WITH the server (MCP `instructions`, sent on connect) so it
 // works in any MCP-capable CLI — not just Claude Code's CLAUDE.md. The text is
 // the single source in ./instructions.ts; esbuild inlines it into the bundle.
-const server = new McpServer({ name: "cli-chat", version: "0.6.2" }, { instructions: INSTRUCTIONS });
+const server = new McpServer({ name: "cli-chat", version: "0.6.3" }, { instructions: INSTRUCTIONS });
 const ok = (data: unknown) => ({
   content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }],
 });
@@ -347,12 +347,23 @@ const TOOLS: {
       "`tagging` mode first). Name matching is partial like send_message. Tags are " +
       "lower-cased + deduped; fold synonyms onto one spelling yourself ('coworker'/" +
       "'office' → 'work'). `no_contact`/`ambiguous` work exactly like send_message; " +
-      "`changed:false` means it already had that tag (a no-op, not an error).",
+      "`changed:false` means it already had that tag (a no-op, not an error). When you " +
+      "tag AUTOMATICALLY from a message, also pass `source:'self'` and a few `evidence` " +
+      "words you based it on ('standup','sprint') — they're stored locally to power " +
+      "future cross-contact suggestions; a manual tag needs neither.",
     inputSchema: {
       name: z.string().describe("Contact name, e.g. 'Niels'"),
       tag: z.string().describe("The label to add, e.g. 'work' (lower-cased, deduped)"),
+      source: z
+        .enum(["manual", "self", "cross"])
+        .optional()
+        .describe("How the tag arose: 'manual' (user asked, default), 'self' (from this contact's message), 'cross' (from their circle)"),
+      evidence: z
+        .array(z.string())
+        .optional()
+        .describe("Signal words behind an automatic tag, e.g. ['standup','deploy'] — stored as the tag's evidence"),
     },
-    run: (s, { name, tag }) => tagContact(s.ctx, { name, tag }),
+    run: (s, { name, tag, source, evidence }) => tagContact(s.ctx, { name, tag, source, evidence }),
   },
   {
     name: "untag_contact",

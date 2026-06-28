@@ -67,6 +67,45 @@ test("untagContact removes a tag and reports changed; removing a missing tag is 
   });
 });
 
+test("tagContact records evidence + source into tagMeta and persists it", () => {
+  withBookOnDisk((ctx, path) => {
+    tagContact(ctx, { name: "Niels", tag: "work", source: "self", evidence: ["standup", "deploy"] });
+    const niels = loadContacts(path).contacts.find((c) => c.name === "Niels")!;
+    assert.deepEqual(niels.tags, ["work"]);
+    assert.equal(niels.tagMeta?.[0]?.source, "self");
+    assert.deepEqual(niels.tagMeta?.[0]?.evidence, ["standup", "deploy"]);
+  });
+});
+
+test("tagContact defaults source to manual and needs no evidence", () => {
+  withBookOnDisk((ctx, path) => {
+    tagContact(ctx, { name: "Niels", tag: "work" });
+    const niels = loadContacts(path).contacts.find((c) => c.name === "Niels")!;
+    assert.equal(niels.tagMeta?.[0]?.source, "manual");
+    assert.equal(niels.tagMeta?.[0]?.evidence, undefined);
+  });
+});
+
+test("tagContact accumulates evidence even when the tag already exists (changed:false)", () => {
+  withBookOnDisk((ctx, path) => {
+    tagContact(ctx, { name: "Niels", tag: "work", source: "self", evidence: ["standup"] });
+    const r = tagContact(ctx, { name: "Niels", tag: "work", source: "self", evidence: ["deploy"] });
+    assert.equal(r.ok && r.changed, false); // membership unchanged
+    const niels = loadContacts(path).contacts.find((c) => c.name === "Niels")!;
+    assert.deepEqual(niels.tagMeta?.[0]?.evidence, ["standup", "deploy"]); // but evidence grew + persisted
+  });
+});
+
+test("untagContact removes the tag and its tagMeta evidence", () => {
+  withBookOnDisk((ctx, path) => {
+    tagContact(ctx, { name: "Niels", tag: "work", source: "self", evidence: ["standup"] });
+    untagContact(ctx, { name: "Niels", tag: "work" });
+    const niels = loadContacts(path).contacts.find((c) => c.name === "Niels")!;
+    assert.equal(niels.tags, undefined);
+    assert.equal(niels.tagMeta, undefined); // evidence cleaned up, not orphaned
+  });
+});
+
 test("tagContact reports no_contact / ambiguous like send_message, and bad_tag for empty", () => {
   withBookOnDisk((ctx) => {
     const none = tagContact(ctx, { name: "nobody", tag: "work" });

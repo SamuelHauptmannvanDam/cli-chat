@@ -183,7 +183,10 @@ signals a circle, tag the other person right then with `tag_contact`. Signals:
 standup/sprint/deploy/PR/Jira/release/"the office" → `work`; LAN/raid/game/lobby →
 `gaming`; mum/dad/dinner/birthday → `family`. Fold synonyms onto one canonical tag
 yourself ("coworker"/"office" → `work`). Don't re-tag a tag a contact already has, so
-most messages need no tagging work.
+most messages need no tagging work. When you auto-tag, pass `source: "self"` and the
+1–3 `evidence` words you based it on (e.g. `["standup","deploy"]`) to `tag_contact` —
+they're stored locally as the tag's reasoning, which later powers cross-contact
+suggestions. A manual tag (the user asked) needs neither.
 
 **The mode** (read/set with the `tagging` tool) governs this: `auto` (DEFAULT),
 `suggest` (propose a tag, apply only on the user's OK), or `off` (never tag
