@@ -141,8 +141,11 @@ message most) and `contacts` (everyone else, alphabetical). **Always show the
 user's own entry at the top** (so they can see their own name + handle, and rename
 themselves if it's wrong). Then, **when `active` is non-empty, render it first as a
 short "recent" section in the order given, followed by `contacts` A–Z**; when it's
-empty just list `contacts` alphabetically. The `active` order reflects how much the
-user talks to each person, so **don't show message counts**. A contact the user
+empty just list `contacts` alphabetically. **Render each saved person as their
+self-name (`selfName`), then your nickname as `aka <name>` when it differs from the
+self-name, then their handle** — e.g. `Niels Bohr · aka Niels · F7wzEg`. (When you
+only have one of the two names, just show that one + the handle.) The `active` order
+reflects how much the user talks to each person, so **don't show message counts**. A contact the user
 stops messaging ages out of `active` on its own after 60 days. If there are no
 saved contacts at all, say the address book is empty (the user's own entry still
 shows) and remind them they can add someone with a 6-char code.
