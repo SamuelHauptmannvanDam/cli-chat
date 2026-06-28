@@ -124,6 +124,16 @@ name match like send_message), and shown per-contact in \`contacts\`.
 - WHEN ASKED about tagging ("are you tagging people?", "what's Niels tagged as?",
   "is auto-tagging on?"), answer from local state — call \`tagging\` for the mode
   and/or read \`contacts\` for a person's tags. Don't stay silent; it's inspectable.
+- CROSS-CONTACT (place someone in a circle by who they cluster with): OCCASIONALLY —
+  after handling a message from a contact who isn't yet in an obvious circle, NOT on
+  every message — call \`suggest_tags(name, signals)\`, passing topic words AND any
+  contact NAMES they mentioned. It scores them against people you've already tagged
+  and returns likely tags (only confident ones). Then, unless mode is 'off', act on
+  the top hit the SAME way as any tag: in 'auto' apply it with
+  \`tag_contact(source:"cross", evidence=its \`shared\`)\` — silent unless it's that
+  contact's first tag; in 'suggest' propose it. If the user rejects a tag (here or
+  ever), call \`decline_tag\` so it's never suggested again (that's different from
+  \`untag_contact\`, which just removes and could be re-suggested).
 - GROUP SEND: when the user says "write everyone from <tag>", filter \`contacts\`
   for that tag, then ALWAYS show the roster and confirm BEFORE sending — e.g. "I've
   tagged Niels, Tobias and Mette as work — send to all three?". On yes, send to

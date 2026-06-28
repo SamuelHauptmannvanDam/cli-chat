@@ -38,6 +38,8 @@ import {
   deleteContact,
   tagContact,
   untagContact,
+  declineTagContact,
+  suggestTags,
   draftReply,
   messagesAvailable,
   readMessage,
@@ -128,7 +130,7 @@ ensureWarmer();
 // Behavior travels WITH the server (MCP `instructions`, sent on connect) so it
 // works in any MCP-capable CLI — not just Claude Code's CLAUDE.md. The text is
 // the single source in ./instructions.ts; esbuild inlines it into the bundle.
-const server = new McpServer({ name: "cli-chat", version: "0.6.3" }, { instructions: INSTRUCTIONS });
+const server = new McpServer({ name: "cli-chat", version: "0.7.0" }, { instructions: INSTRUCTIONS });
 const ok = (data: unknown) => ({
   content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }],
 });
@@ -380,6 +382,44 @@ const TOOLS: {
     run: (s, { name, tag }) => untagContact(s.ctx, { name, tag }),
   },
   {
+    name: "suggest_tags",
+    title: "Suggest tags for a contact from their circle",
+    description:
+      "Cross-contact inference: score a contact against the people you've ALREADY " +
+      "tagged and return tags they likely belong to (only ones clearing a confidence " +
+      "bar). Read-only — it suggests, never applies. Pass `signals`: tokens from the " +
+      "contact's current message — topics (standup/deploy) AND any contact NAMES they " +
+      "mention (knowing the same people is the strongest signal). Use occasionally for " +
+      "a contact who isn't yet in an obvious circle, NOT on every message. Each result " +
+      "has {tag, score, shared}. Then act per the tagging mode (see instructions): in " +
+      "'auto' apply the top hit with tag_contact(source:'cross'); in 'suggest' propose " +
+      "it; if the user says no, call decline_tag.",
+    inputSchema: {
+      name: z.string().describe("Contact name to evaluate, e.g. 'Tobias'"),
+      signals: z
+        .array(z.string())
+        .optional()
+        .describe("Tokens from their message: topics + contact names they mention, e.g. ['standup','Niels']"),
+    },
+    run: (s, { name, signals }) => suggestTags(s.ctx, { name, signals }),
+  },
+  {
+    name: "decline_tag",
+    title: "Reject a tag for a contact (don't suggest it again)",
+    description:
+      "Record that a contact should NOT carry a tag: removes it if it was applied, and " +
+      "remembers the rejection so cross-contact inference never re-suggests it. Use " +
+      "when the user rejects a suggested tag ('no, Tobias isn't work') or wants a wrong " +
+      "auto-tag gone for good. (Plain `untag_contact` just removes — it CAN be " +
+      "re-suggested later; `decline_tag` is the permanent 'no'.) Partial name match " +
+      "like send_message; `no_contact`/`ambiguous` handled the same way.",
+    inputSchema: {
+      name: z.string().describe("Contact name, e.g. 'Tobias'"),
+      tag: z.string().describe("The label to reject, e.g. 'work'"),
+    },
+    run: (s, { name, tag }) => declineTagContact(s.ctx, { name, tag }),
+  },
+  {
     name: "tagging",
     title: "View or set the auto-tagging mode",
     description:
@@ -556,6 +596,21 @@ const resultNote = (name: string, r: any): string | undefined => {
         return r.changed
           ? "Confirm in one line, e.g. 'Removed work from Niels.'"
           : "They didn't have that tag — say so in one line.";
+      if (r.reason === "no_contact") return "No contact matched. Say so.";
+      if (r.reason === "ambiguous") return "Several matched: name the candidates and ask which — don't guess.";
+      return undefined;
+    case "suggest_tags":
+      if (r.ok)
+        return r.suggestions?.length
+          ? "Act on the top suggestion per the tagging mode: in 'auto' apply it with " +
+              "tag_contact(source:'cross', evidence=its `shared`) — silent unless it's the contact's " +
+              "first tag; in 'suggest' propose it. If the user rejects one, call decline_tag."
+          : "No confident circle match — suggest nothing.";
+      if (r.reason === "no_contact") return "No contact matched.";
+      if (r.reason === "ambiguous") return "Several matched: name the candidates and ask which — don't guess.";
+      return undefined;
+    case "decline_tag":
+      if (r.ok) return "Recorded — that tag won't be suggested for them again. Confirm in one line if the user asked.";
       if (r.reason === "no_contact") return "No contact matched. Say so.";
       if (r.reason === "ambiguous") return "Several matched: name the candidates and ask which — don't guess.";
       return undefined;

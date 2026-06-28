@@ -139,6 +139,89 @@ export function isTagDeclined(c: Contact, tag: string): boolean {
   return !!t && !!c.declinedTags?.includes(t);
 }
 
+// ---- Cross-contact inference (2a-iii-b/c): match a contact against your circles ----
+
+export interface TagSuggestion {
+  tag: string; // a tag the contact likely belongs to
+  score: number; // confidence score (higher = stronger); must clear the threshold
+  shared: string[]; // the candidate signals that matched (topics + mutual names)
+}
+
+// Confidence knobs — the "higher bar" for cross-tags. Each shared evidence TOKEN is
+// worth a little; a shared mutual-contact NAME is worth more (knowing the same people
+// is stronger than sharing a buzzword). A suggestion must clear the THRESHOLD. These
+// are the dials 2a-iii-c tunes against real data.
+export const CROSS_TOPIC_WEIGHT = 1;
+export const CROSS_MUTUAL_WEIGHT = 2;
+export const CROSS_SUGGEST_THRESHOLD = 3;
+export const CROSS_MAX_SUGGESTIONS = 3;
+
+// Suggest tags for `target` by matching its signals against the evidence fingerprints
+// of your ALREADY-tagged contacts (the clusters). Pure + deterministic, so the same
+// inputs always score the same. `signals` are extra tokens from the contact's current
+// message — topics AND any contact names they mention; the target's own stored
+// evidence is folded in too. Returns suggestions clearing CROSS_SUGGEST_THRESHOLD,
+// strongest first, excluding tags the target already has or has declined.
+export function suggestTagsFor(
+  book: ContactBook,
+  target: Contact,
+  signals: string[] = [],
+): TagSuggestion[] {
+  // Candidate signal set: current-message tokens + the target's own stored evidence.
+  const candidate = new Set<string>();
+  for (const s of signals) {
+    const t = cleanTag(s);
+    if (t) candidate.add(t);
+  }
+  for (const m of target.tagMeta ?? []) for (const e of m.evidence ?? []) candidate.add(e);
+  if (candidate.size === 0) return [];
+
+  const have = new Set(target.tags ?? []);
+  const declined = new Set(target.declinedTags ?? []);
+
+  // Per-tag fingerprint from every OTHER contact: evidence tokens + member names. A
+  // tagged contact contributes their names to all their tags (so a target mentioning
+  // them is mutual evidence) and their evidence tokens to the tags they carry.
+  const fp = new Map<string, { tokens: Set<string>; names: Set<string> }>();
+  const ensure = (tag: string) => {
+    let f = fp.get(tag);
+    if (!f) {
+      f = { tokens: new Set(), names: new Set() };
+      fp.set(tag, f);
+    }
+    return f;
+  };
+  for (const c of book.contacts) {
+    if (c === target || (target.signPub && c.signPub === target.signPub)) continue;
+    const names = [c.name, c.selfName, ...(c.aliases ?? [])].map((n) => cleanTag(n ?? "")).filter(Boolean);
+    for (const tag of c.tags ?? []) for (const n of names) ensure(tag).names.add(n);
+    for (const m of c.tagMeta ?? []) {
+      const f = ensure(m.tag);
+      for (const e of m.evidence ?? []) f.tokens.add(e);
+      for (const n of names) f.names.add(n);
+    }
+  }
+
+  const out: TagSuggestion[] = [];
+  for (const [tag, f] of fp) {
+    if (have.has(tag) || declined.has(tag)) continue;
+    let score = 0;
+    const shared: string[] = [];
+    for (const s of candidate) {
+      if (f.names.has(s)) {
+        score += CROSS_MUTUAL_WEIGHT;
+        shared.push(s);
+      } else if (f.tokens.has(s)) {
+        score += CROSS_TOPIC_WEIGHT;
+        shared.push(s);
+      }
+    }
+    if (score >= CROSS_SUGGEST_THRESHOLD) out.push({ tag, score, shared });
+  }
+  out.sort((a, b) => b.score - a.score || a.tag.localeCompare(b.tag));
+  return out.slice(0, CROSS_MAX_SUGGESTIONS);
+}
+
 export interface Contact {
   // signPub (below) is the sole identity — there is no separate id. `name` is just
   // a label and may repeat: two different people can both be "Sam", told apart by key.

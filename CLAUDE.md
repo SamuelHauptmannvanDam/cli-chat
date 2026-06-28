@@ -200,6 +200,17 @@ tag (the user said "tag Niels as work") is always confirmed in one line, in any 
 When the user ASKS about tagging ("are you tagging people?", "what's Niels tagged
 as?"), answer from the `tagging` mode and/or `contacts` — don't stay silent.
 
+**Cross-contact suggestions** (placing someone in a circle by *who they cluster with*,
+not just their own words): OCCASIONALLY — after handling a message from a contact who
+isn't yet in an obvious circle, **not on every message** — call `suggest_tags(name,
+signals)`, passing topic words AND any contact names they mentioned. It scores them
+against people you've already tagged and returns only confident matches. Then, unless
+mode is `off`, act on the top hit like any tag: in `auto` apply it with
+`tag_contact(source:"cross", evidence=its shared)` (silent unless it's the contact's
+first tag); in `suggest` propose it. If the user rejects a tag (here or any time),
+call `decline_tag` so it's never suggested again — that's different from
+`untag_contact`, which just removes and could resurface later.
+
 **Group send:** when the user says "write everyone from <tag>", filter `contacts` for
 that tag, then ALWAYS show the roster and confirm BEFORE sending ("I've tagged Niels,
 Tobias and Mette as work — send to all three?"). On yes, send to each with
