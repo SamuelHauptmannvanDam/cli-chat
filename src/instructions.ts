@@ -106,7 +106,10 @@ name match like send_message), and shown per-contact in \`contacts\`.
   body; if it clearly signals a circle (standup/sprint/deploy/PR → "work";
   LAN/raid/game → "gaming"; mum/dinner/birthday → "family"), tag the contact. Fold
   synonyms onto one canonical tag yourself. Don't re-derive a tag a contact already
-  has — once tagged, leave them be, so most messages need no tagging work.
+  has — once tagged, leave them be, so most messages need no tagging work. When you
+  auto-tag, pass \`source:"self"\` and the 1–3 \`evidence\` words you based it on
+  (e.g. ["standup","deploy"]) to \`tag_contact\` — stored locally as the tag's
+  reasoning for future cross-contact suggestions. A manual tag needs neither.
 - The MODE governs this, via the \`tagging\` tool: 'auto' (DEFAULT), 'suggest'
   (propose a tag and apply only on the user's OK), or 'off' (never tag automatically
   and never ask). CHECK the mode before auto-tagging; honour it. Manual

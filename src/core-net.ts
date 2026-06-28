@@ -17,8 +17,11 @@ import {
   cleanTag,
   addTag,
   removeTag,
+  recordTagMeta,
+  removeTagMeta,
   type Contact,
   type ContactBook,
+  type TagSource,
 } from "./contacts.ts";
 import { open, seal, type Identity } from "./crypto.ts";
 import { isHandle, parseKey } from "./key-code.ts";
@@ -53,9 +56,11 @@ export function rememberContact(
   if (c.auto) entry.auto = true;
   const self = cleanName(c.selfName) || prev?.selfName;
   if (self) entry.selfName = self;
-  // Carry local tags forward across the upsert — a rename (re-add with a new nick)
-  // must not wipe the labels you've put on someone.
+  // Carry local tags + their evidence/declines forward across the upsert — a rename
+  // (re-add with a new nick) must not wipe the labels or the why behind them.
   if (prev?.tags?.length) entry.tags = [...prev.tags];
+  if (prev?.tagMeta?.length) entry.tagMeta = prev.tagMeta.map((m) => ({ ...m, evidence: m.evidence ? [...m.evidence] : undefined }));
+  if (prev?.declinedTags?.length) entry.declinedTags = [...prev.declinedTags];
   ctx.book.contacts.push(entry);
   if (ctx.contactsPath) saveContacts(ctx.contactsPath, ctx.book);
 }
@@ -166,42 +171,59 @@ export type TagContactResult =
   | { ok: true; name: string; tag: string; tags: string[]; changed: boolean }
   | { ok: false; reason: "no_contact" | "ambiguous" | "bad_tag"; query: string; candidates?: string[] };
 
-// Resolve a name the same way send_message/delete_contact do, then add (or remove)
-// a LOCAL tag. Tags never leave the device. `changed` is false when the tag was
-// already present (add) or already absent (remove) — a no-op, not an error.
+// Resolve a name the same way send_message/delete_contact does, then add a LOCAL
+// tag. Tags never leave the device. Also records WHY (2a-iii): `source` (manual /
+// self / cross) and any `evidence` tokens merge into the contact's tagMeta — even
+// when the tag itself was already present, so evidence keeps accumulating. `changed`
+// reflects the membership set (false = they already had the tag), which is what the
+// agent uses to decide whether to announce a contact's FIRST tag.
 export function tagContact(
   ctx: NetContext,
-  args: { name: string; tag: string },
+  args: { name: string; tag: string; source?: TagSource; evidence?: string[] },
 ): TagContactResult {
-  return mutateTag(ctx, args, addTag);
+  const found = resolveForTag(ctx, args);
+  if (!found.ok) return found.err;
+  const c = found.contact;
+  const changed = addTag(c, args.tag);
+  const metaChanged = recordTagMeta(c, args.tag, {
+    source: args.source ?? "manual",
+    evidence: args.evidence,
+    now: ctx.now(),
+  });
+  if ((changed || metaChanged) && ctx.contactsPath) saveContacts(ctx.contactsPath, ctx.book);
+  return { ok: true, name: c.name, tag: cleanTag(args.tag), tags: c.tags ?? [], changed };
 }
 
+// Remove a tag and its evidence. `changed` reflects whether the tag was present.
 export function untagContact(
   ctx: NetContext,
   args: { name: string; tag: string },
 ): TagContactResult {
-  return mutateTag(ctx, args, removeTag);
+  const found = resolveForTag(ctx, args);
+  if (!found.ok) return found.err;
+  const c = found.contact;
+  const changed = removeTag(c, args.tag);
+  const metaChanged = removeTagMeta(c, args.tag);
+  if ((changed || metaChanged) && ctx.contactsPath) saveContacts(ctx.contactsPath, ctx.book);
+  return { ok: true, name: c.name, tag: cleanTag(args.tag), tags: c.tags ?? [], changed };
 }
 
-function mutateTag(
+// Shared front half of tag/untag: validate the tag and resolve the name, returning
+// either the resolved contact or the failure result both tools share.
+function resolveForTag(
   ctx: NetContext,
   args: { name: string; tag: string },
-  apply: (c: Contact, tag: string) => boolean,
-): TagContactResult {
-  if (!cleanTag(args.tag)) return { ok: false, reason: "bad_tag", query: args.name };
+): { ok: true; contact: Contact } | { ok: false; err: TagContactResult } {
+  if (!cleanTag(args.tag)) return { ok: false, err: { ok: false, reason: "bad_tag", query: args.name } };
   const r = resolve(ctx.book, args.name);
-  if (r.status === "none") return { ok: false, reason: "no_contact", query: args.name };
+  if (r.status === "none")
+    return { ok: false, err: { ok: false, reason: "no_contact", query: args.name } };
   if (r.status === "ambiguous")
     return {
       ok: false,
-      reason: "ambiguous",
-      query: args.name,
-      candidates: r.candidates.map((c) => c.name),
+      err: { ok: false, reason: "ambiguous", query: args.name, candidates: r.candidates.map((c) => c.name) },
     };
-  const c = r.contact;
-  const changed = apply(c, args.tag);
-  if (changed && ctx.contactsPath) saveContacts(ctx.contactsPath, ctx.book);
-  return { ok: true, name: c.name, tag: cleanTag(args.tag), tags: c.tags ?? [], changed };
+  return { ok: true, contact: r.contact };
 }
 
 // Pull any waiting blobs, decrypt, and store in the local cache. Idempotent:

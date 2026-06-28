@@ -14,6 +14,16 @@ export const NAME_MAX = 128;
 // a contact. Capped well under a name — they're keywords, not prose.
 export const TAG_MAX = 64;
 
+// How a tag came to be on a contact. "manual" = the user asked; "self" = inferred
+// from that contact's own messages (2a-ii); "cross" = inferred from the circle they
+// cluster with (2a-iii). Stored so cross-inference can weight evidence by origin.
+export type TagSource = "manual" | "self" | "cross";
+
+// Cap on evidence tokens kept PER TAG (the signal words behind it, e.g. "standup",
+// "sprint"). Bounded so tagMeta can't grow without limit; when full we keep the most
+// recent tokens (newer context is the better fingerprint).
+export const EVIDENCE_PER_TAG_MAX = 12;
+
 // Normalise a display name before storing it: trim, strip control characters
 // (incl. newlines — a self-name from another client is untrusted and shown in the
 // terminal), and cap to NAME_MAX. Truncates rather than rejecting, so a too-long
@@ -63,6 +73,72 @@ export function removeTag(c: Contact, tag: string): boolean {
   return true;
 }
 
+// Record (or merge into) the evidence + provenance behind a tag — the WHY a future
+// cross-inference pass matches against. Creates the tagMeta entry on first use; on
+// later calls it merges new evidence tokens (normalised + deduped, capped to the most
+// recent EVIDENCE_PER_TAG_MAX) and bumps updatedAt. `source` is set once, on create
+// — a later automatic merge never downgrades a 'manual' origin. Returns true if
+// anything changed (so the caller knows to persist). Independent of addTag: evidence
+// accumulates even when the tag itself was already present.
+export function recordTagMeta(
+  c: Contact,
+  tag: string,
+  opts: { source: TagSource; evidence?: string[]; now: number },
+): boolean {
+  const t = cleanTag(tag);
+  if (!t) return false;
+  if (!c.tagMeta) c.tagMeta = [];
+  let entry = c.tagMeta.find((m) => m.tag === t);
+  let changed = false;
+  if (!entry) {
+    entry = { tag: t, source: opts.source, addedAt: opts.now };
+    c.tagMeta.push(entry);
+    changed = true;
+  }
+  const incoming = (opts.evidence ?? []).map((e) => cleanTag(e)).filter(Boolean);
+  if (incoming.length) {
+    const merged = [...(entry.evidence ?? [])];
+    for (const tok of incoming) if (!merged.includes(tok)) merged.push(tok);
+    const capped =
+      merged.length > EVIDENCE_PER_TAG_MAX ? merged.slice(merged.length - EVIDENCE_PER_TAG_MAX) : merged;
+    if (capped.join("\n") !== (entry.evidence ?? []).join("\n")) {
+      entry.evidence = capped;
+      changed = true;
+    }
+  }
+  if (changed) entry.updatedAt = opts.now;
+  return changed;
+}
+
+// Drop the tagMeta entry for a tag (mutates in place). Returns true if one existed.
+// Called when a tag is removed so its evidence doesn't linger as a stale fingerprint.
+export function removeTagMeta(c: Contact, tag: string): boolean {
+  const t = cleanTag(tag);
+  if (!t || !c.tagMeta) return false;
+  const next = c.tagMeta.filter((m) => m.tag !== t);
+  if (next.length === c.tagMeta.length) return false;
+  if (next.length) c.tagMeta = next;
+  else delete c.tagMeta;
+  return true;
+}
+
+// Mark a tag as DECLINED for a contact, so a future cross-inference pass never
+// re-suggests it (mutates in place; deduped). Returns true if newly recorded.
+export function declineTag(c: Contact, tag: string): boolean {
+  const t = cleanTag(tag);
+  if (!t) return false;
+  if (!c.declinedTags) c.declinedTags = [];
+  if (c.declinedTags.includes(t)) return false;
+  c.declinedTags.push(t);
+  return true;
+}
+
+// Whether a tag has been declined for this contact (case-insensitive).
+export function isTagDeclined(c: Contact, tag: string): boolean {
+  const t = cleanTag(tag);
+  return !!t && !!c.declinedTags?.includes(t);
+}
+
 export interface Contact {
   // signPub (below) is the sole identity — there is no separate id. `name` is just
   // a label and may repeat: two different people can both be "Sam", told apart by key.
@@ -83,6 +159,21 @@ export interface Contact {
   tags?: string[]; // LOCAL labels you/the agent attach ("work", "family"). Never sent
   // to the server or another client — purely your own view, used for "write everyone
   // from work". Lower-cased + deduped via cleanTag. Absent when untagged.
+  tagMeta?: TagMeta[]; // WHY each tag is here (2a-iii): origin + the evidence tokens
+  // behind it, so cross-inference can match a new contact against existing circles.
+  // Additive to `tags` (which stays the fast membership set). Absent until recorded.
+  declinedTags?: string[]; // tags the user rejected for this contact, so a future
+  // cross-inference pass never re-suggests them. Lower-cased; absent when none.
+}
+
+// The provenance + evidence behind one tag on a contact. Local-only, like tags.
+export interface TagMeta {
+  tag: string; // the canonical (cleanTag'd) tag this evidence supports
+  source: TagSource; // how it was first applied (manual / self / cross)
+  evidence?: string[]; // normalised signal tokens that triggered it ("standup", …),
+  // deduped and capped to EVIDENCE_PER_TAG_MAX (most recent kept)
+  addedAt: number; // epoch ms when the tag was first recorded
+  updatedAt?: number; // epoch ms of the last evidence merge, when it has changed since
 }
 
 export interface ContactBook {
