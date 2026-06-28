@@ -14,6 +14,9 @@ import {
   senderLabel,
   resolve,
   cleanName,
+  cleanTag,
+  addTag,
+  removeTag,
   type Contact,
   type ContactBook,
 } from "./contacts.ts";
@@ -50,6 +53,9 @@ export function rememberContact(
   if (c.auto) entry.auto = true;
   const self = cleanName(c.selfName) || prev?.selfName;
   if (self) entry.selfName = self;
+  // Carry local tags forward across the upsert — a rename (re-add with a new nick)
+  // must not wipe the labels you've put on someone.
+  if (prev?.tags?.length) entry.tags = [...prev.tags];
   ctx.book.contacts.push(entry);
   if (ctx.contactsPath) saveContacts(ctx.contactsPath, ctx.book);
 }
@@ -154,6 +160,48 @@ export function deleteContact(
   else ctx.book.contacts = ctx.book.contacts.filter((x) => x !== c); // legacy keyless entry
   if (ctx.contactsPath) saveContacts(ctx.contactsPath, ctx.book);
   return { ok: true, name: c.name };
+}
+
+export type TagContactResult =
+  | { ok: true; name: string; tag: string; tags: string[]; changed: boolean }
+  | { ok: false; reason: "no_contact" | "ambiguous" | "bad_tag"; query: string; candidates?: string[] };
+
+// Resolve a name the same way send_message/delete_contact do, then add (or remove)
+// a LOCAL tag. Tags never leave the device. `changed` is false when the tag was
+// already present (add) or already absent (remove) — a no-op, not an error.
+export function tagContact(
+  ctx: NetContext,
+  args: { name: string; tag: string },
+): TagContactResult {
+  return mutateTag(ctx, args, addTag);
+}
+
+export function untagContact(
+  ctx: NetContext,
+  args: { name: string; tag: string },
+): TagContactResult {
+  return mutateTag(ctx, args, removeTag);
+}
+
+function mutateTag(
+  ctx: NetContext,
+  args: { name: string; tag: string },
+  apply: (c: Contact, tag: string) => boolean,
+): TagContactResult {
+  if (!cleanTag(args.tag)) return { ok: false, reason: "bad_tag", query: args.name };
+  const r = resolve(ctx.book, args.name);
+  if (r.status === "none") return { ok: false, reason: "no_contact", query: args.name };
+  if (r.status === "ambiguous")
+    return {
+      ok: false,
+      reason: "ambiguous",
+      query: args.name,
+      candidates: r.candidates.map((c) => c.name),
+    };
+  const c = r.contact;
+  const changed = apply(c, args.tag);
+  if (changed && ctx.contactsPath) saveContacts(ctx.contactsPath, ctx.book);
+  return { ok: true, name: c.name, tag: cleanTag(args.tag), tags: c.tags ?? [], changed };
 }
 
 // Pull any waiting blobs, decrypt, and store in the local cache. Idempotent:

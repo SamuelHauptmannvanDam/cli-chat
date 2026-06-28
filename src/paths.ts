@@ -48,6 +48,12 @@ export function inboxFile(user: string): string {
   return join(userDir(user), "inbox.db");
 }
 
+// Per-user local preferences (e.g. the auto-tagging mode). Never sent to the
+// server; see settings.ts.
+export function settingsFile(user: string): string {
+  return join(userDir(user), "settings.json");
+}
+
 // The warmer mirrors current unread mail (decrypted) here so the session hook can
 // surface it WITHOUT opening inbox.db — the cross-process collision that used to
 // drop mail on the wasm driver. Warmer is the only writer; the hook only reads.
@@ -59,6 +65,14 @@ export function pendingFile(user: string): string {
 // marks those read in inbox.db. The hook is the only writer; the warmer only reads.
 export function pendingAckFile(user: string): string {
   return join(userDir(user), "pending-ack.json");
+}
+
+// Records the session id we last showed the "say chat" live-inbox tip for, so the
+// tip surfaces at most ONCE per session — on the first mail notice, whether that's
+// at session open or mid-session. Overwritten each time (never grows). See
+// check-inbox.ts.
+export function chatHintFile(user: string): string {
+  return join(userDir(user), "chat-hint.json");
 }
 
 // While the live inbox ("chat") listener is running it heartbeats this lock file

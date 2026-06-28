@@ -10,6 +10,10 @@ import { readFileSync, writeFileSync, renameSync } from "node:fs";
 // in EVERY message envelope through the server (payload you pay for per message).
 export const NAME_MAX = 128;
 
+// Tags are short, local-only labels ("work", "family") the user/agent attaches to
+// a contact. Capped well under a name — they're keywords, not prose.
+export const TAG_MAX = 64;
+
 // Normalise a display name before storing it: trim, strip control characters
 // (incl. newlines — a self-name from another client is untrusted and shown in the
 // terminal), and cap to NAME_MAX. Truncates rather than rejecting, so a too-long
@@ -18,6 +22,45 @@ export function cleanName(raw: string | undefined | null): string {
   if (!raw) return "";
   // eslint-disable-next-line no-control-regex
   return raw.replace(/[\x00-\x1f\x7f]+/g, " ").trim().slice(0, NAME_MAX);
+}
+
+// Normalise a tag before storing/matching it: strip control chars, collapse
+// internal whitespace, LOWER-CASE (so "Work"/"work" are one tag), trim, cap at
+// TAG_MAX. Lower-casing is what makes tag matching case-insensitive and lets the
+// agent fold synonyms onto one canonical spelling. "" for empty input.
+export function cleanTag(raw: string | undefined | null): string {
+  if (!raw) return "";
+  return raw
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\x00-\x1f\x7f]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase()
+    .slice(0, TAG_MAX);
+}
+
+// Add a tag to a contact (mutates in place). No-op if the tag is empty or already
+// present (deduped, case-insensitive via cleanTag). Returns true if it changed.
+export function addTag(c: Contact, tag: string): boolean {
+  const t = cleanTag(tag);
+  if (!t) return false;
+  if (!c.tags) c.tags = [];
+  if (c.tags.includes(t)) return false;
+  c.tags.push(t);
+  return true;
+}
+
+// Remove a tag from a contact (mutates in place). Returns true if it was present
+// and removed. Drops the array entirely when it empties, so a tagless contact has
+// no `tags` key rather than `[]`.
+export function removeTag(c: Contact, tag: string): boolean {
+  const t = cleanTag(tag);
+  if (!t || !c.tags) return false;
+  const next = c.tags.filter((x) => x !== t);
+  if (next.length === c.tags.length) return false;
+  if (next.length) c.tags = next;
+  else delete c.tags;
+  return true;
 }
 
 export interface Contact {
@@ -37,6 +80,9 @@ export interface Contact {
   sentCount?: number; // how many messages YOU'VE sent them; ranks the "most active"
   // shortcut in the contacts list. Absent on contacts never written to (treated 0).
   lastMessageAt?: number; // epoch ms of the last message you sent them (recency tiebreak).
+  tags?: string[]; // LOCAL labels you/the agent attach ("work", "family"). Never sent
+  // to the server or another client — purely your own view, used for "write everyone
+  // from work". Lower-cased + deduped via cleanTag. Absent when untagged.
 }
 
 export interface ContactBook {

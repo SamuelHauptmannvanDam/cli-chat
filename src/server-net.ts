@@ -26,7 +26,9 @@ import {
   inboxFile,
   pendingFile,
   pendingAckFile,
+  settingsFile,
 } from "./paths.ts";
+import { loadSettings, saveSettings, type TagMode } from "./settings.ts";
 import { resolveMailboxUrl, DEFAULT_MAILBOX_URL } from "./config.ts";
 import { startWarmer } from "./warmer.ts";
 import { claimHandle } from "./provision.ts";
@@ -34,6 +36,8 @@ import { INSTRUCTIONS } from "./instructions.ts";
 import {
   addContact,
   deleteContact,
+  tagContact,
+  untagContact,
   draftReply,
   messagesAvailable,
   readMessage,
@@ -124,7 +128,7 @@ ensureWarmer();
 // Behavior travels WITH the server (MCP `instructions`, sent on connect) so it
 // works in any MCP-capable CLI — not just Claude Code's CLAUDE.md. The text is
 // the single source in ./instructions.ts; esbuild inlines it into the bundle.
-const server = new McpServer({ name: "cli-chat", version: "0.5.2" }, { instructions: INSTRUCTIONS });
+const server = new McpServer({ name: "cli-chat", version: "0.6.0" }, { instructions: INSTRUCTIONS });
 const ok = (data: unknown) => ({
   content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }],
 });
@@ -251,7 +255,10 @@ server.registerTool(
       name: S.me.name,
       handle: S.me.handle,
       fullKey: encodeKey(S.me.signPub, S.me.boxPub),
-      note: `Account ready. Share this 6-character code so people can message you: ${S.me.handle}`,
+      note:
+        `Account ready. Share this 6-character code so people can message you: ${S.me.handle}. ` +
+        `Also tell the user, in one line, that they can say "chat" anytime to keep a live ` +
+        `inbox open that reads new messages into the chat as they arrive.`,
     });
   },
 );
@@ -329,6 +336,59 @@ const TOOLS: {
     run: (s, { name }) => deleteContact(s.ctx, { name }),
   },
   {
+    name: "tag_contact",
+    title: "Add a local label to a contact",
+    description:
+      "Attach a LOCAL tag to a contact ('work', 'family', 'gaming') so the user can " +
+      "later say 'write everyone from work'. Tags are private — they never leave the " +
+      "device and are never sent to the server or other clients. Use when the user " +
+      "says 'tag Niels as work' / 'Niels is from work', AND when you auto-tag from " +
+      "conversation (see the tagging policy in the server instructions; check the " +
+      "`tagging` mode first). Name matching is partial like send_message. Tags are " +
+      "lower-cased + deduped; fold synonyms onto one spelling yourself ('coworker'/" +
+      "'office' → 'work'). `no_contact`/`ambiguous` work exactly like send_message; " +
+      "`changed:false` means it already had that tag (a no-op, not an error).",
+    inputSchema: {
+      name: z.string().describe("Contact name, e.g. 'Niels'"),
+      tag: z.string().describe("The label to add, e.g. 'work' (lower-cased, deduped)"),
+    },
+    run: (s, { name, tag }) => tagContact(s.ctx, { name, tag }),
+  },
+  {
+    name: "untag_contact",
+    title: "Remove a local label from a contact",
+    description:
+      "Remove a tag previously attached with tag_contact. Use when the user says " +
+      "'Niels isn't work anymore' / 'untag Niels work'. Name matching is partial; " +
+      "`changed:false` means they didn't have that tag. Same `no_contact`/" +
+      "`ambiguous` handling as send_message.",
+    inputSchema: {
+      name: z.string().describe("Contact name, e.g. 'Niels'"),
+      tag: z.string().describe("The label to remove, e.g. 'work'"),
+    },
+    run: (s, { name, tag }) => untagContact(s.ctx, { name, tag }),
+  },
+  {
+    name: "tagging",
+    title: "View or set the auto-tagging mode",
+    description:
+      "Read or change how the agent tags contacts from conversation. Call with NO " +
+      "argument to REPORT the current mode (use when the user asks 'are you tagging " +
+      "people?', 'is auto-tagging on?'). Pass `mode` to change it: 'auto' (default — " +
+      "apply obvious tags silently), 'suggest' (propose tags, apply only on the " +
+      "user's OK), or 'off' (never tag automatically and never ask; manual " +
+      "tag_contact still works). The setting is local to this device. Map natural " +
+      "phrasing yourself: 'stop auto-tagging' → off, 'just suggest' → suggest, 'tag " +
+      "automatically again' → auto.",
+    inputSchema: {
+      mode: z
+        .enum(["auto", "suggest", "off"])
+        .optional()
+        .describe("New mode; omit to just read the current one"),
+    },
+    run: (s, { mode }) => setOrGetTagMode(s, mode),
+  },
+  {
     name: "my_key",
     title: "Show my own code to share",
     description:
@@ -359,7 +419,10 @@ const TOOLS: {
       "address book', or 'what's my name/handle?'. Saved people come back in two " +
       "lists: `active` (written in the last 60 days, ordered by who the user " +
       "messages most) and `contacts` (everyone else, alphabetical). Render `active` " +
-      "first when non-empty, then `contacts` A–Z; do NOT show message counts.",
+      "first when non-empty, then `contacts` A–Z; do NOT show message counts. Each " +
+      "person also carries `tags` (local labels like 'work'/'family'); this is the " +
+      "data you filter to resolve 'who's tagged work?' and to build the roster for " +
+      "'write everyone from work' — see the server instructions for the group-send flow.",
     inputSchema: {},
     run: (s) => {
       const fmt = (c: (typeof s.book.contacts)[number]) => ({
@@ -370,6 +433,7 @@ const TOOLS: {
         selfName: c.selfName ?? (c.auto ? c.name : null),
         aliases: c.aliases ?? [],
         handle: c.handle ?? null,
+        tags: c.tags ?? [], // local labels; powers "write everyone from <tag>"
         fullKey: c.signPub && c.boxPub ? encodeKey(c.signPub, c.boxPub) : null,
       });
       // active = written in the last 60 days, most-written first; rest = everyone
@@ -455,6 +519,26 @@ const resultNote = (name: string, r: any): string | undefined => {
     case "delete_contact":
       if (r.ok) return "Confirm in one line, e.g. 'Deleted Niels.'";
       return undefined;
+    case "tag_contact":
+      if (r.ok)
+        return r.changed
+          ? "Confirm in one line, e.g. 'Tagged Niels work.'"
+          : "They already had that tag — say so in one line; nothing to do.";
+      if (r.reason === "no_contact") return "No contact matched. Say so; offer to add them by code.";
+      if (r.reason === "ambiguous") return "Several matched: name the candidates and ask which — don't guess.";
+      return undefined;
+    case "untag_contact":
+      if (r.ok)
+        return r.changed
+          ? "Confirm in one line, e.g. 'Removed work from Niels.'"
+          : "They didn't have that tag — say so in one line.";
+      if (r.reason === "no_contact") return "No contact matched. Say so.";
+      if (r.reason === "ambiguous") return "Several matched: name the candidates and ask which — don't guess.";
+      return undefined;
+    case "tagging":
+      return r.changed
+        ? `Auto-tagging is now '${r.mode}'. Confirm in one line.`
+        : `Auto-tagging mode is '${r.mode}'. Tell the user, and that it can be auto / suggest / off.`;
     case "read_message":
       if (r.ok) return "Read this out to the user (sender + body); to reply, use draft_reply with this id.";
       return undefined;
@@ -522,6 +606,20 @@ function listenerCommand(_s: Session): string {
   if (process.env.MESSENGER_PUSH) parts.push(`MESSENGER_PUSH=${process.env.MESSENGER_PUSH}`);
   const env = parts.length ? parts.join(" ") + " " : "";
   return `${env}node ${quoteArg(friendlyPath(listenerPath))}`;
+}
+
+// Read the local auto-tagging mode, or change it when `mode` is given. Stored in
+// the per-user settings file (never sent to the server). With no `mode` this is a
+// pure read — how the agent answers "is auto-tagging on?".
+function setOrGetTagMode(s: Session, mode?: TagMode) {
+  const path = settingsFile(s.user);
+  const settings = loadSettings(path);
+  const changed = !!mode && mode !== settings.tagMode;
+  if (changed) {
+    settings.tagMode = mode!;
+    saveSettings(path, settings);
+  }
+  return { mode: settings.tagMode, changed };
 }
 
 // Deliver the waiting live-inbox batch to the agent and mark it surfaced. This is
