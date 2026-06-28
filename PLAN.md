@@ -498,16 +498,110 @@ sections: when to suggest a tag, the confirm-the-roster rule for group send, and
   the decision above) — the confirm + auto-tag behaviour lives in instructions.ts.
   Covered by unit tests (`contacts.test.ts` tag helpers, `settings.test.ts`,
   `tag-contact.test.ts`). Manual tagging + group send fully usable now.
-- **2a-ii** — agent-suggested tags from conversation content (instructions-only;
-  no new storage). This is where it starts to feel magic. *(Instructions already
-  describe the per-message inference + mode-check; this phase is about exercising
-  and tuning it in practice.)*
-- **2a-iii** — cross-contact inference (needs the signal/`tagMeta` store).
+- **2a-ii — ✅ WORKING (verified 2026-06-28, v0.6.1).** Agent-suggested/auto tags
+  from conversation content. The behaviour first lived only in `src/instructions.ts`
+  (the MCP `instructions` field) and silently no-op'd because that field gets dropped
+  by some clients and CLAUDE.md didn't mention tagging — fixed in 0.6.1 by
+  documenting auto-tagging in CLAUDE.md AND adding `resultNote` nudges on
+  `send_message`/`read_message`/`messages_available`/`chat_batch` so the reminder
+  rides with each tool result. Confirmed firing on a manual send. Lesson: agent
+  behaviour must live in CLAUDE.md + resultNote, not only instructions.ts.
+- **2a-iii** — cross-contact inference (needs the signal/`tagMeta` store). Detailed
+  design below.
+
+### Cross-contact inference (2a-iii) — detailed design (specced 2026-06-28)
+
+> **The leap.** 2a-ii tags a person from THEIR OWN message ("Niels said standup →
+> Niels is `work`"). 2a-iii tags a person from WHO THEY CLUSTER WITH ("Tobias shares
+> Niels's standup/sprint/employer context, and Niels is `work` → Tobias is probably
+> `work` too"). It turns a pile of independent labels into circles.
+
+**Held to a higher bar than self-tagging.** Guilt-by-association is weaker evidence
+than someone's own words, so cross-inference is **suggest-only — it never silently
+auto-applies, even in `auto` mode.** `auto` governs self-tagging (2a-ii); cross-tagging
+always asks. This is the single most important guard (it's the layer most prone to
+over-tagging).
+
+#### Data model — the evidence store
+Today a tag is a bare string (`tags: ["work"]`), with no record of WHY. Cross-inference
+needs the why. Add a parallel, local-only store:
+```
+interface TagMeta {
+  tag: string;                  // canonical tag this evidence supports
+  source: "manual" | "self" | "cross";  // how it was applied
+  evidence?: string[];          // signal tokens behind it: "standup", "sprint",
+                                // an employer/org name, mutual-contact names
+  confidence?: number;          // for inferred tags (0–1)
+  addedAt: number;
+}
+// on Contact:  tags?: string[]        // unchanged — the fast membership set group-send filters
+//              tagMeta?: TagMeta[]    // NEW — the evidence/provenance behind those tags
+//              declinedTags?: string[]// NEW — tags the user rejected, so we never re-suggest
+```
+Keep `tags: string[]` as-is (group send + display read it; it stays cheap). `tagMeta`
+is additive. `cleanTag`-normalise evidence tokens; cap evidence per tag (e.g. top ~12)
+so the store can't grow unbounded.
+
+#### Capturing evidence (foundation — 2a-iii-a)
+Extend `tag_contact` with optional `evidence: string[]` and `source`. When the
+agent auto-tags (2a-ii), it ALSO passes the signal tokens it based the tag on, which
+land in `tagMeta`. Manual tags carry `source:"manual"`, no evidence. No visible
+behaviour change yet — this just starts accumulating the why, so a cluster fingerprint
+exists to match against later.
+
+#### Matching (the inference — 2a-iii-b)
+- **Cluster fingerprint:** for each tag, the union of `evidence` across all contacts
+  carrying it = "what `work` looks like for this user." Computed from `tagMeta`.
+- **Candidate signals:** when a message from an UNTAGGED (or differently-tagged)
+  contact is handled, extract its signals — the same extraction 2a-ii already does.
+- **Score:** overlap between candidate signals and a tag's fingerprint. Weight rarer/
+  stronger tokens higher (an employer name ≫ generic "meeting"); **shared mutual-contact
+  references are the strongest signal** (Tobias names Niels, who is `work`). Suggest
+  when the score clears a threshold (start simple: ≥2 distinct strong shared tokens).
+- **Hybrid model+code:** the model extracts signals (semantic); code computes the
+  overlap/score (deterministic, consistent). Surface via a small `suggest_tags(name)`
+  tool returning scored candidates, OR by handing the agent `tagMeta` through an
+  extended `contacts` and letting it compare — decide during build (lean to the tool
+  so scoring is consistent, not re-derived per turn).
+- **On a hit:** the agent SUGGESTS ("Tobias keeps mentioning Niels's standup —
+  tag him `work` too?"). On yes → `tag_contact(..., source:"cross")`. On no →
+  record in `declinedTags` so it's never re-suggested.
+
+#### Cadence
+NOT per-message (too noisy, and the comparison is heavier than reading one body).
+Meter it: evaluate a contact for cross-tags when they first become **active**, or on
+an occasional sweep — never on every turn. Skip anyone already carrying the tag or
+who has it in `declinedTags`.
+
+#### Privacy
+Still 100% local — evidence is derived from messages you already received and never
+leaves the device. BUT note: storing per-tag topic/keyword fingerprints is more
+sensitive than bare labels (it's a small profile of how you relate to people). It's
+local-only, but call it out; if ever uncomfortable, evidence can be coarsened (store
+only mutual-contact links, not free-text topics).
+
+#### Build order within 2a-iii
+- **2a-iii-a** — evidence store: `tagMeta`/`declinedTags` fields, `tag_contact`
+  gains `evidence`/`source`, 2a-ii starts populating it. Invisible, foundational.
+- **2a-iii-b** — matching + suggestion: scoring, the suggest flow, decline-memory.
+- **2a-iii-c** — tuning: token weighting, mutual-contact signals, threshold, the
+  metered cadence. Needs real tagged data to calibrate.
+
+#### Open questions
+1. **Untagged-contact profiles:** match only on a candidate's CURRENT message
+   (lighter, less storage) vs. persist a rolling signal profile per contact (richer,
+   more privacy surface)? Start with current-message-only; revisit if recall is poor.
+2. **Scoring/threshold** — needs live data to tune; ship a conservative default and
+   adjust. Over-tagging erodes trust fastest, so bias toward precision.
+3. **Re-evaluation on rename/retag** — recompute a fingerprint when a tag's
+   membership changes? Cheap to recompute on demand; probably no caching needed at
+   this scale.
 
 ---
 
 *Captured 2026-06-12. Concept + plan; Phase 0 is the next build step.*
 *Updated 2026-06-28: friend-of-friend (§3.3) stays parked — preferred design if
 revisited is encrypted contact-list blobs on the server with friend-held keys
-(server stays blind, sync without the friend being online); auto-tagging (§9) is
-the active next build.*
+(server stays blind, sync without the friend being online). Auto-tagging (§9):
+2a-i + 2a-ii BUILT & verified (v0.6.0/0.6.1); 2a-iii (cross-contact inference)
+specced in §9, not yet built.*
