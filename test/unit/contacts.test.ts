@@ -12,7 +12,11 @@ import {
   loadContacts,
   orderedContacts,
   cleanName,
+  cleanTag,
+  addTag,
+  removeTag,
   NAME_MAX,
+  TAG_MAX,
   type Contact,
   type ContactBook,
 } from "../../src/contacts.ts";
@@ -240,4 +244,32 @@ test("cleanName trims, drops empties, and caps at NAME_MAX", () => {
 test("cleanName strips control characters and newlines (untrusted self-names)", () => {
   assert.equal(cleanName("Niels\nBohr"), "Niels Bohr"); // newline → single space
   assert.equal(cleanName("a\t\tb"), "a b"); // run of control chars → one space
+});
+
+test("cleanTag lower-cases, collapses whitespace, trims, and caps at TAG_MAX", () => {
+  assert.equal(cleanTag("  Work  "), "work");
+  assert.equal(cleanTag("Close   Friends"), "close friends"); // run of spaces → one
+  assert.equal(cleanTag("Co\nWorker"), "co worker"); // control char → space
+  assert.equal(cleanTag(""), "");
+  assert.equal(cleanTag(undefined), "");
+  assert.equal(cleanTag("x".repeat(TAG_MAX + 20)).length, TAG_MAX);
+});
+
+test("addTag adds a normalised tag and dedupes case-insensitively", () => {
+  const c: Contact = { name: "Niels", signPub: "n", boxPub: "b" };
+  assert.equal(addTag(c, "Work"), true);
+  assert.deepEqual(c.tags, ["work"]);
+  assert.equal(addTag(c, "work"), false); // already present (after normalising)
+  assert.equal(addTag(c, "WORK"), false);
+  assert.deepEqual(c.tags, ["work"]);
+  assert.equal(addTag(c, "  "), false); // empty tag → no-op
+});
+
+test("removeTag removes case-insensitively and drops the array when empty", () => {
+  const c: Contact = { name: "Niels", signPub: "n", boxPub: "b", tags: ["work", "gaming"] };
+  assert.equal(removeTag(c, "WORK"), true);
+  assert.deepEqual(c.tags, ["gaming"]);
+  assert.equal(removeTag(c, "missing"), false); // not present → no-op
+  assert.equal(removeTag(c, "gaming"), true);
+  assert.equal(c.tags, undefined); // last tag gone → no empty array left behind
 });

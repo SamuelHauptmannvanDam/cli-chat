@@ -272,7 +272,11 @@ pricing before betting on a number.
   `test/roundtrip.ts`, `test/live.ts`). Stack is Node/TS throughout.
 
 ### Phase 2 — Smarter resolution & learned tags
-- Encrypted meta tags on send (company, mutual contacts, topic) — §3.4.
+- **Phase 2a — local auto-tagging & tag-based group send is the ACTIVE focus.**
+  Detailed plan in §9 below. Ship this first; it's purely local (no server change,
+  no privacy fork).
+- Encrypted meta tags on send (company, mutual contacts, topic) — §3.4. *(The
+  cross-agent / network-resolution flavour of tags; deferred behind 2a.)*
 - Disambiguation when >1 candidate for a name.
 - Tagging improves future "which Tobias?" confidence.
 
@@ -349,4 +353,161 @@ pricing before betting on a number.
 
 ---
 
+## 9. Auto-tagging & tag-based group send (Phase 2a — active focus, planned 2026-06-28)
+
+> **The pitch.** Over time, the agent learns *who's who* from your conversations and
+> tags people locally — "work", "family", "LAN crew". Eventually you say **"write
+> everyone from work"** and the agent answers **"I've tagged Niels, Tobias and Mette
+> as coworkers — write all three?"**, confirms the roster, and fans the message out.
+> Tags also sharpen ordinary resolution and disambiguation down the line.
+
+### Why this one now
+- **100% local. No server change, no privacy fork.** Tags live in your own contact
+  book; nothing about them ever touches the mailbox or the directory. This is the
+  opposite of friend-of-friend (§3.3 / parked) — all upside, none of the graph-exposure
+  debate. That's exactly why it's the right next build.
+- It reuses signal we already have: the agent already reads message bodies when it
+  relays/replies, so inference happens on tokens we're already spending — no new
+  background cost.
+
+### Data model (local only)
+- Add to `Contact` (`src/contacts.ts`): `tags?: string[]` — confirmed labels,
+  lower-cased + trimmed, deduped. Never serialised into a message envelope; never
+  sent to the server.
+- Keep v1 deliberately flat (just `string[]`). If we later need provenance
+  (manual vs inferred) or confidence for trust/inference, add a parallel
+  `tagMeta?: { tag: string; source: "manual" | "inferred"; addedAt: number }[]`
+  — but don't build it until 2a-iii needs it.
+- Tag strings are freeform; the **agent** normalises synonyms at write time
+  ("coworker"/"from work"/"office" → `work`). No fixed taxonomy.
+
+### Where tags come from — three escalating layers
+1. **Manual (2a-i).** "tag Niels as work", "Niels is from work", "they're family."
+   Agent calls `tag_contact`. Trivial, fully in the user's control.
+2. **Agent-suggested from conversation (2a-ii) — the "auto" magic.** While relaying
+   or replying, the agent notices signals in the *body* it's already reading
+   (shared employer, standup/sprint/deploy/PR talk → `work`; LAN/game/raid →
+   `gaming`; mum/dinner/birthday → `family`) and **suggests** a tag:
+   "Sounds like Niels is a coworker — tag him as `work`?" Applied only on a yes.
+3. **Cross-contact inference (2a-iii).** Once some people are tagged, the agent can
+   spot that an *untagged* contact shares the same context ("Tobias keeps mentioning
+   the same standup as Niels — also `work`?") and suggest it. Needs the richer
+   `tagMeta`/signal store; furthest out.
+
+### When it runs (cadence)
+**Not scheduled or polled — there's no background process.** The agent only runs
+during turns, so tagging rides on message-handling turns that already happen, as a
+side-effect with no extra model call:
+- **On reading/relaying inbound mail** — the agent is already parsing the body to
+  summarise it; it notes tag signals in the same pass.
+- **On sending** — the outbound body carries context too.
+
+So cadence ≈ **once per message handled**, never while idle. Two things keep it
+cheap and quiet:
+- **It converges.** Once a contact carries a tag, don't re-derive it on every future
+  message — so after the first hit most messages produce no tagging work at all.
+- **Cross-contact inference (2a-iii) is metered separately.** Comparing an untagged
+  contact against the tagged ones is heavier than reading one body, so it should NOT
+  run per-message — trigger it occasionally (e.g. when a new untagged contact first
+  becomes active), not every turn. The per-message layers (2a-i/ii) stay the cheap
+  default.
+
+### Confirmation discipline (the trust rule)
+- **Tagging is auto by default** (see setting below). Because a tag is local,
+  private, and trivially reversible (`untag_contact`), the agent applies an obvious
+  tag silently — it doesn't ask first. It should still *mention* notable tags it
+  applies in passing ("tagged Niels `work`") so the behaviour is visible, and the
+  user can drop to `suggest`/`off` any time. The FIRST auto-tag of a session also
+  carries a one-line reminder that it's automatic and changeable ("…I do this
+  automatically; say 'just suggest' or 'stop auto-tagging' to change that") — once
+  per session only, so it surfaces the opt-out without nagging.
+- **Group send ALWAYS shows the roster and confirms before sending** — this rule is
+  unchanged and independent of the tagging mode. Auto-*tagging* ≠ auto-*sending*:
+  applying a local label is cheap and reversible; firing N messages is not. "write
+  everyone from work" must never spray N messages without the user seeing the N
+  names first. This is the single most important safety rule of the feature.
+
+### Tools (new MCP surface — deliberately minimal)
+- `tag_contact(name, tag)` — add a tag (partial-name match like `send_message`;
+  handle `no_contact` / `ambiguous` the same way). Normalises + dedups.
+- `untag_contact(name, tag)` — remove one.
+- Surface tags in the `contacts` listing (e.g. `Niels Bohr · aka Niels · work,gaming · F7wzEg`).
+- **No `resolve_tag` tool.** The agent already receives the whole book from
+  `contacts`, so resolving a tag → roster is a local filter on data it already has.
+  A dedicated lookup tool would be redundant.
+- **No `send_group` tool / no group on the wire.** A "group send" is just **N
+  individual sealed 1:1 `send_message` calls**, one per recipient — same transport,
+  looped. Recipients don't see each other; there's no CC and no group chat. The
+  agent confirms the roster (behavioural rule below) then loops `send_message`, so
+  no new send primitive is needed. (Revisit a dedicated tool only if we later want
+  a single server-side chokepoint or atomic multi-send reporting.)
+
+So the entire new surface is: `Contact.tags` + `tag_contact`/`untag_contact` +
+tags in `contacts`. Everything else (suggesting, group-send confirm) is instructions.
+
+### Opt-out: the auto-tagging setting
+Auto-tagging must be switchable off — same "never auto-fire without consent" ethos
+as the user-triggered live inbox. A local setting (stored in config, next to the
+contact book; never sent to the server) with levels:
+- **`auto`** (DEFAULT) — agent applies obvious tags silently (mentioning notable
+  ones in passing). Cheap because a tag is local + reversible.
+- **`suggest`** — agent proposes tags from conversation, applied only on confirm.
+- **`off`** — agent never tags automatically and never asks. Manual `tag_contact`
+  still works.
+
+Toggled conversationally ("just suggest tags, don't apply them", "stop auto-tagging",
+"turn tagging back on"). Layer 2a-ii (and 2a-iii) must check this setting before
+applying or suggesting anything.
+
+### Group-send flow
+1. User: "write everyone from work: standup moved to 10."
+2. Agent filters the `contacts` book locally for tag `work` → [Niels, Tobias, Mette].
+3. Agent: "I've tagged Niels, Tobias and Mette as `work` — send to all three?"
+   (Always confirm; name the roster.)
+4. On yes → loop `send_message` per recipient (N individual sealed sends). Report
+   once: "Sent to Niels, Tobias and Mette."
+
+### Discoverability: report tagging state when asked
+When the user asks about tagging ("are you tagging people?", "what's Niels tagged
+as?", "is auto-tagging on?"), the agent answers from local state — the current
+setting (`suggest`/`off`/`auto`) and/or the contact's tags — rather than staying
+silent. So the feature is inspectable: the user can always find out whether it's
+running and what it's decided. Spell this out in the CLAUDE.md/instructions work.
+
+### CLAUDE.md / instructions work
+Once the tools exist, add behaviour guidance mirroring the existing send/rename
+sections: when to suggest a tag, the confirm-the-roster rule for group send, and
+"your nick + your tags are both local and private."
+
+### Open questions
+1. **Group-send cap?** A soft ceiling / extra confirm above, say, 10 recipients so a
+   broad tag can't blast a huge list on one casual sentence.
+2. **Auto-apply once confident?** A future per-user setting ("auto-tag my obvious
+   coworkers, ask for the rest"), but v1 always asks. Tie to Phase 2.5 tiers later.
+3. **Tag-aware resolution.** Tags should eventually feed "which Sam?" disambiguation
+   (prefer the `work` Sam when the context is work) — overlaps Phase 2 proper.
+4. **Provenance storage** — defer `tagMeta` until 2a-iii actually needs it.
+
+### Suggested build order
+- **2a-i — ✅ BUILT (2026-06-28, v0.6.0).** `Contact.tags`; `tag_contact` /
+  `untag_contact` (partial-name match, `no_contact`/`ambiguous`/`bad_tag` results,
+  no-op `changed:false`); a local `settings.json` with the `auto`/`suggest`/`off`
+  tag mode (default `auto`) + a `tagging` tool to read/set it; tags shown in
+  `contacts`; tags preserved across rename (rememberContact upsert). Group send is
+  loop-`send_message` after a roster-confirm (no new tool / no wire-level group, per
+  the decision above) — the confirm + auto-tag behaviour lives in instructions.ts.
+  Covered by unit tests (`contacts.test.ts` tag helpers, `settings.test.ts`,
+  `tag-contact.test.ts`). Manual tagging + group send fully usable now.
+- **2a-ii** — agent-suggested tags from conversation content (instructions-only;
+  no new storage). This is where it starts to feel magic. *(Instructions already
+  describe the per-message inference + mode-check; this phase is about exercising
+  and tuning it in practice.)*
+- **2a-iii** — cross-contact inference (needs the signal/`tagMeta` store).
+
+---
+
 *Captured 2026-06-12. Concept + plan; Phase 0 is the next build step.*
+*Updated 2026-06-28: friend-of-friend (§3.3) stays parked — preferred design if
+revisited is encrypted contact-list blobs on the server with friend-held keys
+(server stays blind, sync without the friend being online); auto-tagging (§9) is
+the active next build.*

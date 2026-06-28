@@ -7,7 +7,7 @@
 // Fails silent (exit 0, no output) on any error or when MESSENGER_USER is unset,
 // so it never blocks or noisily breaks a session.
 
-import { readFileSync, statSync } from "node:fs";
+import { readFileSync, writeFileSync, statSync } from "node:fs";
 import { initCrypto } from "./crypto.ts";
 import { loadIdentity } from "./identity.ts";
 import { loadContacts, senderLabel } from "./contacts.ts";
@@ -15,7 +15,7 @@ import { openMailbox, unreadFor, markRead } from "./db.ts";
 import { createMailboxClient } from "./mailbox-client.ts";
 import { sync, readPending, readAck, writePendingAck, type NetContext } from "./core-net.ts";
 import { currentUser } from "./current-user.ts";
-import { identityFile, contactsFile, inboxFile, pendingFile, pendingAckFile, chatLockFile } from "./paths.ts";
+import { identityFile, contactsFile, inboxFile, pendingFile, pendingAckFile, chatLockFile, chatHintFile } from "./paths.ts";
 import { resolveMailboxUrl } from "./config.ts";
 
 const user = currentUser();
@@ -28,12 +28,40 @@ let hookEventName = "SessionStart";
 // Stop hooks pass stop_hook_active=true when the stop is itself the result of a
 // previous Stop-hook continuation — our guard against looping on the forced turn.
 let stopHookActive = false;
+// The CLI's session id, used to show the "say chat" tip at most once per session
+// regardless of which event surfaces the first mail. Empty when the client doesn't
+// supply one — we degrade to the old once-at-open behaviour then.
+let sessionId = "";
 try {
   const payload = JSON.parse(readFileSync(0, "utf8"));
   if (payload?.hook_event_name) hookEventName = payload.hook_event_name;
   if (payload?.stop_hook_active) stopHookActive = true;
+  if (payload?.session_id) sessionId = String(payload.session_id);
 } catch {
   // no/invalid stdin — keep the default
+}
+
+// Show the live-inbox tip once per session, on the first mail-bearing notice
+// (session open OR mid-session). Backed by a per-user marker file storing the last
+// hinted session id. With no session id (older client), fall back to the previous
+// behaviour: only hint on SessionStart. Mid-session callers already early-exit when
+// chat is live (see chatActive below), so a running chat never gets nagged.
+function shouldHintChat(u: string): boolean {
+  if (!sessionId) return hookEventName === "SessionStart";
+  try {
+    if (JSON.parse(readFileSync(chatHintFile(u), "utf8"))?.sessionId === sessionId) return false;
+  } catch {
+    /* no marker yet → not hinted this session */
+  }
+  return true;
+}
+function markChatHinted(u: string): void {
+  if (!sessionId) return;
+  try {
+    writeFileSync(chatHintFile(u), JSON.stringify({ sessionId }) + "\n");
+  } catch {
+    /* best effort — a missed marker just risks showing the tip once more */
+  }
 }
 
 // On a Stop that's already a continuation of our own block, do nothing — the
@@ -211,10 +239,13 @@ try {
   const senders = [...new Set(toShow.map((m) => m.from))];
   const noun = `${toShow.length} new message${toShow.length > 1 ? "s" : ""}`;
   let summary = `📬 ${noun} from ${senders.join(", ")} — want me to read ${toShow.length > 1 ? "them" : "it"}?`;
-  // On session open, also nudge the hands-free option: live chat, which auto-reads
-  // incoming mail straight into the chat. Only on SessionStart so it doesn't repeat.
-  if (hookEventName === "SessionStart") {
+  // Nudge the hands-free option (live chat, which auto-reads incoming mail straight
+  // into the chat) on the FIRST mail notice of the session — at open OR mid-session,
+  // so an inbox that was empty at open still surfaces the tip when mail first lands.
+  // Shown at most once per session; marked the moment we add it.
+  if (shouldHintChat(user)) {
     summary += `\n   ↳ Tip: say "chat" for a live inbox that reads new messages into our chat as they arrive.`;
+    markChatHinted(user);
   }
   if (nudgeAsk) summary += `\n   ↳ ${nameAskUser}`;
 
@@ -230,8 +261,8 @@ try {
     `then print the relevant message in full. Do NOT call ` +
     `messages_available/read_message for these — use the bodies here. To ` +
     `reply, use draft_reply with the id, asking for any missing fact first. ` +
-    `The on-open summary already shows a "say chat" tip, so don't repeat ` +
-    `it; if the user says "chat" (or "watch"), open the live inbox and auto-read ` +
+    `The summary may already include a "say chat" tip — don't add your own; ` +
+    `if the user says "chat" (or "watch"), open the live inbox and auto-read ` +
     `new mail in full as it arrives.\n` +
     bodies.join("\n");
 
