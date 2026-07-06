@@ -54,7 +54,7 @@ try {
   if (!id.handle) {
     id.handle = await claimHandle(client);
   } else {
-    await client.registerHandle(id.handle); // re-assert ownership
+    await client.registerHandle(id.handle, id.name); // re-assert ownership + publish name
   }
 
   // Persist under the handle-keyed directory.

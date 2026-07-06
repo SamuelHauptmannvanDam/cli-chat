@@ -41,6 +41,20 @@ export interface VaultRecord {
   version: number;
 }
 
+// --- Contacts of contacts (CONTACTS-OF-CONTACTS.md) -------------------------
+// One person in the caller's second-degree network: their own public identity
+// (handle/name/boxPub, so you can write them) plus WHY they surfaced — how many
+// of your contacts have them (`mutuals`, for ranking) and which (`via`, signPubs
+// the client maps to your nicknames). No tags, no nicknames: a bare reachable node.
+export interface NetworkPerson {
+  signPub: string;
+  boxPub: string;
+  handle: string;
+  name: string | null; // their own self-name; null if they never set one
+  mutuals: number;
+  via: string[]; // signPubs of YOUR contacts who link to them
+}
+
 export interface Store {
   // `receivedAt` is the SERVER's receive time, stamped on insert and used by the
   // anti-spam counts below — never the client's `created_at` (which a sender
@@ -49,12 +63,16 @@ export interface Store {
   put(m: WireMessage, receivedAt?: number): void | Promise<void>;
   summary(recipient: string): MailSummary[] | Promise<MailSummary[]>;
   drain(recipient: string, now: number): WireMessage[] | Promise<WireMessage[]>;
-  // Directory: claim a handle for a key (idempotent for the same owner).
+  // Directory: claim a handle for a key (idempotent for the same owner). `name`
+  // is the owner's public self-name (already broadcast with every message); stored
+  // so the contacts-of-contacts view can show a second-degree person by their own
+  // name. Optional + COALESCEd, so a nameless re-register never wipes a stored name.
   registerHandle(
     handle: string,
     signPub: string,
     boxPub: string,
     now: number,
+    name?: string,
   ): "ok" | "taken" | Promise<"ok" | "taken">;
   // Directory: look up a handle's keys.
   resolveHandle(handle: string): HandleRecord | null | Promise<HandleRecord | null>;
@@ -136,6 +154,20 @@ export interface Store {
   ): "ok" | { stale: VaultRecord } | Promise<"ok" | { stale: VaultRecord }>;
   // Retention sweep for the account layer: drop expired login tokens + sessions.
   purgeAuth(now: number): number | Promise<number>;
+
+  // --- Contacts of contacts (CONTACTS-OF-CONTACTS.md) -----------------------
+  // Record that `owner` has these `contacts` in their address book (upsert, keyed
+  // by signPub). Pushed by the local identity on every contact add — no account
+  // needed — so the second-degree graph covers everyone.
+  addEdges(owner: string, contacts: string[], now: number): void | Promise<void>;
+  // Drop one edge when the owner deletes that contact.
+  removeEdge(owner: string, contact: string): void | Promise<void>;
+  // The caller's contacts-of-contacts: their contacts' contacts, minus the ones
+  // they already have and minus anyone hidden, ranked by shared count. Capped at
+  // `limit`. Only returns people with a registered handle (reachable).
+  contactsOfContacts(owner: string, limit: number): NetworkPerson[] | Promise<NetworkPerson[]>;
+  // Quiet opt-out: never surface this signPub in anyone's results. Never prompted.
+  hideFromNetwork(signPub: string, now: number): void | Promise<void>;
 }
 
 export function nodeSqliteStore(path: string): Store {
@@ -158,9 +190,25 @@ export function nodeSqliteStore(path: string): Store {
       handle      TEXT PRIMARY KEY,
       signPub     TEXT NOT NULL,
       boxPub      TEXT NOT NULL,
+      name        TEXT,
       created_at  INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_handles_signpub ON handles (signPub);
+    -- Contacts of contacts (CONTACTS-OF-CONTACTS.md): the second-degree graph.
+    -- One row per (owner, contact) address-book edge, keyed by signPub.
+    CREATE TABLE IF NOT EXISTS edges (
+      owner    TEXT NOT NULL,
+      contact  TEXT NOT NULL,
+      added_at INTEGER NOT NULL,
+      PRIMARY KEY (owner, contact)
+    );
+    CREATE INDEX IF NOT EXISTS idx_edges_owner   ON edges (owner);
+    CREATE INDEX IF NOT EXISTS idx_edges_contact ON edges (contact);
+    -- Quiet opt-out: signPubs that never appear in anyone's results.
+    CREATE TABLE IF NOT EXISTS edge_hidden (
+      signpub TEXT PRIMARY KEY,
+      since   INTEGER NOT NULL
+    );
     -- Directed "known pair" ledger: (owner, peer) means owner has sent ≥1
     -- message to peer. Drives the new-sender exemption and survives the message
     -- retention sweep, so a contact stays known after their mail is purged.
@@ -213,6 +261,13 @@ export function nodeSqliteStore(path: string): Store {
   } catch {
     /* column already present */
   }
+  // Same self-heal for the directory's public display name (added for
+  // contacts-of-contacts): a no-op CREATE won't add it to an existing handles table.
+  try {
+    db.exec(`ALTER TABLE handles ADD COLUMN name TEXT`);
+  } catch {
+    /* column already present */
+  }
   // Created after the column is guaranteed to exist (fresh or self-healed).
   db.exec(`CREATE INDEX IF NOT EXISTS idx_admission ON messages (recipient, sender, received_at)`);
 
@@ -255,15 +310,16 @@ export function nodeSqliteStore(path: string): Store {
       return rows;
     },
 
-    registerHandle(handle, signPub, boxPub, now) {
+    registerHandle(handle, signPub, boxPub, now, name) {
       const existing = db.prepare(`SELECT signPub FROM handles WHERE handle = ?`).get(handle) as
         | { signPub: string }
         | undefined;
       if (existing && existing.signPub !== signPub) return "taken";
       db.prepare(
-        `INSERT INTO handles (handle, signPub, boxPub, created_at) VALUES (?, ?, ?, ?)
-         ON CONFLICT(handle) DO UPDATE SET boxPub = excluded.boxPub`,
-      ).run(handle, signPub, boxPub, now);
+        `INSERT INTO handles (handle, signPub, boxPub, name, created_at) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(handle) DO UPDATE SET boxPub = excluded.boxPub,
+           name = COALESCE(excluded.name, handles.name)`,
+      ).run(handle, signPub, boxPub, name ?? null, now);
       return "ok";
     },
 
@@ -443,6 +499,64 @@ export function nodeSqliteStore(path: string): Store {
       const a = db.prepare(`DELETE FROM login_tokens WHERE expires_at < ?`).run(now);
       const b = db.prepare(`DELETE FROM sessions WHERE expires_at < ?`).run(now);
       return Number(a.changes ?? 0) + Number(b.changes ?? 0);
+    },
+
+    // --- Contacts of contacts ----------------------------------------------
+    addEdges(owner, contacts, now) {
+      const stmt = db.prepare(
+        `INSERT INTO edges (owner, contact, added_at) VALUES (?, ?, ?)
+         ON CONFLICT(owner, contact) DO NOTHING`,
+      );
+      for (const contact of contacts) {
+        if (contact && contact !== owner) stmt.run(owner, contact, now);
+      }
+    },
+
+    removeEdge(owner, contact) {
+      db.prepare(`DELETE FROM edges WHERE owner = ? AND contact = ?`).run(owner, contact);
+    },
+
+    contactsOfContacts(owner, limit) {
+      // Self-join: my edges (e1) → my contacts' edges (e2). Exclude myself, people
+      // I already have, and anyone hidden. INNER JOIN handles so only reachable
+      // (registered) people surface, carrying handle/name/boxPub to write them.
+      const rows = db
+        .prepare(
+          `SELECT e2.contact AS signPub, h.handle AS handle, h.name AS name, h.boxPub AS boxPub,
+                  COUNT(*) AS mutuals, GROUP_CONCAT(e1.contact) AS via
+           FROM edges e1
+           JOIN edges e2 ON e2.owner = e1.contact
+           JOIN handles h ON h.signPub = e2.contact
+           WHERE e1.owner = ?
+             AND e2.contact <> ?
+             AND e2.contact NOT IN (SELECT contact FROM edges WHERE owner = ?)
+             AND e2.contact NOT IN (SELECT signpub FROM edge_hidden)
+           GROUP BY e2.contact
+           ORDER BY mutuals DESC, MAX(e2.added_at) DESC
+           LIMIT ?`,
+        )
+        .all(owner, owner, owner, limit) as unknown as {
+        signPub: string;
+        handle: string;
+        name: string | null;
+        boxPub: string;
+        mutuals: number;
+        via: string;
+      }[];
+      return rows.map((r) => ({
+        signPub: r.signPub,
+        boxPub: r.boxPub,
+        handle: r.handle,
+        name: r.name,
+        mutuals: Number(r.mutuals),
+        via: r.via ? r.via.split(",") : [],
+      }));
+    },
+
+    hideFromNetwork(signPub, now) {
+      db.prepare(
+        `INSERT INTO edge_hidden (signpub, since) VALUES (?, ?) ON CONFLICT(signpub) DO NOTHING`,
+      ).run(signPub, now);
     },
   };
 }

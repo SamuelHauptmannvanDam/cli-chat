@@ -191,3 +191,63 @@ test("opening a legacy DB (no received_at) self-heals before indexing admission"
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// --- Contacts of contacts (CONTACTS-OF-CONTACTS.md) -------------------------
+
+test("contacts of contacts: ranked by mutuals, excludes self + own contacts", () => {
+  const s = nodeSqliteStore(":memory:");
+  const now = 1000;
+  // Only registered (reachable) people surface — carry handle/name/boxPub.
+  s.registerHandle("hcarol", "carol", "carolbox", now, "Carol C");
+  s.registerHandle("hdave", "dave", "davebox", now, "Dave D");
+  s.registerHandle("heve", "eve", "evebox", now); // no name set
+  s.addEdges("me", ["alice", "bob"], now); // my contacts
+  s.addEdges("alice", ["carol", "dave", "me"], now); // includes me → excluded
+  s.addEdges("bob", ["carol", "eve"], now);
+
+  const net = s.contactsOfContacts("me", 50) as any[];
+  assert.equal(net[0].signPub, "carol"); // 2 mutuals ranks first
+  assert.equal(net[0].mutuals, 2);
+  assert.deepEqual(net[0].via.slice().sort(), ["alice", "bob"]);
+  assert.equal(net[0].name, "Carol C");
+  assert.equal(net[0].handle, "hcarol");
+  assert.equal(net[0].boxPub, "carolbox");
+  const keys = net.map((p) => p.signPub);
+  assert.ok(keys.includes("dave") && keys.includes("eve"));
+  assert.ok(!keys.includes("me"), "excludes self");
+  assert.ok(!keys.includes("alice") && !keys.includes("bob"), "excludes my own contacts");
+  assert.equal(net.find((p) => p.signPub === "eve").name, null); // nameless is fine
+});
+
+test("contacts of contacts: unregistered people don't surface; hidden excluded", () => {
+  const s = nodeSqliteStore(":memory:");
+  const now = 1000;
+  s.registerHandle("hcarol", "carol", "carolbox", now, "Carol");
+  s.addEdges("me", ["alice"], now);
+  s.addEdges("alice", ["carol", "frank"], now); // frank has no handle → unreachable
+  assert.deepEqual((s.contactsOfContacts("me", 50) as any[]).map((p) => p.signPub), ["carol"]);
+  s.hideFromNetwork("carol", now);
+  assert.equal((s.contactsOfContacts("me", 50) as any[]).length, 0);
+});
+
+test("removeEdge drops the second-degree reach through that contact", () => {
+  const s = nodeSqliteStore(":memory:");
+  const now = 1000;
+  s.registerHandle("hcarol", "carol", "carolbox", now, "Carol");
+  s.addEdges("me", ["alice"], now);
+  s.addEdges("alice", ["carol"], now);
+  assert.equal((s.contactsOfContacts("me", 50) as any[]).length, 1);
+  s.removeEdge("me", "alice");
+  assert.equal((s.contactsOfContacts("me", 50) as any[]).length, 0);
+});
+
+test("registerHandle stores name, and a nameless re-register keeps it (COALESCE)", () => {
+  const s = nodeSqliteStore(":memory:");
+  s.registerHandle("hx", "x", "xbox", 1, "Xavier");
+  s.registerHandle("hx", "x", "xbox2", 2); // no name → must not wipe it
+  s.addEdges("me", ["a"], 1);
+  s.addEdges("a", ["x"], 1);
+  const net = s.contactsOfContacts("me", 50) as any[];
+  assert.equal(net[0].name, "Xavier");
+  assert.equal(net[0].boxPub, "xbox2"); // boxPub still updates
+});

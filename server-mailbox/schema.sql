@@ -28,14 +28,37 @@ CREATE TABLE IF NOT EXISTS known (
 );
 
 -- Directory: short 6-char handle → a user's public keys (phone-number style).
+-- `name` is the owner's public self-name (already broadcast with every message);
+-- stored so contacts-of-contacts can show a second-degree person by their own name.
+-- On an existing D1 the CREATE is a no-op, so add the column once:
+--   wrangler d1 execute cli-chat --remote --command "ALTER TABLE handles ADD COLUMN name TEXT"
 CREATE TABLE IF NOT EXISTS handles (
   handle      TEXT PRIMARY KEY,
   signPub     TEXT NOT NULL,
   boxPub      TEXT NOT NULL,
+  name        TEXT,
   created_at  INTEGER NOT NULL
 );
 -- Reverse lookup for the recipient-exists check on POST /messages.
 CREATE INDEX IF NOT EXISTS idx_handles_signpub ON handles (signPub);
+
+-- Contacts of contacts (CONTACTS-OF-CONTACTS.md): the second-degree graph. One
+-- row per address-book edge (owner signPub → contact signPub), pushed by the
+-- local identity on every contact add — no account needed. All CREATE IF NOT
+-- EXISTS, so safe to (re-)apply on the live DB.
+CREATE TABLE IF NOT EXISTS edges (
+  owner    TEXT NOT NULL,
+  contact  TEXT NOT NULL,
+  added_at INTEGER NOT NULL,
+  PRIMARY KEY (owner, contact)
+);
+CREATE INDEX IF NOT EXISTS idx_edges_owner   ON edges (owner);
+CREATE INDEX IF NOT EXISTS idx_edges_contact ON edges (contact);
+-- Quiet opt-out: signPubs that never appear in anyone's results (never surfaced).
+CREATE TABLE IF NOT EXISTS edge_hidden (
+  signpub TEXT PRIMARY KEY,
+  since   INTEGER NOT NULL
+);
 
 -- ===========================================================================
 -- Account layer (AUTH-SYNC.md): optional, paid online account for multi-device
