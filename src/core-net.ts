@@ -38,6 +38,11 @@ export interface NetContext {
   client: MailboxClient; // hosted mailbox
   now: () => number;
   contactsPath?: string; // where to persist the book when a contact is added
+  // Contacts-of-contacts graph hooks (CONTACTS-OF-CONTACTS.md): fired after a
+  // contact is saved / removed locally, so the edge can be pushed to the server.
+  // Optional and fire-and-forget (tests/offline omit them; must never throw).
+  onEdgeAdd?: (signPub: string) => void;
+  onEdgeRemove?: (signPub: string) => void;
 }
 
 // Save (or update) a contact in the book and persist it to disk if we know
@@ -66,6 +71,9 @@ export function rememberContact(
   if (prev?.declinedTags?.length) entry.declinedTags = [...prev.declinedTags];
   ctx.book.contacts.push(entry);
   if (ctx.contactsPath) saveContacts(ctx.contactsPath, ctx.book);
+  // Contribute this edge to the second-degree graph (best-effort, deduped server
+  // side). Fires for every save path — manual add, send-to-new, incoming auto-save.
+  ctx.onEdgeAdd?.(c.signPub);
 }
 
 // A message body packs a small self-introduction alongside the text, sealed to
@@ -167,6 +175,7 @@ export function deleteContact(
   if (c.signPub) removeContactByKey(ctx.book, c.signPub);
   else ctx.book.contacts = ctx.book.contacts.filter((x) => x !== c); // legacy keyless entry
   if (ctx.contactsPath) saveContacts(ctx.contactsPath, ctx.book);
+  if (c.signPub) ctx.onEdgeRemove?.(c.signPub); // drop the edge from the graph
   return { ok: true, name: c.name };
 }
 

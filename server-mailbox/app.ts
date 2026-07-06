@@ -230,7 +230,7 @@ export function createApp(deps: AppDeps): Hono {
     const raw = await c.req.text();
     const auth = await verifyRequest((h) => c.req.header(h), "POST", "/register", raw, now());
     if (!auth.ok) return c.json({ error: auth.reason }, 401);
-    let body: { handle?: string; signPub?: string; boxPub?: string };
+    let body: { handle?: string; signPub?: string; boxPub?: string; name?: string };
     try {
       body = JSON.parse(raw);
     } catch {
@@ -243,9 +243,73 @@ export function createApp(deps: AppDeps): Hono {
     if (!/^[0-9A-Za-z]{6}$/.test(body.handle))
       return c.json({ error: "handle must be 6 letters/digits" }, 400);
 
-    const result = await store.registerHandle(body.handle, body.signPub, body.boxPub, now());
+    // `name` is the owner's public self-name (it already rides every message);
+    // stored so contacts-of-contacts can show them by their own name. Bounded.
+    const name = typeof body.name === "string" ? body.name.slice(0, 120) : undefined;
+    const result = await store.registerHandle(body.handle, body.signPub, body.boxPub, now(), name);
     if (result === "taken") return c.json({ ok: false, reason: "taken" }, 409);
     return c.json({ ok: true, handle: body.handle });
+  });
+
+  // ==========================================================================
+  // Contacts of contacts (CONTACTS-OF-CONTACTS.md): the second-degree graph.
+  // Signed by the local identity (like the mailbox routes) — no account needed,
+  // so everyone contributes edges and everyone can read their own network.
+  // ==========================================================================
+  const MAX_EDGES_BATCH = 2000; // bounds a backfill push
+  const NETWORK_LIMIT = 50; // cap on returned second-degree people
+
+  // Record that you saved a contact (or a batch, for the one-time backfill).
+  // owner = the VERIFIED pubkey, so you can only ever add your own edges.
+  app.post("/edges", async (c) => {
+    const raw = await c.req.text();
+    const auth = await verifyRequest((h) => c.req.header(h), "POST", "/edges", raw, now());
+    if (!auth.ok) return c.json({ error: auth.reason }, 401);
+    let body: { contact?: string; contacts?: string[] };
+    try {
+      body = JSON.parse(raw);
+    } catch {
+      return c.json({ error: "invalid json" }, 400);
+    }
+    const list = (body.contacts ?? (body.contact ? [body.contact] : []))
+      .filter((x) => typeof x === "string" && /^[0-9a-f]{64}$/.test(x))
+      .slice(0, MAX_EDGES_BATCH);
+    if (!list.length) return c.json({ error: "no valid contacts" }, 400);
+    await store.addEdges(auth.pubkey, list, now());
+    return c.json({ ok: true, added: list.length });
+  });
+
+  // Drop one edge when you delete a contact.
+  app.delete("/edges", async (c) => {
+    const raw = await c.req.text();
+    const auth = await verifyRequest((h) => c.req.header(h), "DELETE", "/edges", raw, now());
+    if (!auth.ok) return c.json({ error: auth.reason }, 401);
+    let body: { contact?: string };
+    try {
+      body = JSON.parse(raw);
+    } catch {
+      return c.json({ error: "invalid json" }, 400);
+    }
+    if (!body.contact) return c.json({ error: "missing contact" }, 400);
+    await store.removeEdge(auth.pubkey, body.contact);
+    return c.json({ ok: true });
+  });
+
+  // Your contacts of contacts: your contacts' contacts, minus your own, ranked by
+  // shared count. Only your own network (owner = verified pubkey).
+  app.get("/network", async (c) => {
+    const auth = await verifyRequest((h) => c.req.header(h), "GET", "/network", "", now());
+    if (!auth.ok) return c.json({ error: auth.reason }, 401);
+    const people = await store.contactsOfContacts(auth.pubkey, NETWORK_LIMIT);
+    return c.json({ ok: true, people });
+  });
+
+  // Quiet opt-out: never surface me in anyone's results. Signed = only yourself.
+  app.post("/edges/hidden", async (c) => {
+    const auth = await verifyRequest((h) => c.req.header(h), "POST", "/edges/hidden", "", now());
+    if (!auth.ok) return c.json({ error: auth.reason }, 401);
+    await store.hideFromNetwork(auth.pubkey, now());
+    return c.json({ ok: true });
   });
 
   // Resolve a handle → public keys. The values returned are public keys, but the

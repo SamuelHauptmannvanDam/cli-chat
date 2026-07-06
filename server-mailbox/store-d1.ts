@@ -8,6 +8,7 @@ import type {
   HandleRecord,
   LoginPoll,
   MailSummary,
+  NetworkPerson,
   Store,
   VaultRecord,
 } from "./store.ts";
@@ -72,7 +73,7 @@ export function d1Store(db: D1Like): Store {
       return rows;
     },
 
-    async registerHandle(handle: string, signPub: string, boxPub: string, now: number) {
+    async registerHandle(handle: string, signPub: string, boxPub: string, now: number, name?: string) {
       const existing = (await db
         .prepare(`SELECT signPub FROM handles WHERE handle = ?`)
         .bind(handle)
@@ -80,10 +81,11 @@ export function d1Store(db: D1Like): Store {
       if (existing && existing.signPub !== signPub) return "taken";
       await db
         .prepare(
-          `INSERT INTO handles (handle, signPub, boxPub, created_at) VALUES (?, ?, ?, ?)
-           ON CONFLICT(handle) DO UPDATE SET boxPub = excluded.boxPub`,
+          `INSERT INTO handles (handle, signPub, boxPub, name, created_at) VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT(handle) DO UPDATE SET boxPub = excluded.boxPub,
+             name = COALESCE(excluded.name, handles.name)`,
         )
-        .bind(handle, signPub, boxPub, now)
+        .bind(handle, signPub, boxPub, name ?? null, now)
         .run();
       return "ok";
     },
@@ -292,6 +294,68 @@ export function d1Store(db: D1Like): Store {
         .bind(now)
         .run()) as { meta?: { changes?: number } };
       return Number(a?.meta?.changes ?? 0) + Number(b?.meta?.changes ?? 0);
+    },
+
+    // --- Contacts of contacts ----------------------------------------------
+    async addEdges(owner: string, contacts: string[], now: number) {
+      // No multi-row VALUES needed: dedup + upsert one at a time (batches are
+      // small — a contact add is one, backfill a few). Skips self-edges.
+      for (const contact of contacts) {
+        if (!contact || contact === owner) continue;
+        await db
+          .prepare(
+            `INSERT INTO edges (owner, contact, added_at) VALUES (?, ?, ?)
+             ON CONFLICT(owner, contact) DO NOTHING`,
+          )
+          .bind(owner, contact, now)
+          .run();
+      }
+    },
+
+    async removeEdge(owner: string, contact: string) {
+      await db.prepare(`DELETE FROM edges WHERE owner = ? AND contact = ?`).bind(owner, contact).run();
+    },
+
+    async contactsOfContacts(owner: string, limit: number): Promise<NetworkPerson[]> {
+      const { results } = await db
+        .prepare(
+          `SELECT e2.contact AS signPub, h.handle AS handle, h.name AS name, h.boxPub AS boxPub,
+                  COUNT(*) AS mutuals, GROUP_CONCAT(e1.contact) AS via
+           FROM edges e1
+           JOIN edges e2 ON e2.owner = e1.contact
+           JOIN handles h ON h.signPub = e2.contact
+           WHERE e1.owner = ?
+             AND e2.contact <> ?
+             AND e2.contact NOT IN (SELECT contact FROM edges WHERE owner = ?)
+             AND e2.contact NOT IN (SELECT signpub FROM edge_hidden)
+           GROUP BY e2.contact
+           ORDER BY mutuals DESC, MAX(e2.added_at) DESC
+           LIMIT ?`,
+        )
+        .bind(owner, owner, owner, limit)
+        .all();
+      return (results as {
+        signPub: string;
+        handle: string;
+        name: string | null;
+        boxPub: string;
+        mutuals: number;
+        via: string;
+      }[]).map((r) => ({
+        signPub: r.signPub,
+        boxPub: r.boxPub,
+        handle: r.handle,
+        name: r.name,
+        mutuals: Number(r.mutuals),
+        via: r.via ? r.via.split(",") : [],
+      }));
+    },
+
+    async hideFromNetwork(signPub: string, now: number) {
+      await db
+        .prepare(`INSERT INTO edge_hidden (signpub, since) VALUES (?, ?) ON CONFLICT(signpub) DO NOTHING`)
+        .bind(signPub, now)
+        .run();
     },
   };
 }

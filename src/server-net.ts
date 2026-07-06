@@ -103,13 +103,18 @@ function buildSession(user: string) {
     );
     cache = openMailbox(":memory:");
   }
+  const client = createMailboxClient(mailboxUrl, me, now);
   const ctx: NetContext = {
     me,
     book,
     cache,
-    client: createMailboxClient(mailboxUrl, me, now),
+    client,
     now,
     contactsPath,
+    // Contacts-of-contacts graph: push/drop the edge whenever a contact is saved
+    // or removed. Fire-and-forget — never block a contact write or surface an error.
+    onEdgeAdd: (signPub) => void client.pushEdges([signPub]).catch(() => {}),
+    onEdgeRemove: (signPub) => void client.removeEdge(signPub).catch(() => {}),
   };
   return { user, me, book, cache, ctx };
 }
@@ -150,10 +155,23 @@ function ensureWarmer(): void {
 }
 ensureWarmer();
 
+// Contacts of contacts (CONTACTS-OF-CONTACTS.md): once at startup, publish our
+// public display name to the directory and backfill all saved contacts as edges.
+// Best-effort + deduped server-side — this is what populates the graph for
+// existing users on upgrade, and self-heals any edge missed while offline. New
+// names/edges after this go through create_account / the onEdgeAdd hook.
+function publishNameAndEdges(): void {
+  if (!S) return;
+  if (S.me.handle && S.me.name) void S.ctx.client.registerHandle(S.me.handle, S.me.name).catch(() => {});
+  const keys = S.book.contacts.map((c) => c.signPub).filter((k): k is string => !!k);
+  if (keys.length) void S.ctx.client.pushEdges(keys).catch(() => {});
+}
+publishNameAndEdges();
+
 // Behavior travels WITH the server (MCP `instructions`, sent on connect) so it
 // works in any MCP-capable CLI — not just Claude Code's CLAUDE.md. The text is
 // the single source in ./instructions.ts; esbuild inlines it into the bundle.
-const server = new McpServer({ name: "cli-chat", version: "0.8.0" }, { instructions: INSTRUCTIONS });
+const server = new McpServer({ name: "cli-chat", version: "0.9.0" }, { instructions: INSTRUCTIONS });
 const ok = (data: unknown) => ({
   content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }],
 });
@@ -224,6 +242,10 @@ server.registerTool(
       }
       if (changed) {
         writeFileSync(identityFile(S.user), JSON.stringify(S.me, null, 2) + "\n");
+        // Publish the (possibly new) display name to the directory so it shows in
+        // others' contacts-of-contacts. Best-effort.
+        if (S.me.handle && S.me.name)
+          void S.ctx.client.registerHandle(S.me.handle, S.me.name).catch(() => {});
       }
       return ok({
         ok: true,
@@ -274,6 +296,9 @@ server.registerTool(
     if (!process.env.MESSENGER_USER?.trim()) setCurrentUser(id.handle);
     S = buildSession(id.handle);
     ensureWarmer(); // start push delivery now that an account exists
+    // Publish our display name to the directory (claimHandle registered without it).
+    if (S.me.handle && S.me.name)
+      void S.ctx.client.registerHandle(S.me.handle, S.me.name).catch(() => {});
     return ok({
       ok: true,
       created: true,
@@ -670,9 +695,15 @@ const TOOLS: {
       "first when non-empty, then `contacts` A–Z; do NOT show message counts. Each " +
       "person also carries `tags` (local labels like 'work'/'family'); this is the " +
       "data you filter to resolve 'who's tagged work?' and to build the roster for " +
-      "'write everyone from work' — see the server instructions for the group-send flow.",
+      "'write everyone from work' — see the server instructions for the group-send flow. " +
+      "ALSO returns `contactsOfContacts`: people reachable THROUGH your contacts " +
+      "(second-degree), each with `name` (their own self-name), `handle`, `via` (which " +
+      "of your contacts they come through), and `fullKey`. Render these as a separate " +
+      "'Contacts of contacts' section — e.g. 'Tobias · via Niels · handle'. To write " +
+      "one, they aren't saved yet, so send_message with their `handle` as `key` (or the " +
+      "`fullKey`); the `via` field is what resolves 'write the Tobias that Niels knows'.",
     inputSchema: {},
-    run: (s) => {
+    run: async (s) => {
       const fmt = (c: (typeof s.book.contacts)[number]) => ({
         name: c.name, // YOUR nickname (what you address them by)
         // What THEY call themselves. For an auto-saved contact `name` already IS
@@ -688,6 +719,23 @@ const TOOLS: {
       // else, alphabetical. A contact you stop messaging ages out of active on its
       // own. Render active first, then rest A–Z; do NOT show message counts.
       const { active, rest } = orderedContacts(s.book.contacts, s.ctx.now());
+      // Second-degree network (CONTACTS-OF-CONTACTS.md). Best-effort: a network
+      // blip must never break the address book, so fall back to an empty section.
+      // `via` are signPubs of the user's OWN contacts → map to their nicknames.
+      const nick = (sp: string) =>
+        s.book.contacts.find((c) => c.signPub === sp)?.name ?? sp.slice(0, 8);
+      let contactsOfContacts: unknown[] = [];
+      try {
+        const people = await s.ctx.client.getNetwork();
+        contactsOfContacts = people.map((p) => ({
+          name: p.name ?? p.handle, // their OWN self-name (fallback: handle)
+          handle: p.handle,
+          via: p.via.map(nick),
+          fullKey: encodeKey(p.signPub, p.boxPub),
+        }));
+      } catch {
+        /* offline / unreachable — just omit the section */
+      }
       return {
         me: {
           self: true,
@@ -698,6 +746,7 @@ const TOOLS: {
         count: s.book.contacts.length,
         active: active.map(fmt),
         contacts: rest.map(fmt),
+        contactsOfContacts,
       };
     },
   },
