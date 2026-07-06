@@ -78,6 +78,29 @@ namespace_id = "1003"
 simple = { limit = 60, period = 60 }
 
 # Daily retention sweep (worker.ts scheduled()): prune read mail after a week
-# and anything older than a month, so the mailbox can't grow without bound.
+# and anything older than a month, so the mailbox can't grow without bound. The
+# same sweep also drops expired magic-link tokens and dead sessions (purgeAuth).
 [triggers]
 crons = ["0 3 * * *"]
+
+# ----------------------------------------------------------------------------
+# Account layer (AUTH-SYNC.md): optional, paid online account for multi-device
+# login + contacts/tags sync. ALL optional — a mailbox-only deploy omits them and
+# the /auth + /vault routes simply 503 until they're set. Add the schema with:
+#   npx wrangler d1 execute cli-chat --remote --file server-mailbox/schema.sql
+# (the four new tables use CREATE TABLE IF NOT EXISTS, so it's safe to re-run on a
+# DB that already has the mailbox tables — unlike the messages upgrade note above).
+#
+# Non-secret vars go in [vars]; secrets go via `wrangler secret put <NAME>`:
+#   wrangler secret put RESEND_API_KEY        # outbound email for magic links
+#   wrangler secret put STRIPE_WEBHOOK_SECRET # verify the one-time-unlock webhook
+#
+# [vars]
+# EMAIL_FROM   = "cli-chat <login@your-domain.com>"  # a verified Resend sender
+# APP_BASE_URL = "https://<your-worker-name>.<subdomain>.workers.dev"  # magic-link origin
+# CHECKOUT_URL = "https://buy.stripe.com/xxx"          # one-time-unlock Payment Link
+#
+# Point the Stripe Payment Link's webhook at  <APP_BASE_URL>/billing/webhook  and
+# subscribe to `checkout.session.completed`. The account id rides as
+# client_reference_id (added by POST /billing/checkout), so the webhook flips the
+# right account's `paid` flag.

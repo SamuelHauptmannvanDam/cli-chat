@@ -3,9 +3,12 @@
 // frame when new mail is stored, so clients pull immediately instead of polling.
 // Uses the WebSocket Hibernation API, so idle connections cost ~nothing.
 //
-// Wake-then-pull: the frame carries NO message body — just {t:"mail"}. On wake
-// the client runs its normal authenticated drain (GET /messages), so D1 stays the
-// single source of truth and there's nothing to dedupe. See PUSH.md.
+// Wake-then-pull: the frame carries NO body — just {t:"mail"} for new mail, or
+// {t:"vault"} when the account's synced vault changed on another device. On wake
+// the client runs the matching authenticated pull (GET /messages, or a vault
+// sync), so the server stays the single source of truth and there's nothing to
+// dedupe. All of an account's devices share one keypair (hence one signPub, hence
+// this one DO), so a vault wake reaches every device of the account. See PUSH.md.
 //
 // Workers-runtime only: compiled by wrangler at deploy time, NOT by the npm build
 // (build.mjs bundles src/ only) or the Node test suite. Types are intentionally
@@ -21,11 +24,13 @@ export class Inbox {
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
 
-    // Internal fan-out trigger, called by the Worker after a message is stored.
+    // Internal fan-out trigger, called by the Worker after a message is stored
+    // (?t=mail, the default) or after a vault push (?t=vault).
     if (url.pathname === "/push") {
+      const t = url.searchParams.get("t") || "mail";
       for (const ws of this.state.getWebSockets()) {
         try {
-          ws.send(JSON.stringify({ t: "mail" }));
+          ws.send(JSON.stringify({ t }));
         } catch {
           /* dead socket — runtime will clean it up */
         }

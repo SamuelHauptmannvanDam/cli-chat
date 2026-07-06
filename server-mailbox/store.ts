@@ -7,6 +7,7 @@
 
 import { DatabaseSync } from "node:sqlite";
 import type { WireMessage } from "../src/identity.ts";
+import { randomId } from "./token.ts";
 
 export interface MailSummary {
   id: string;
@@ -18,6 +19,26 @@ export interface MailSummary {
 export interface HandleRecord {
   signPub: string;
   boxPub: string;
+}
+
+// --- Account layer (AUTH-SYNC.md) -------------------------------------------
+export interface AccountRecord {
+  id: string;
+  email: string;
+  signPub: string | null;
+  paid: boolean;
+}
+
+// What a poll resolves to. "pending" = link not clicked yet; "expired" = no such
+// (or already-claimed) login; "ready" = mint a session and hand it back.
+export type LoginPoll =
+  | { status: "pending" }
+  | { status: "expired" }
+  | { status: "ready"; email: string };
+
+export interface VaultRecord {
+  blob: string;
+  version: number;
 }
 
 export interface Store {
@@ -62,6 +83,59 @@ export interface Store {
   // How many messages this sender has sent since `since` to recipients who don't
   // yet know them (cold outreach) — bounds one identity's total spray reach.
   countRecentSentToNew(sender: string, since: number): number | Promise<number>;
+
+  // --- Account layer (AUTH-SYNC.md) -----------------------------------------
+  // Get the account for an email, creating it (unpaid, no signPub) if new. Email
+  // is the stable identity; idempotent so repeated logins reuse the same account.
+  getOrCreateAccount(email: string, now: number): AccountRecord | Promise<AccountRecord>;
+  // Bind the user's mailbox key to the account on first sync (no-op if unchanged).
+  bindAccountSignPub(accountId: string, signPub: string, now: number): void | Promise<void>;
+  // Flip the paid flag (Stripe webhook). Idempotent.
+  setAccountPaid(accountId: string, now: number): void | Promise<void>;
+
+  // Magic link: stash a single-use token (hashed) + its poll handle.
+  createLoginToken(
+    tokenHash: string,
+    email: string,
+    pollId: string,
+    expiresAt: number,
+    now: number,
+  ): void | Promise<void>;
+  // Mark a login consumed when the emailed link is clicked. Returns false if the
+  // token is unknown / expired / already consumed (so /auth/verify can 4xx).
+  consumeLoginToken(tokenHash: string, now: number): boolean | Promise<boolean>;
+  // The CLI polls this. On "ready" the caller mints a session, then must call
+  // claimLogin(pollId) so the one-shot token can't mint a second session.
+  pollLogin(pollId: string, now: number): LoginPoll | Promise<LoginPoll>;
+  // Delete the login row once a session has been minted from it.
+  claimLogin(pollId: string): void | Promise<void>;
+
+  // Sessions (bearer auth for the vault routes), stored hashed.
+  createSession(
+    tokenHash: string,
+    accountId: string,
+    expiresAt: number,
+    now: number,
+  ): void | Promise<void>;
+  // Resolve a bearer token to its account, or null if unknown/expired. Bumps
+  // last_seen as a side effect.
+  accountBySession(tokenHash: string, now: number): AccountRecord | null | Promise<AccountRecord | null>;
+  // Log a single device out.
+  deleteSession(tokenHash: string): void | Promise<void>;
+
+  // Vault: the synced account blob. Read returns null when nothing's stored yet.
+  getVault(accountId: string): VaultRecord | null | Promise<VaultRecord | null>;
+  // Last-write-wins on `version`: writes only when newer than what's stored.
+  // Returns "ok" on write, or "stale" with the current row when the caller is
+  // behind (so the client can pull, merge, and retry).
+  putVault(
+    accountId: string,
+    blob: string,
+    version: number,
+    now: number,
+  ): "ok" | { stale: VaultRecord } | Promise<"ok" | { stale: VaultRecord }>;
+  // Retention sweep for the account layer: drop expired login tokens + sessions.
+  purgeAuth(now: number): number | Promise<number>;
 }
 
 export function nodeSqliteStore(path: string): Store {
@@ -95,6 +169,39 @@ export function nodeSqliteStore(path: string): Store {
       peer        TEXT NOT NULL,
       created_at  INTEGER NOT NULL,
       PRIMARY KEY (owner, peer)
+    );
+    -- Account layer (AUTH-SYNC.md). Kept in step with server-mailbox/schema.sql.
+    CREATE TABLE IF NOT EXISTS accounts (
+      id          TEXT PRIMARY KEY,
+      email       TEXT NOT NULL UNIQUE,
+      signPub     TEXT,
+      paid        INTEGER NOT NULL DEFAULT 0,
+      created_at  INTEGER NOT NULL,
+      updated_at  INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_accounts_signpub ON accounts (signPub);
+    CREATE TABLE IF NOT EXISTS login_tokens (
+      token_hash  TEXT PRIMARY KEY,
+      email       TEXT NOT NULL,
+      poll_id     TEXT NOT NULL,
+      consumed_at INTEGER,
+      expires_at  INTEGER NOT NULL,
+      created_at  INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_login_poll ON login_tokens (poll_id);
+    CREATE TABLE IF NOT EXISTS sessions (
+      token_hash  TEXT PRIMARY KEY,
+      account_id  TEXT NOT NULL,
+      created_at  INTEGER NOT NULL,
+      expires_at  INTEGER NOT NULL,
+      last_seen   INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS idx_sessions_account ON sessions (account_id);
+    CREATE TABLE IF NOT EXISTS vault (
+      account_id  TEXT PRIMARY KEY,
+      blob        TEXT NOT NULL,
+      version     INTEGER NOT NULL,
+      updated_at  INTEGER NOT NULL
     );
   `);
   // Self-heal a dev DB created before received_at existed (the CREATE above is a
@@ -224,6 +331,118 @@ export function nodeSqliteStore(path: string): Store {
         )
         .get(sender, since) as { n: number };
       return Number(r?.n ?? 0);
+    },
+
+    // --- Account layer ------------------------------------------------------
+    getOrCreateAccount(email, now) {
+      const e = email.toLowerCase();
+      const found = db
+        .prepare(`SELECT id, email, signPub, paid FROM accounts WHERE email = ?`)
+        .get(e) as { id: string; email: string; signPub: string | null; paid: number } | undefined;
+      if (found) return { id: found.id, email: found.email, signPub: found.signPub, paid: !!found.paid };
+      const id = randomId();
+      db.prepare(
+        `INSERT INTO accounts (id, email, signPub, paid, created_at, updated_at)
+         VALUES (?, ?, NULL, 0, ?, ?)`,
+      ).run(id, e, now, now);
+      return { id, email: e, signPub: null, paid: false };
+    },
+
+    bindAccountSignPub(accountId, signPub, now) {
+      db.prepare(`UPDATE accounts SET signPub = ?, updated_at = ? WHERE id = ?`).run(
+        signPub,
+        now,
+        accountId,
+      );
+    },
+
+    setAccountPaid(accountId, now) {
+      db.prepare(`UPDATE accounts SET paid = 1, updated_at = ? WHERE id = ?`).run(now, accountId);
+    },
+
+    createLoginToken(tokenHash, email, pollId, expiresAt, now) {
+      db.prepare(
+        `INSERT INTO login_tokens (token_hash, email, poll_id, consumed_at, expires_at, created_at)
+         VALUES (?, ?, ?, NULL, ?, ?)`,
+      ).run(tokenHash, email.toLowerCase(), pollId, expiresAt, now);
+    },
+
+    consumeLoginToken(tokenHash, now) {
+      // One atomic conditional update: only an unconsumed, unexpired token flips,
+      // so a double-click or a replay of the link can't re-consume it.
+      const res = db
+        .prepare(
+          `UPDATE login_tokens SET consumed_at = ?
+           WHERE token_hash = ? AND consumed_at IS NULL AND expires_at > ?`,
+        )
+        .run(now, tokenHash, now);
+      return Number(res.changes ?? 0) > 0;
+    },
+
+    pollLogin(pollId, now) {
+      const row = db
+        .prepare(`SELECT email, consumed_at, expires_at FROM login_tokens WHERE poll_id = ?`)
+        .get(pollId) as { email: string; consumed_at: number | null; expires_at: number } | undefined;
+      if (!row || row.expires_at <= now) return { status: "expired" as const };
+      if (row.consumed_at == null) return { status: "pending" as const };
+      return { status: "ready" as const, email: row.email };
+    },
+
+    claimLogin(pollId) {
+      db.prepare(`DELETE FROM login_tokens WHERE poll_id = ?`).run(pollId);
+    },
+
+    createSession(tokenHash, accountId, expiresAt, now) {
+      db.prepare(
+        `INSERT INTO sessions (token_hash, account_id, created_at, expires_at, last_seen)
+         VALUES (?, ?, ?, ?, ?)`,
+      ).run(tokenHash, accountId, now, expiresAt, now);
+    },
+
+    accountBySession(tokenHash, now) {
+      const row = db
+        .prepare(
+          `SELECT a.id, a.email, a.signPub, a.paid, s.expires_at
+           FROM sessions s JOIN accounts a ON a.id = s.account_id
+           WHERE s.token_hash = ?`,
+        )
+        .get(tokenHash) as
+        | { id: string; email: string; signPub: string | null; paid: number; expires_at: number }
+        | undefined;
+      if (!row || row.expires_at <= now) return null;
+      db.prepare(`UPDATE sessions SET last_seen = ? WHERE token_hash = ?`).run(now, tokenHash);
+      return { id: row.id, email: row.email, signPub: row.signPub, paid: !!row.paid };
+    },
+
+    deleteSession(tokenHash) {
+      db.prepare(`DELETE FROM sessions WHERE token_hash = ?`).run(tokenHash);
+    },
+
+    getVault(accountId) {
+      const row = db
+        .prepare(`SELECT blob, version FROM vault WHERE account_id = ?`)
+        .get(accountId) as { blob: string; version: number } | undefined;
+      return row ? { blob: row.blob, version: Number(row.version) } : null;
+    },
+
+    putVault(accountId, blob, version, now) {
+      const cur = db
+        .prepare(`SELECT blob, version FROM vault WHERE account_id = ?`)
+        .get(accountId) as { blob: string; version: number } | undefined;
+      if (cur && Number(cur.version) >= version)
+        return { stale: { blob: cur.blob, version: Number(cur.version) } };
+      db.prepare(
+        `INSERT INTO vault (account_id, blob, version, updated_at) VALUES (?, ?, ?, ?)
+         ON CONFLICT(account_id) DO UPDATE SET blob = excluded.blob,
+           version = excluded.version, updated_at = excluded.updated_at`,
+      ).run(accountId, blob, version, now);
+      return "ok";
+    },
+
+    purgeAuth(now) {
+      const a = db.prepare(`DELETE FROM login_tokens WHERE expires_at < ?`).run(now);
+      const b = db.prepare(`DELETE FROM sessions WHERE expires_at < ?`).run(now);
+      return Number(a.changes ?? 0) + Number(b.changes ?? 0);
     },
   };
 }

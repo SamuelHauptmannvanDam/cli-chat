@@ -30,6 +30,16 @@ import {
 } from "./paths.ts";
 import { loadSettings, saveSettings, type TagMode } from "./settings.ts";
 import { resolveMailboxUrl, DEFAULT_MAILBOX_URL } from "./config.ts";
+import { createAccountClient } from "./account-client.ts";
+import {
+  loadSession,
+  saveSession,
+  setVaultVersion,
+  isVaultDirty,
+  markVaultDirty,
+} from "./session.ts";
+import { pollUntilReady, syncVault } from "./vault-sync.ts";
+import { applyVault } from "./vault.ts";
 import { startWarmer } from "./warmer.ts";
 import { claimHandle } from "./provision.ts";
 import { INSTRUCTIONS } from "./instructions.ts";
@@ -54,6 +64,14 @@ import {
 
 const mailboxUrl = resolveMailboxUrl();
 const now = () => Date.now();
+
+// Client for the online-account layer (magic-link login + vault sync). Bearer
+// auth, not request-signing — login happens before the keypair is on the device.
+const accountClient = createAccountClient(mailboxUrl);
+// How long a single `login` tool call polls for the email click before returning
+// `pending` (the agent resumes with the same poll id). Kept under typical MCP
+// client timeouts; most users click within seconds.
+const LOGIN_POLL_DEADLINE_MS = 60_000;
 
 // The live-inbox listener (await-mail) sits next to this file — bundled in dist/
 // in a published install, or src/ in a dev checkout. Same extension as us, so it
@@ -123,6 +141,11 @@ function ensureWarmer(): void {
       now,
       pendingPath: pendingFile(S.user),
       ackPath: pendingAckFile(S.user),
+      // A {t:"vault"} wake means another device changed contacts/tags — pull them
+      // in real time. Only when logged in; syncNow is a no-op otherwise.
+      onVault: () => {
+        if (S && loadSession(S.user)) void syncNow(S).catch(() => {});
+      },
     });
 }
 ensureWarmer();
@@ -130,7 +153,7 @@ ensureWarmer();
 // Behavior travels WITH the server (MCP `instructions`, sent on connect) so it
 // works in any MCP-capable CLI — not just Claude Code's CLAUDE.md. The text is
 // the single source in ./instructions.ts; esbuild inlines it into the bundle.
-const server = new McpServer({ name: "cli-chat", version: "0.7.0" }, { instructions: INSTRUCTIONS });
+const server = new McpServer({ name: "cli-chat", version: "0.8.0" }, { instructions: INSTRUCTIONS });
 const ok = (data: unknown) => ({
   content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }],
 });
@@ -262,6 +285,180 @@ server.registerTool(
         `Also tell the user, in one line, that they can say "chat" anytime to keep a live ` +
         `inbox open that reads new messages into the chat as they arrive.`,
     });
+  },
+);
+
+// ===========================================================================
+// Account layer (AUTH-SYNC.md): magic-link login + full-state sync. These three
+// are special like create_account — `login` runs WITHOUT an established session
+// (it's how a fresh device gets one) and can REPLACE the module-level S, so they
+// sit outside the guarded TOOLS table below.
+// ===========================================================================
+
+// Summarise a syncVault outcome into a tool result + a one-line agent note.
+function syncResult(outcome: Awaited<ReturnType<typeof syncVault>>) {
+  switch (outcome.action) {
+    case "pulled":
+      return { ok: true, action: "pulled", version: outcome.version, note: "Pulled your account from the server — contacts and tags are up to date." };
+    case "merged":
+      return { ok: true, action: "merged", version: outcome.version, note: "Merged this device's changes with the server." };
+    case "pushed":
+      return { ok: true, action: "pushed", version: outcome.version, note: "Synced this device's changes up." };
+    case "noop":
+      return { ok: true, action: "noop", version: outcome.version, note: "Already in sync." };
+    case "payment_required":
+      return { ok: false, reason: "payment_required", checkoutUrl: outcome.checkoutUrl, note: "Syncing online is a one-time unlock — give the user the checkout link, then sync again once paid." };
+    case "unauthorized":
+      return { ok: false, reason: "unauthorized", note: "The session expired — log in again with `login`." };
+  }
+}
+
+// On the pay gate, fetch the account-SPECIFIC checkout link. /billing/checkout
+// stamps client_reference_id=<account id> onto the Payment Link, so paying the
+// one-time €1 actually unlocks THIS account (the raw 402 link has no id and the
+// webhook couldn't tell whose `paid` to flip). Best-effort → null on any failure.
+async function checkoutLink(token: string): Promise<string | null> {
+  try {
+    const r = await accountClient.checkout(token);
+    return r === "unauthorized" ? null : (r.checkoutUrl ?? null);
+  } catch {
+    return null;
+  }
+}
+
+// The shared "you're not logged in until you pay" response. A magic-link click
+// authenticates, but online sync is a one-time €1 unlock — until it's paid the
+// device is deliberately NOT reported as logged in (nothing syncs to it), and we
+// hand the user the account-specific checkout link to finish in the terminal.
+async function paymentRequired(token: string) {
+  const url = await checkoutLink(token);
+  return {
+    ok: false,
+    reason: "payment_required",
+    checkoutUrl: url,
+    note: url
+      ? "This device is NOT logged in yet — online login/sync needs a ONE-TIME €1 unlock, and " +
+        "nothing is synced here until it's paid. Make it clear to the user it's a single payment " +
+        "that unlocks login on ALL their devices FOREVER (never charged again) — not a " +
+        `subscription. Give them this link: ${url} . After they say they've paid, call \`sync\` ` +
+        "to finish — loop until it goes through."
+      : "This device is NOT logged in yet — online login/sync needs a ONE-TIME €1 unlock (a " +
+        "single payment, login forever, not a subscription), but the checkout link is " +
+        "unavailable right now. Tell the user payment is needed and retry `sync`.",
+  };
+}
+
+// Establish a session after a successful magic-link poll: either push THIS
+// device's existing identity online (first time going online) or, on a fresh
+// device with no identity, pull the account vault down and adopt it.
+async function establishSession(
+  token: string,
+  account: { email: string; paid: boolean; hasVault: boolean },
+) {
+  if (S) {
+    // Existing local identity → save the session under it and push it online
+    // (the first push binds signPub server-side).
+    saveSession(S.user, token, account.email, now());
+    markVaultDirty(S.user);
+    const sess = loadSession(S.user);
+    const outcome = await syncVault(
+      accountClient,
+      token,
+      S.user,
+      S.me.signPub,
+      sess?.vaultVersion ?? 0,
+      true,
+    );
+    // Authenticated but unpaid → not logged in until the €1 unlock. Session token
+    // is kept saved so a later `sync` (post-payment) finishes without re-emailing.
+    if (outcome.action === "payment_required")
+      return { ...(await paymentRequired(token)), email: account.email, handle: S.me.handle };
+    return { ...syncResult(outcome), email: account.email, handle: S.me.handle };
+  }
+
+  // Fresh device, no local identity. Only a restore is possible — pull the vault
+  // and materialise it.
+  if (!account.hasVault)
+    return {
+      ok: false,
+      reason: "nothing_to_restore",
+      note:
+        "You're logged in, but there's no identity on this device and no online " +
+        "backup for this account yet. Run create_account to make one (then it syncs " +
+        "online), or log in on the device that has your account.",
+    };
+  const pulled = await accountClient.pullVault(token);
+  if (pulled === "payment_required") return paymentRequired(token);
+  if (pulled === "unauthorized" || pulled === null || pulled.blob == null)
+    return { ok: false, reason: "no_vault", note: "Nothing to restore for this account yet." };
+  const handle = applyVault(pulled.blob);
+  setCurrentUser(handle);
+  S = buildSession(handle);
+  saveSession(handle, token, account.email, now());
+  setVaultVersion(handle, pulled.version);
+  ensureWarmer();
+  return {
+    ok: true,
+    action: "restored",
+    handle,
+    name: S.me.name,
+    email: account.email,
+    note:
+      `Restored your account on this device — you're set up as ${S.me.name ?? handle} ` +
+      `(handle ${handle}), with your contacts and tags. ` +
+      `Tell the user in one line; they can say "chat" anytime for a live inbox.`,
+  };
+}
+
+server.registerTool(
+  "login",
+  {
+    title: "Log in / put your account online (magic link)",
+    description:
+      "Start or finish an email magic-link login for the OPTIONAL online account " +
+      "(AUTH-SYNC.md): it backs up the user's identity, contacts and tags so they " +
+      "can use the same account on any device. TWO-STEP: first call with `email` to " +
+      "send the link (returns a `poll_id`); tell the user to click it, then call " +
+      "AGAIN with that `poll_id` (no email) to finish — that call waits for the " +
+      "click. On an existing device this puts the current account online; on a fresh " +
+      "device with no identity it RESTORES the account from the server. Use when the " +
+      "user says 'log in', 'sync my account', 'put me online', or 'use my account on " +
+      "this device'. Online sync is a one-time paid unlock — if `payment_required` " +
+      "comes back, hand the user the checkout link.",
+    inputSchema: {
+      email: z.string().optional().describe("Email to log in with (first call). The link is sent here."),
+      poll_id: z
+        .string()
+        .optional()
+        .describe("Resume token from the first call — pass it (without email) to finish the login."),
+    },
+  },
+  async ({ email, poll_id }) => {
+    try {
+      if (!poll_id) {
+        const e = (email ?? "").trim();
+        if (!e) return ok({ ok: false, reason: "need_email", note: "Ask the user which email to use, then call login with it." });
+        const start = await accountClient.startLogin(e);
+        return ok({
+          ok: false,
+          reason: "sent",
+          poll_id: start.poll_id,
+          // devLink only appears when the server runs with exposeMagicLink (dev).
+          ...(start.devLink ? { devLink: start.devLink } : {}),
+          note:
+            `Sent a login link to ${e}. Tell the user to click it, then call login again ` +
+            `with poll_id="${start.poll_id}" (no email) to finish — that call waits for the click.`,
+        });
+      }
+      const poll = await pollUntilReady(accountClient, poll_id, 2000, LOGIN_POLL_DEADLINE_MS, now);
+      if (poll.status === "pending")
+        return ok({ ok: false, reason: "pending", poll_id, note: "Still waiting for the email link to be clicked — call login again with the same poll_id." });
+      if (poll.status === "expired")
+        return ok({ ok: false, reason: "expired", note: "That login link expired or was already used. Start over: login with the user's email." });
+      return ok(await establishSession(poll.session_token, poll.account));
+    } catch (e) {
+      return ok({ ok: false, reason: "error", note: `Login failed: ${(e as Error).message}` });
+    }
   },
 );
 
@@ -505,6 +702,52 @@ const TOOLS: {
     },
   },
   {
+    name: "sync",
+    title: "Sync this device with your online account",
+    description:
+      "Reconcile this device's identity, contacts and tags with the online account " +
+      "(AUTH-SYNC.md): pull anything newer from the server, push any local changes " +
+      "up. Local-first — reads never need this; it's for converging across devices. " +
+      "Runs automatically at session start; call it manually to force a round-trip " +
+      "(e.g. after editing contacts on another machine). Needs the user to be logged " +
+      "in (`login`); returns `not_logged_in` otherwise, and `payment_required` with a " +
+      "checkout link if online sync isn't unlocked yet.",
+    inputSchema: {},
+    run: (s) => syncNow(s),
+  },
+  {
+    name: "account_status",
+    title: "Show online-account / sync status",
+    description:
+      "Report whether this device is logged into the online account and its sync " +
+      "state: the account email, the last synced version, and whether local changes " +
+      "are waiting to push. Use when the user asks 'am I logged in?', 'is my account " +
+      "synced?', or 'what email is this on?'.",
+    inputSchema: {},
+    run: (s) => {
+      const sess = loadSession(s.user);
+      // A saved session alone isn't "logged in": online sync is a one-time €1
+      // unlock, and until it's paid nothing ever syncs to this device. A non-null
+      // vaultVersion means a paid sync has succeeded (the vault routes are pay-
+      // gated), so that's our proxy for "truly logged in / unlocked".
+      const unlocked = !!sess && sess.vaultVersion != null;
+      const paymentPending = !!sess && !unlocked;
+      return {
+        loggedIn: unlocked,
+        paymentPending,
+        email: sess?.email ?? null,
+        handle: s.me.handle ?? null,
+        vaultVersion: sess?.vaultVersion ?? null,
+        pendingChanges: isVaultDirty(s.user),
+        note: unlocked
+          ? undefined
+          : paymentPending
+            ? "Authenticated by email, but online sync isn't unlocked — it needs a one-time €1 payment, so this device is NOT logged in yet and nothing has synced. Call `sync` to get the checkout link; once paid, `sync` finishes it."
+            : "Not logged in on this device. Use `login` to put this account online / sync it.",
+      };
+    },
+  },
+  {
     name: "messages_available",
     title: "Check for waiting messages",
     description:
@@ -654,11 +897,34 @@ const attachNote = (name: string, r: any): any => {
   return note ? { ...r, note } : r;
 };
 
+// Tools that change locally-stored state which the online vault syncs (contacts,
+// tags, settings, auto-saved senders). After one succeeds we flag the vault dirty
+// so the next sync pushes — cheap over-marking (an unchanged push is a no-op) is
+// fine; the goal is to never MISS a change.
+const MUTATING = new Set([
+  "send_message",
+  "draft_reply",
+  "add_contact",
+  "delete_contact",
+  "tag_contact",
+  "untag_contact",
+  "decline_tag",
+  "tagging",
+]);
+
 for (const t of TOOLS) {
   server.registerTool(
     t.name,
     { title: t.title, description: t.description, inputSchema: t.inputSchema },
-    guard(async (s, args) => attachNote(t.name, await t.run(s, args))),
+    guard(async (s, args) => {
+      const r = await t.run(s, args);
+      // Flag for sync on a successful mutation (only when logged in — no session,
+      // nothing to push). `changed === false` (a no-op tag) doesn't dirty.
+      if (MUTATING.has(t.name) && (r as any)?.ok !== false && (r as any)?.changed !== false) {
+        if (loadSession(s.user)) markVaultDirty(s.user);
+      }
+      return attachNote(t.name, r);
+    }),
   );
 }
 
@@ -698,6 +964,23 @@ function listenerCommand(_s: Session): string {
   if (process.env.MESSENGER_PUSH) parts.push(`MESSENGER_PUSH=${process.env.MESSENGER_PUSH}`);
   const env = parts.length ? parts.join(" ") + " " : "";
   return `${env}node ${quoteArg(friendlyPath(listenerPath))}`;
+}
+
+// Reconcile this device with its online account. Needs a saved session (login).
+async function syncNow(s: Session) {
+  const sess = loadSession(s.user);
+  if (!sess)
+    return { ok: false, reason: "not_logged_in", note: "Not logged in on this device. Use `login` to put this account online / sync it." };
+  const outcome = await syncVault(
+    accountClient,
+    sess.token,
+    s.user,
+    s.me.signPub,
+    sess.vaultVersion ?? 0,
+    isVaultDirty(s.user),
+  );
+  if (outcome.action === "payment_required") return paymentRequired(sess.token);
+  return syncResult(outcome);
 }
 
 // Read the local auto-tagging mode, or change it when `mode` is given. Stored in
@@ -782,3 +1065,11 @@ console.error(
     ? `cli-chat (Phase 1) up as "${S.user}" → mailbox ${mailboxUrl}`
     : `cli-chat (Phase 1) up with NO account → mailbox ${mailboxUrl} (call create_account)`,
 );
+
+// Session-start sync (AUTH-SYNC.md): if this device is logged into the online
+// account, reconcile in the background — pull anything newer, push pending local
+// edits. Best-effort and non-blocking, like the push warmer: any failure just
+// waits for the next start or a manual `sync`. Reads stay local-first regardless.
+if (S && loadSession(S.user)) {
+  void syncNow(S).catch((e) => console.error(`startup sync skipped: ${(e as Error).message}`));
+}
