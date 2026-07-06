@@ -80,6 +80,16 @@ They can change it any time: `create_account` is idempotent and passing a `name`
 updates the display name (use this for "call me X" / "change my name to X"). They
 can see their current name + handle any time at the top of `contacts`.
 
+**When you first create an account** for someone (the fresh-device flow above),
+after reporting their new 6-char handle, offer the online upgrade in one line —
+that the same account can be backed up and used on other devices by logging in
+with their email ("say 'log in' whenever you want that"), then continue with
+whatever they were doing — don't block their first send on it. (Online sync is
+currently **free** — don't mention any price; see the login section.) This is the same "set me up online"
+path as the [login](#online-account--login--multi-device-sync-optional-paid)
+section: `create_account` is purely local; a later `login` with their email is
+what actually creates/attaches the online account.
+
 ## Live chat — the `chat` trigger (background waker + `chat_batch`)
 When the user says **"chat"** (or "go live" / "start chat", and also "watch" /
 "watch for messages" / "keep an eye out"), open the live inbox:
@@ -131,6 +141,12 @@ call `send_message` with `to` = the name (e.g. "Sam"), `body` = the message, and
 them, so afterwards just "write Sam" works. If the user only wants to save someone
 ("add my mate Sam, code is AbC123"), use `add_contact`. If they ask "what's my
 code/number/handle?", call `my_key` and give them the 6-char code to share.
+**Whenever you hand the user their own handle** (here, or from the `me` entry in
+`contacts`), and they're **not yet logged in online** (`account_status` →
+`loggedIn:false`), add a one-line tip that they can *upgrade* it to sync across
+devices — e.g. "You can also log in with your email to use this same account on
+other devices — just say 'log in'." Don't nag: skip the tip if they're already
+logged in, or if they've just declined it this session.
 
 ## Listing contacts
 When the user asks "who are my contacts?", "who can I message?", or "show my
@@ -217,6 +233,73 @@ Tobias and Mette as work — send to all three?"). On yes, send to each with
 `send_message` (individual sealed messages; there's no group thread). Report once
 ("Sent to Niels, Tobias and Mette."). Never fan a message out to a tag without the
 user seeing the names first.
+
+## Online account — login & multi-device sync (optional)
+By default everything is **local to the device**: the user's identity, contacts
+and tags live only in `~/.cli-chat`. The OPTIONAL online account backs all of that
+up so the user can use the SAME account on any device. It's magic-link based — no
+passwords. Three tools drive it: `login`, `sync`, `account_status`. (Design:
+AUTH-SYNC.md.)
+
+> **Online sync is currently FREE** (the paywall is off — `FREE_SYNC=1` on the
+> server). So logging in just works: click the link → logged in → synced, no
+> payment. **Do NOT mention any price, the €1, or a paid unlock to users.** The
+> "Paid unlock" instructions below are **DORMANT** — kept for when billing is
+> re-enabled; `payment_required` will not occur while sync is free, so that whole
+> flow simply won't fire.
+
+**Logging in is two steps** (the link is clicked in a browser, but the session
+lands here):
+1. The user says "log in" / "sync my account" / "put me online" / "use my account
+   on this device". Ask for their email if you don't have it, then call
+   `login` with `email`. It returns `reason:"sent"` and a `poll_id`. Relay in one
+   line: "Sent a login link to <email> — click it and I'll finish up."
+2. Call `login` AGAIN with that `poll_id` (no email). That call WAITS for the
+   click. On success it either puts this device's account online (existing
+   identity) or RESTORES the account onto a fresh device. If it returns
+   `reason:"pending"`, the link isn't clicked yet — call `login` with the same
+   `poll_id` again. `expired` → start over with their email.
+
+**Paid unlock — the €1 gate is a blocking flow, not a done state.** Clicking the
+magic link only proves the email; online login/sync is a **one-time €1 unlock**
+(pay once, log in on ANY device FOREVER — not a subscription, never charged
+again), and until it's paid the device is **NOT logged in** — nothing syncs to it.
+So when any account call returns `reason:"payment_required"` (this is the normal
+outcome of finishing `login` on an unpaid account), do NOT say "you're logged in."
+Instead:
+1. Tell the user plainly, in the terminal, that they're **not synced yet** and it
+   needs a **one-time €1 payment that unlocks login on all their devices for good**,
+   and give them the `checkoutUrl` in one line ("One-time €1 unlock — log in on any
+   device forever: <link>"). The link is account-specific — paying it flips this
+   account's unlock automatically.
+2. **Wait, then loop.** When the user says they've paid, call `sync` and re-check.
+   If it still comes back `payment_required` (webhook not through yet), tell them
+   and try `sync` again shortly — keep looping until it succeeds. Only a
+   successful `sync` means they're actually logged in.
+Never imply it's free, and never treat an unpaid, authenticated session as logged
+in — `account_status` reflects this too (`loggedIn:false`, `paymentPending:true`
+until paid).
+
+**Syncing is automatic, local-first, and real-time across devices.** A `sync` runs
+on its own at session start, and after you change contacts/tags it's flagged to
+push on the next sync. Pushes also **stream to the user's other logged-in devices
+in real time**: the background push socket carries a `vault` wake, so a change made
+on one device lands on the others within seconds without anyone running `sync`
+(the same socket that delivers live mail). You normally DON'T call `sync` by hand —
+only when the user asks to "sync now". Reads (listing contacts, sending) never need
+a sync; they're always served from local state.
+
+**Status.** When the user asks "am I logged in?", "is my account synced?", or
+"what email is this on?", call `account_status` and answer from it (logged-in,
+email, whether changes are pending). `paymentPending:true` means they clicked the
+link but haven't paid the €1 — report that as "not logged in yet, needs the
+one-time payment," not as logged in. Don't expose the session token.
+
+**Restoring on a new device.** If there's no identity on this device yet, a
+successful `login` pulls the account down and sets it up — confirm in one line
+("Restored your account — handle <code>, contacts and tags are here."). If `login`
+returns `nothing_to_restore`, there's no backup yet: offer `create_account`
+(then it syncs online once unlocked), or to log in on their original device.
 
 ## Style: act, then report — don't ask permission
 Default to doing the obvious thing and announcing it, e.g. "Sent to Niels: '…'."

@@ -9,7 +9,9 @@
 import { Hono } from "hono";
 import { verifyRequest } from "./verify.ts";
 import type { WireMessage } from "../src/identity.ts";
-import type { Store } from "./store.ts";
+import type { AccountRecord, Store } from "./store.ts";
+import { randomToken, sha256hex } from "./token.ts";
+import { magicLinkEmail, type SendEmail } from "./email.ts";
 
 export interface AppDeps {
   store: Store;
@@ -18,6 +20,11 @@ export interface AppDeps {
   // stored, so a transport can wake live subscribers. Omitted on the Node runner
   // (no Durable Objects); injected on Workers. Must not throw / block delivery.
   notify?: (recipient: string) => void;
+  // Optional push hook called with the account's signPub after its vault is
+  // updated, so other logged-in devices of that account pull the new version in
+  // real time. Same transport as `notify` (the signPub inbox DO); omitted on the
+  // Node runner. Must not throw / block the response.
+  notifyVault?: (signPub: string) => void;
   // New-sender throttle caps (see admission control below). Override per-app
   // (tests pin small values); otherwise env, then the defaults.
   limits?: {
@@ -32,7 +39,37 @@ export interface AppDeps {
   // Buckets: "resolve" (per-IP directory scraping), "post-ip" (per-IP send
   // flood, checked before any crypto), "post-key" (per-sender send rate).
   rateLimit?: (bucket: "resolve" | "post-ip" | "post-key", key: string) => Promise<boolean>;
+
+  // --- Account layer (AUTH-SYNC.md) -----------------------------------------
+  // Outbound email for magic links. Absent on the Node runner / tests, where the
+  // login response instead carries `devLink` (see exposeMagicLink) so the flow is
+  // exercisable without a real mailbox. On the Worker this is the Resend sender.
+  sendEmail?: SendEmail;
+  // Public base URL the email link points back at (…/auth/verify). Falls back to
+  // the request origin when omitted.
+  appBaseUrl?: string;
+  // Dev/test escape hatch: return the magic link in the /auth/login response so a
+  // headless flow can "click" it. NEVER set in production — it bypasses email.
+  exposeMagicLink?: boolean;
+  // Stripe (or any provider) checkout link for the one-time unlock. The account
+  // id is appended as client_reference_id so the webhook knows who paid.
+  checkoutUrl?: string;
+  // Verify a billing webhook payload and extract which account was paid. Injected
+  // on the Worker (Stripe signature check); absent on Node (no billing in tests).
+  verifyPayment?: (rawBody: string, signature: string | null) => Promise<{ accountId: string } | null>;
+  // Kill-switch for the paywall: when true, the vault routes skip the `paid` gate
+  // so online login/sync is FREE for everyone (billing stays wired but dormant).
+  // Set via the FREE_SYNC env var on the Worker. Flip off to re-enable the €1 gate.
+  freeSync?: boolean;
 }
+
+// Account-layer lifetimes. A magic link is short-lived; a session is long so a
+// device stays logged in (renewed on next login). Both are overridable per app.
+const LOGIN_TTL_MS = 15 * 60 * 1000;
+const SESSION_TTL_MS = 365 * 24 * 60 * 60 * 1000;
+const POLL_INTERVAL_MS = 2000;
+const MAX_VAULT_BYTES = 512 * 1024;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // Abuse limits. These are short text ciphertexts, so the caps are generous yet
 // far below anything that would let one POST balloon the store. MAX_REQUEST_BYTES
@@ -59,7 +96,7 @@ function envInt(name: string): number | undefined {
 
 export function createApp(deps: AppDeps): Hono {
   const app = new Hono();
-  const { store, now, notify, rateLimit } = deps;
+  const { store, now, notify, notifyVault, rateLimit, freeSync } = deps;
   const unknownPairHourly =
     deps.limits?.unknownPairHourly ??
     envInt("MAILBOX_UNKNOWN_PAIR_HOURLY") ??
@@ -228,6 +265,173 @@ export function createApp(deps: AppDeps): Hono {
     const rec = await store.resolveHandle(c.req.param("handle"));
     if (!rec) return c.json({ error: "not found" }, 404);
     return c.json(rec);
+  });
+
+  // ==========================================================================
+  // Account layer (AUTH-SYNC.md): magic-link login + bearer-gated vault sync.
+  // Separate from the signature-authed mailbox above — these use a session token,
+  // and the vault they guard is server-readable (email is the recovery anchor).
+  // ==========================================================================
+  const { sendEmail, exposeMagicLink, checkoutUrl, verifyPayment } = deps;
+
+  // Resolve a Bearer session token → its account, or 401. Used by the vault
+  // routes. The token is hashed before lookup (DB stores only hashes).
+  async function requireSession(c: {
+    req: { header: (n: string) => string | undefined };
+  }): Promise<AccountRecord | null> {
+    const auth = c.req.header("authorization") ?? "";
+    const m = /^Bearer\s+(.+)$/i.exec(auth);
+    if (!m) return null;
+    return (await store.accountBySession(await sha256hex(m[1]!), now())) ?? null;
+  }
+
+  // Start a login: email a single-use magic link, hand the CLI a poll id. Creates
+  // the account on first sight of an email. Rate-limited per IP (reuses post-ip).
+  app.post("/auth/login", async (c) => {
+    if (await limited("post-ip", clientIp(c)))
+      return c.json({ error: "rate limited" }, 429);
+    let body: { email?: string };
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "invalid json" }, 400);
+    }
+    const email = (body.email ?? "").trim().toLowerCase();
+    if (!EMAIL_RE.test(email)) return c.json({ error: "invalid email" }, 400);
+
+    await store.getOrCreateAccount(email, now());
+    const raw = randomToken();
+    const pollId = randomToken(12);
+    await store.createLoginToken(await sha256hex(raw), email, pollId, now() + LOGIN_TTL_MS, now());
+
+    const base = (deps.appBaseUrl ?? new URL(c.req.url).origin).replace(/\/$/, "");
+    const link = `${base}/auth/verify?token=${raw}`;
+    if (sendEmail) {
+      try {
+        await sendEmail(magicLinkEmail(email, link));
+      } catch (e) {
+        return c.json({ error: `could not send email: ${(e as Error).message}` }, 502);
+      }
+    } else if (!exposeMagicLink) {
+      // No sender configured and not in dev mode → fail loudly rather than
+      // pretend a link went out.
+      return c.json({ error: "email delivery not configured" }, 503);
+    }
+    return c.json({
+      ok: true,
+      poll_id: pollId,
+      interval_ms: POLL_INTERVAL_MS,
+      expires_in_ms: LOGIN_TTL_MS,
+      // Only present when exposeMagicLink is on (dev/test). Lets a headless flow
+      // complete without a real inbox; never set in production.
+      ...(exposeMagicLink ? { devLink: link } : {}),
+    });
+  });
+
+  // The email link lands here in a browser. Consume the token (single-use) and
+  // show a plain page telling the user to return to their terminal.
+  app.get("/auth/verify", async (c) => {
+    const token = c.req.query("token") ?? "";
+    const okPage = (msg: string, ok: boolean) =>
+      c.html(
+        `<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">` +
+          `<body style="font-family:system-ui;max-width:32rem;margin:4rem auto;padding:0 1rem;text-align:center">` +
+          `<h2>${ok ? "✓ Email confirmed" : "Link expired"}</h2><p>${msg}</p></body>`,
+        ok ? 200 : 400,
+      );
+    if (!token) return okPage("Missing token.", false);
+    const consumed = await store.consumeLoginToken(await sha256hex(token), now());
+    return consumed
+      ? okPage("Return to your terminal — cli-chat is finishing your login.", true)
+      : okPage("This link was already used or has expired. Request a new one.", false);
+  });
+
+  // The CLI polls here after starting login. Once the link is clicked, mint a
+  // long-lived session token and hand it back (one-shot: the login row is then
+  // claimed so it can't mint a second session).
+  app.post("/auth/poll", async (c) => {
+    let body: { poll_id?: string };
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "invalid json" }, 400);
+    }
+    const pollId = (body.poll_id ?? "").trim();
+    if (!pollId) return c.json({ error: "missing poll_id" }, 400);
+    const poll = await store.pollLogin(pollId, now());
+    if (poll.status !== "ready") return c.json({ status: poll.status });
+
+    const account = await store.getOrCreateAccount(poll.email, now());
+    const sessionToken = randomToken();
+    await store.createSession(await sha256hex(sessionToken), account.id, now() + SESSION_TTL_MS, now());
+    await store.claimLogin(pollId);
+    return c.json({
+      status: "ready",
+      session_token: sessionToken,
+      account: { email: account.email, paid: account.paid, hasVault: account.signPub != null },
+    });
+  });
+
+  // Pull the synced account blob. Paid accounts only.
+  app.get("/vault", async (c) => {
+    const account = await requireSession(c);
+    if (!account) return c.json({ error: "unauthorized" }, 401);
+    if (!account.paid && !freeSync) return c.json({ error: "payment_required", checkoutUrl: checkoutUrl ?? null }, 402);
+    const v = await store.getVault(account.id);
+    return c.json({ ok: true, blob: v?.blob ?? null, version: v?.version ?? 0 });
+  });
+
+  // Push the synced account blob (last-write-wins on version). On first push the
+  // user's signPub is bound to the account so the mailbox identity and the online
+  // account are linked. A stale version → 409 with the current row to merge.
+  app.put("/vault", async (c) => {
+    const account = await requireSession(c);
+    if (!account) return c.json({ error: "unauthorized" }, 401);
+    if (!account.paid && !freeSync) return c.json({ error: "payment_required", checkoutUrl: checkoutUrl ?? null }, 402);
+    const raw = await c.req.text();
+    if (raw.length > MAX_VAULT_BYTES) return c.json({ error: "vault too large" }, 413);
+    let body: { blob?: string; version?: number; signPub?: string };
+    try {
+      body = JSON.parse(raw);
+    } catch {
+      return c.json({ error: "invalid json" }, 400);
+    }
+    if (typeof body.blob !== "string" || typeof body.version !== "number")
+      return c.json({ error: "missing blob/version" }, 400);
+    if (body.signPub && account.signPub !== body.signPub)
+      await store.bindAccountSignPub(account.id, body.signPub, now());
+    const res = await store.putVault(account.id, body.blob, body.version, now());
+    if (res !== "ok") return c.json({ ok: false, reason: "stale", current: res.stale }, 409);
+    // Wake the account's other devices so they pull this new version in real time.
+    // signPub keys the shared inbox DO; body.signPub is what we just bound.
+    const signPub = body.signPub ?? account.signPub;
+    if (signPub) notifyVault?.(signPub);
+    return c.json({ ok: true, version: body.version });
+  });
+
+  // Hand back the one-time checkout link for this account (client_reference_id =
+  // account id, so the webhook can flip `paid`). 409 if already paid.
+  app.post("/billing/checkout", async (c) => {
+    const account = await requireSession(c);
+    if (!account) return c.json({ error: "unauthorized" }, 401);
+    if (account.paid) return c.json({ ok: true, paid: true, note: "already unlocked" });
+    if (!checkoutUrl) return c.json({ error: "billing not configured" }, 503);
+    const sep = checkoutUrl.includes("?") ? "&" : "?";
+    const url =
+      `${checkoutUrl}${sep}client_reference_id=${encodeURIComponent(account.id)}` +
+      `&prefilled_email=${encodeURIComponent(account.email)}`;
+    return c.json({ ok: true, paid: false, checkoutUrl: url });
+  });
+
+  // Provider webhook (Stripe). Verify the signature, then flip `paid`. Verifier is
+  // injected; absent on Node, so the route 503s there rather than trusting input.
+  app.post("/billing/webhook", async (c) => {
+    if (!verifyPayment) return c.json({ error: "billing not configured" }, 503);
+    const raw = await c.req.text();
+    const event = await verifyPayment(raw, c.req.header("stripe-signature") ?? null).catch(() => null);
+    if (!event) return c.json({ error: "invalid signature" }, 400);
+    await store.setAccountPaid(event.accountId, now());
+    return c.json({ ok: true });
   });
 
   return app;

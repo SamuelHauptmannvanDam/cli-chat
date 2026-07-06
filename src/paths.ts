@@ -75,6 +75,20 @@ export function chatHintFile(user: string): string {
   return join(userDir(user), "chat-hint.json");
 }
 
+// Account layer (AUTH-SYNC.md). The bearer session token for the online account
+// (magic-link login). Saved alongside the keys; sent as `Authorization: Bearer`
+// on the vault routes. Never leaves the device except as that header.
+export function sessionFile(user: string): string {
+  return join(userDir(user), "session.json");
+}
+
+// Marker that local state (contacts/tags/settings/identity) changed since the
+// last vault push, so the next sync knows to upload. A flag file (not a diff)
+// keeps mutation sites cheap: they touch it, sync clears it.
+export function vaultDirtyFile(user: string): string {
+  return join(userDir(user), "vault-dirty");
+}
+
 // While the live inbox ("chat") listener is running it heartbeats this lock file
 // (bumping its mtime every tick). A FRESH lock tells the session hook that chat is
 // live, so the hook suppresses its count-only notice and the listener's feed is

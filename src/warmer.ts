@@ -31,6 +31,10 @@ export interface WarmerOpts {
   // The warmer is the sole writer of pendingPath; the hook the sole writer of ackPath.
   pendingPath: string;
   ackPath: string;
+  // Called on a {t:"vault"} wake (another device pushed a new vault version) and
+  // on reconnect catch-up — pull + apply the account's vault. Absent → the warmer
+  // is mail-only and ignores vault frames. Must not throw; coalesced by the warmer.
+  onVault?: () => void | Promise<void>;
 }
 
 const PING_MS = 30_000; // keepalive cadence
@@ -47,6 +51,23 @@ export function startWarmer(ctx: NetContext, opts: WarmerOpts): () => void {
   let pingTimer: ReturnType<typeof setInterval> | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let draining = false;
+  let syncingVault = false;
+
+  // Pull + apply the account's vault after a {t:"vault"} wake (another device
+  // changed contacts/tags) or on reconnect catch-up. Coalesced like drain() so a
+  // burst of wakes doesn't stack syncs. Best-effort: the session-start sync and
+  // fallback poll are the safety net if a wake is ever missed.
+  async function syncVaultWake(): Promise<void> {
+    if (syncingVault || stopped || !opts.onVault) return;
+    syncingVault = true;
+    try {
+      await opts.onVault();
+    } catch {
+      /* network blip — the next wake / fallback poll / session-start sync retries */
+    } finally {
+      syncingVault = false;
+    }
+  }
 
   // Drain new mail into the cache; notify if anything arrived. Coalesces
   // overlapping calls so a burst of wakes doesn't stack network requests.
@@ -94,6 +115,7 @@ export function startWarmer(ctx: NetContext, opts: WarmerOpts): () => void {
     ws.addEventListener("open", () => {
       backoff = BACKOFF_START_MS; // reset on a healthy connection
       void drain(); // catch up on anything missed while offline
+      void syncVaultWake(); // catch up on any vault change missed while offline
       clearPing();
       pingTimer = setInterval(() => {
         try {
@@ -105,8 +127,18 @@ export function startWarmer(ctx: NetContext, opts: WarmerOpts): () => void {
     });
 
     ws.addEventListener("message", (ev) => {
-      if (String((ev as MessageEvent).data) === "pong") return; // keepalive ack
-      void drain(); // any other frame is a wake
+      const data = String((ev as MessageEvent).data);
+      if (data === "pong") return; // keepalive ack
+      // Wake frames are tiny JSON: {t:"mail"|"vault"}. A vault wake pulls the
+      // synced vault; anything else (mail, or a legacy bare frame) drains mail.
+      let t = "mail";
+      try {
+        t = (JSON.parse(data) as { t?: string }).t ?? "mail";
+      } catch {
+        /* not JSON — treat as a mail wake */
+      }
+      if (t === "vault") void syncVaultWake();
+      else void drain();
     });
 
     ws.addEventListener("close", scheduleReconnect);

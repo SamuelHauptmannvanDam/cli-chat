@@ -13,8 +13,9 @@ export interface ServedFetch {
   close(): void;
 }
 
-// Boot `handler` on a random loopback port. Caller must close() it.
-export function serveFetch(handler: FetchHandler): Promise<ServedFetch> {
+// Boot `handler` on a loopback port (random by default; pass `port` to pin one,
+// e.g. for the manual dev mailbox). Caller must close() it.
+export function serveFetch(handler: FetchHandler, port = 0): Promise<ServedFetch> {
   return new Promise((resolve) => {
     const server: Server = createServer((nodeReq, nodeRes) => {
       const chunks: Buffer[] = [];
@@ -43,11 +44,11 @@ export function serveFetch(handler: FetchHandler): Promise<ServedFetch> {
         nodeRes.end(Buffer.from(await res.arrayBuffer()));
       });
     });
-    server.listen(0, () => {
-      const { port } = server.address() as { port: number };
+    server.listen(port, () => {
+      const { port: actual } = server.address() as { port: number };
       resolve({
-        url: `http://localhost:${port}`,
-        port,
+        url: `http://localhost:${actual}`,
+        port: actual,
         close: () => server.close(),
       });
     });

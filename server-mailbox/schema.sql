@@ -36,3 +36,55 @@ CREATE TABLE IF NOT EXISTS handles (
 );
 -- Reverse lookup for the recipient-exists check on POST /messages.
 CREATE INDEX IF NOT EXISTS idx_handles_signpub ON handles (signPub);
+
+-- ===========================================================================
+-- Account layer (AUTH-SYNC.md): optional, paid online account for multi-device
+-- login + full-state sync. Distinct from the mailbox above, which stays
+-- zero-knowledge — these tables hold the (server-readable) account vault and the
+-- magic-link/session machinery that gates it. Email is the recovery anchor.
+-- ===========================================================================
+
+-- One online account per paying user. `signPub` ties the account to the user's
+-- mailbox identity; it's bound on the first sync. `paid` flips on the Stripe
+-- webhook and gates the vault routes.
+CREATE TABLE IF NOT EXISTS accounts (
+  id          TEXT PRIMARY KEY,
+  email       TEXT NOT NULL UNIQUE,   -- lowercased
+  signPub     TEXT,                   -- bound on first sync
+  paid        INTEGER NOT NULL DEFAULT 0,
+  created_at  INTEGER NOT NULL,
+  updated_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_accounts_signpub ON accounts (signPub);
+
+-- Single-use magic-link tokens. Stored HASHED (sha256). The emailed link carries
+-- the raw token; the CLI polls `poll_id` and never sees the hash. One-shot: the
+-- row is deleted once a session is minted from it.
+CREATE TABLE IF NOT EXISTS login_tokens (
+  token_hash  TEXT PRIMARY KEY,       -- sha256(raw token)
+  email       TEXT NOT NULL,
+  poll_id     TEXT NOT NULL,
+  consumed_at INTEGER,                -- set when the email link is clicked
+  expires_at  INTEGER NOT NULL,
+  created_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_login_poll ON login_tokens (poll_id);
+
+-- Long-lived device sessions. Stored HASHED. Bearer auth for the vault routes.
+CREATE TABLE IF NOT EXISTS sessions (
+  token_hash  TEXT PRIMARY KEY,       -- sha256(session token)
+  account_id  TEXT NOT NULL,
+  created_at  INTEGER NOT NULL,
+  expires_at  INTEGER NOT NULL,
+  last_seen   INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_account ON sessions (account_id);
+
+-- The synced account state: one opaque blob per account (identity + contacts +
+-- tags + settings, assembled client-side). `version` drives last-write-wins.
+CREATE TABLE IF NOT EXISTS vault (
+  account_id  TEXT PRIMARY KEY,
+  blob        TEXT NOT NULL,
+  version     INTEGER NOT NULL,
+  updated_at  INTEGER NOT NULL
+);
