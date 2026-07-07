@@ -9,8 +9,8 @@
 // If this device already has an identity it reuses it (re-asserting its handle)
 // rather than minting a second one.
 
-import { mkdirSync, writeFileSync } from "node:fs";
 import { userInfo } from "node:os";
+import { secureDir, writeSecret } from "./secure-fs.ts";
 import { initCrypto, generateIdentity, type Identity } from "./crypto.ts";
 import { loadIdentity } from "./identity.ts";
 import { saveContacts } from "./contacts.ts";
@@ -29,7 +29,7 @@ if (!display) {
 const url = resolveMailboxUrl();
 
 await initCrypto();
-mkdirSync(usersDir(), { recursive: true });
+secureDir(usersDir());
 
 // Reuse an existing identity on this device if there is one.
 const existingDir = currentUser();
@@ -58,8 +58,8 @@ try {
   }
 
   // Persist under the handle-keyed directory.
-  mkdirSync(userDir(id.handle), { recursive: true });
-  writeFileSync(identityFile(id.handle), JSON.stringify(id, null, 2) + "\n");
+  secureDir(userDir(id.handle));
+  writeSecret(identityFile(id.handle), JSON.stringify(id, null, 2) + "\n");
   if (!existing) {
     saveContacts(contactsFile(id.handle), { me: id.signPub, contacts: [] });
   }

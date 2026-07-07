@@ -7,8 +7,9 @@
 // v1 stores the blob as plain JSON (the route already gates it behind the bearer
 // session + paid wall). AES-GCM-at-rest is the next hardening step (§4/§10).
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { identityFile, contactsFile, settingsFile, userDir } from "./paths.ts";
+import { secureDir, writeSecret, writeSecretAtomic } from "./secure-fs.ts";
 
 export interface VaultBlob {
   v: 1;
@@ -44,12 +45,12 @@ export function applyVault(raw: string): string {
   const handle = blob.identity?.handle;
   if (!handle || typeof handle !== "string")
     throw new Error("vault blob has no handle — cannot materialise identity");
-  mkdirSync(userDir(handle), { recursive: true });
-  writeFileSync(identityFile(handle), JSON.stringify(blob.identity, null, 2) + "\n");
+  secureDir(userDir(handle));
+  writeSecret(identityFile(handle), JSON.stringify(blob.identity, null, 2) + "\n");
   if (blob.contacts != null)
-    writeFileSync(contactsFile(handle), JSON.stringify(blob.contacts, null, 2) + "\n");
+    writeSecretAtomic(contactsFile(handle), JSON.stringify(blob.contacts, null, 2) + "\n");
   if (blob.settings != null)
-    writeFileSync(settingsFile(handle), JSON.stringify(blob.settings, null, 2) + "\n");
+    writeSecretAtomic(settingsFile(handle), JSON.stringify(blob.settings, null, 2) + "\n");
   return handle;
 }
 

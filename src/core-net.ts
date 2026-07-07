@@ -5,7 +5,8 @@
 // the server only ever holds ciphertext.
 
 import { randomUUID } from "node:crypto";
-import { readFileSync, writeFileSync, renameSync } from "node:fs";
+import { readFileSync } from "node:fs";
+import { writeSecretAtomic } from "./secure-fs.ts";
 import { getMessage, insertMessage, markRead, unreadFor, type MessageRow, type Mailbox } from "./db.ts";
 import {
   contactByKey,
@@ -470,9 +471,8 @@ export interface PendingSnapshot {
 }
 
 function writeJsonAtomic(path: string, value: unknown): void {
-  const tmp = `${path}.${process.pid}.tmp`;
-  writeFileSync(tmp, JSON.stringify(value, null, 2) + "\n");
-  renameSync(tmp, path);
+  // pending.json carries decrypted message bodies, so keep it 0600 like the keys.
+  writeSecretAtomic(path, JSON.stringify(value, null, 2) + "\n");
 }
 
 // Hook side: the ids it has already surfaced (so it doesn't re-announce them in the

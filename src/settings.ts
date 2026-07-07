@@ -4,7 +4,8 @@
 // preference never risks rewriting the book, and from identity.json so it's not
 // tangled with the keypair.
 
-import { readFileSync, writeFileSync, renameSync } from "node:fs";
+import { readFileSync } from "node:fs";
+import { writeSecretAtomic } from "./secure-fs.ts";
 
 // How aggressively the agent tags contacts from conversation:
 //   auto    — apply obvious tags silently (default; a tag is local + reversible)
@@ -39,7 +40,5 @@ export function loadSettings(path: string): Settings {
 // Persist atomically (temp-write + rename), matching saveContacts — the file may be
 // touched from more than one process, so a reader always sees a complete file.
 export function saveSettings(path: string, settings: Settings): void {
-  const tmp = `${path}.${process.pid}.tmp`;
-  writeFileSync(tmp, JSON.stringify(settings, null, 2) + "\n");
-  renameSync(tmp, path);
+  writeSecretAtomic(path, JSON.stringify(settings, null, 2) + "\n");
 }
