@@ -17,10 +17,14 @@ export const DEFAULT_TAG_MODE: TagMode = "auto";
 
 export interface Settings {
   tagMode: TagMode;
+  // FRIENDS.md requests-only mode: a LOCAL mirror of the server-side handle flag,
+  // kept so my_key can warn "your handle is off" without a network round-trip. The
+  // server is the source of truth; this just reflects the last toggle from here.
+  requestsOnly: boolean;
 }
 
 function defaults(): Settings {
-  return { tagMode: DEFAULT_TAG_MODE };
+  return { tagMode: DEFAULT_TAG_MODE, requestsOnly: false };
 }
 
 // Read settings, falling back to defaults for a missing/corrupt file or any
@@ -31,7 +35,7 @@ export function loadSettings(path: string): Settings {
     const tagMode = TAG_MODES.includes(raw?.tagMode as TagMode)
       ? (raw!.tagMode as TagMode)
       : DEFAULT_TAG_MODE;
-    return { tagMode };
+    return { tagMode, requestsOnly: raw?.requestsOnly === true };
   } catch {
     return defaults();
   }

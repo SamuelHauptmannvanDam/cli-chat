@@ -29,8 +29,10 @@ import {
 } from "./contacts.ts";
 import { open, seal, type Identity } from "./crypto.ts";
 import { isHandle, parseKey } from "./key-code.ts";
-import type { MailboxClient } from "./mailbox-client.ts";
+import type { FriendRequest, MailboxClient, RequestOutcome } from "./mailbox-client.ts";
 import type { WireMessage } from "./identity.ts";
+
+const SIGNPUB_RE = /^[0-9a-f]{64}$/;
 
 export interface NetContext {
   me: Identity;
@@ -356,7 +358,11 @@ export type SendResult =
       reason: "no_contact" | "ambiguous" | "no_keys" | "bad_key";
       query: string;
       candidates?: string[];
-    };
+    }
+  // The name isn't a saved contact but DOES match a friend-of-friend, who is
+  // name-only and not directly messageable — steer the caller to a connect request
+  // (FRIENDS.md) instead of failing with no_contact.
+  | { ok: false; reason: "needs_request"; query: string; signPub: string; name: string | null; via: string[] };
 
 async function sendSealed(
   ctx: NetContext,
@@ -387,6 +393,29 @@ async function sendSealed(
   return wire.id;
 }
 
+// Best-effort: does this name match a single friend-of-friend? Returns a
+// `needs_request` steer if so, else null (offline / no match / ambiguous → let the
+// caller fall back to no_contact). Case-insensitive substring match on self-names.
+async function matchNetwork(
+  ctx: NetContext,
+  name: string,
+): Promise<Extract<SendResult, { reason: "needs_request" }> | null> {
+  const q = name.trim().toLowerCase();
+  if (!q) return null;
+  let net;
+  try {
+    net = await ctx.client.getNetwork();
+  } catch {
+    return null;
+  }
+  const hits = net.filter((p) => (p.name ?? "").toLowerCase().includes(q));
+  if (hits.length !== 1) return null; // no match, or ambiguous → not a clean steer
+  const p = hits[0]!;
+  const nick = (sp: string) =>
+    ctx.book.contacts.find((c) => c.signPub === sp)?.name ?? `${sp.slice(0, 8)}…`;
+  return { ok: false, reason: "needs_request", query: name, signPub: p.signPub, name: p.name, via: p.via.map(nick) };
+}
+
 // Send to a known contact by name, OR to a brand-new person via their key code
 // (in which case we save them as a contact named `to` for next time).
 export async function sendMessage(
@@ -407,6 +436,11 @@ export async function sendMessage(
       const id = await sendSealed(ctx, { name: args.to, ...keys }, args.body, null);
       return { ok: true, id, to: { name: args.to, signPub: keys.signPub }, saved: true };
     }
+    // Not a saved contact. Before failing, check the second-degree network: if the
+    // name matches a friend-of-friend, they're name-only (not messageable yet), so
+    // steer to a connect request rather than a dead "no_contact" (FRIENDS.md).
+    const fof = await matchNetwork(ctx, args.to);
+    if (fof) return fof;
     return { ok: false, reason: "no_contact", query: args.to };
   }
   if (r.status === "ambiguous")
@@ -583,4 +617,132 @@ export async function draftReply(
 
   const id = await sendSealed(ctx, { name: c.name, signPub: c.signPub, boxPub: c.boxPub }, args.body, original.id);
   return { ok: true, id, to: { name: c.name, signPub: c.signPub } };
+}
+
+// --- Friend requests (FRIENDS.md) ------------------------------------------
+// The consent handshake for the network path. A friend-of-friend is discovered
+// as a NAME + signPub only (no boxPub → un-messageable); you reach them by
+// sending a connect request they accept. Acceptance is the key exchange: both
+// sides gain the other's boxPub and become confirmed (mutual-edge) friends.
+
+export type RequestContactResult =
+  | { ok: true }
+  | { ok: false; reason: RequestOutcome | "bad_target" };
+
+// Send a connect request to a second-degree person, addressed by their signPub
+// (from the contacts-of-contacts list). `via` is an optional contact NAME we
+// resolve to the mutual's key, so the recipient sees "via <that person>".
+export async function requestContact(
+  ctx: NetContext,
+  args: { signPub: string; via?: string },
+): Promise<RequestContactResult> {
+  const to = (args.signPub ?? "").trim();
+  if (!SIGNPUB_RE.test(to)) return { ok: false, reason: "bad_target" };
+  let viaKey: string | null = null;
+  if (args.via) {
+    const r = resolve(ctx.book, args.via);
+    if (r.status !== "none" && r.status !== "ambiguous" && r.contact.signPub)
+      viaKey = r.contact.signPub;
+  }
+  const outcome = await ctx.client.requestContact(to, viaKey);
+  return outcome === "ok" ? { ok: true } : { ok: false, reason: outcome };
+}
+
+export interface IncomingRequest {
+  signPub: string;
+  name: string | null; // the requester's OWN self-name (untrusted, sanitised)
+  via: string[]; // your nickname(s) for the mutual it came through
+  at: number;
+}
+
+// Your incoming connect requests, plus any accepts that have landed since last
+// check (people who accepted YOUR request) — those are drained and saved as
+// contacts here, since the connection is already mutually agreed. Returns the
+// saved names so the caller can report "X accepted — added to your contacts".
+export async function listRequests(
+  ctx: NetContext,
+): Promise<{ incoming: IncomingRequest[]; accepted: string[] }> {
+  const accepted = await drainAccepts(ctx);
+  let reqs: FriendRequest[] = [];
+  try {
+    reqs = await ctx.client.getRequests();
+  } catch {
+    reqs = [];
+  }
+  const nick = (sp: string) =>
+    ctx.book.contacts.find((c) => c.signPub === sp)?.name ?? `${sp.slice(0, 8)}…`;
+  const incoming = reqs.map((r) => ({
+    signPub: r.fromSignPub,
+    name: cleanName(r.fromName) || null,
+    via: r.viaSignPub ? [nick(r.viaSignPub)] : [],
+    at: r.createdAt,
+  }));
+  return { incoming, accepted };
+}
+
+// Drain the accept-inbox: for each person who accepted a request of yours, save
+// them locally (you now hold their boxPub, so you can message them). Best-effort.
+export async function drainAccepts(ctx: NetContext): Promise<string[]> {
+  let accepts;
+  try {
+    accepts = await ctx.client.takeAccepts();
+  } catch {
+    return [];
+  }
+  const names: string[] = [];
+  for (const a of accepts) {
+    if (!SIGNPUB_RE.test(a.signPub) || !a.boxPub) continue;
+    const self = cleanName(a.name);
+    const name = self || `${a.signPub.slice(0, 8)}…`;
+    rememberContact(ctx, {
+      name,
+      signPub: a.signPub,
+      boxPub: a.boxPub,
+      auto: true,
+      selfName: self || undefined,
+    });
+    names.push(name);
+  }
+  return names;
+}
+
+export type AcceptRequestResult =
+  | { ok: true; name: string }
+  | { ok: false; reason: "no_request" | "bad_target" };
+
+// Accept an incoming request: the server hands back the requester's identity
+// (they were confirmed mutual on their side), which we save locally.
+export async function acceptRequest(
+  ctx: NetContext,
+  args: { signPub: string },
+): Promise<AcceptRequestResult> {
+  const from = (args.signPub ?? "").trim();
+  if (!SIGNPUB_RE.test(from)) return { ok: false, reason: "bad_target" };
+  const contact = await ctx.client.acceptRequest(from);
+  if (!contact) return { ok: false, reason: "no_request" };
+  const self = cleanName(contact.name);
+  const name = self || `${contact.signPub.slice(0, 8)}…`;
+  rememberContact(ctx, {
+    name,
+    signPub: contact.signPub,
+    boxPub: contact.boxPub,
+    auto: true,
+    selfName: self || undefined,
+  });
+  return { ok: true, name };
+}
+
+export type DeclineRequestResult =
+  | { ok: true }
+  | { ok: false; reason: "bad_target" };
+
+// Dismiss an incoming request without connecting.
+export async function declineRequest(
+  ctx: NetContext,
+  args: { signPub: string },
+): Promise<DeclineRequestResult> {
+  const from = (args.signPub ?? "").trim();
+  if (!SIGNPUB_RE.test(from)) return { ok: false, reason: "bad_target" };
+  await ctx.client.declineRequest(from);
+  return { ok: true };
 }

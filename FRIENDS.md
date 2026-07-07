@@ -199,14 +199,31 @@ Add `requests_only INTEGER NOT NULL DEFAULT 0` to `handles`.
 
 ### 4d. Handle rotation
 
+**Why it's safe — the handle is a rotatable alias, your keypair never changes.**
+Two separate things live here:
+
+| | Changes on rotate? | What it is |
+|---|---|---|
+| **Keypair** (`signPub` + `boxPub`) | ❌ never | The real cryptographic identity — what contacts are saved against and what mail is sealed to. |
+| **Handle** (`k7m2p4`) | ✅ that's the point | A short human-shareable alias the directory maps to the keypair. |
+
+Rotation swaps the alias; the thing it points to is untouched. So **every confirmed
+friend keeps working** (they cached your keys, never the code) and **the graph is
+untouched** (edges key on `signPub`) — only someone who knew the *old code* is cut
+off. That's the whole value: strand the spammers, lose nothing that matters.
+
 - `POST /handle/rotate` `{new_handle}` (signed) — insert `{new_handle → :me's
-  signPub/boxPub}`, delete every other `handles` row for `:me`'s `signPub`. One
-  active handle per identity.
-- Friends survive because they key on `signPub`, which never changes; bots holding
-  the old handle now `404` on resolve. Edges/graph key on `signPub` too, so the
-  network is untouched.
+  signPub/boxPub}` (carrying the `requests_only` flag), delete every other
+  `handles` row for `:me`'s `signPub`. One active handle per identity; the old code
+  now `404`s on resolve.
 - Client caches the new handle in `identity.json`; `my_key` returns it; a sync
   pushes it.
+
+**Rotation vs. requests-only — the two ends of the spam-defense ladder.** Rotate =
+"I still want an open handle, just a fresh one" (you're reachable by anyone you give
+the new code to). Requests-only (§4c) = "I don't want an open handle at all"
+(reachable only through accepted requests). Reach for rotate first — it's cheap and
+keeps you open; go requests-only if the spam is bad enough to shut the code entirely.
 
 ## 5. Client changes
 
@@ -216,10 +233,13 @@ best-effort like the edge push):
 - `request_contact` `{name}` — resolve a contacts-of-contacts entry (by name, using
   `via` to disambiguate) to its `signPub`, `POST /requests`. "Sent a connect
   request to Tobias (via Niels)."
-- Incoming requests surface like mail: the session/inbox hook adds a
-  **`[requests]`** line ("2 people want to connect: Sam (via Niels), …"), bodies
-  hidden-count style. `accept_request {name}` / `decline_request {name}` act on
-  them. Accept writes the contact locally + both edges land server-side.
+- Incoming requests surface via the **`requests`** tool (the agent calls it at
+  session start and on demand): it returns `incoming` (people wanting to connect)
+  and drains `accepted` (people who accepted the user's own request, auto-saved as
+  contacts). `accept_request {signPub}` / `decline_request {signPub}` act on the
+  incoming ones. Accept writes the contact locally + both edges land server-side.
+  *(Future enhancement: fold a `[requests]` count into the on-keystroke inbox hook
+  for hands-free surfacing, like `[inbox]`; today it's tool-driven.)*
 - `contacts` — the **Contacts of contacts** section renders `name · via <contact>`
   and **no handle**, with the affordance "say 'request <name>' to connect." Drop
   `fullKey`/`handle` from those rows.

@@ -89,7 +89,10 @@ describe("send failures", () => {
     ]);
     const r = await sendMessage(alice, { to: "Sam", body: "hi" });
     assert.equal(r.ok === false && r.reason, "ambiguous");
-    assert.deepEqual(r.ok === false ? r.candidates : null, ["Sam", "Sam"]);
+    assert.deepEqual(
+      r.ok === false && r.reason === "ambiguous" ? r.candidates : null,
+      ["Sam", "Sam"],
+    );
   });
 
   test("a contact without keys returns no_keys", async () => {
