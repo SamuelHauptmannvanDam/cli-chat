@@ -6,6 +6,7 @@
 
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { sessionFile, vaultDirtyFile } from "./paths.ts";
+import { writeSecret } from "./secure-fs.ts";
 
 export interface SessionState {
   token: string; // bearer session token (the secret)
@@ -28,7 +29,7 @@ export function loadSession(user: string): SessionState | null {
 }
 
 function write(user: string, s: SessionState): void {
-  writeFileSync(sessionFile(user), JSON.stringify(s, null, 2) + "\n");
+  writeSecret(sessionFile(user), JSON.stringify(s, null, 2) + "\n");
 }
 
 export function saveSession(user: string, token: string, email: string, now: number): void {

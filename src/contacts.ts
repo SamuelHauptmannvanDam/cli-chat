@@ -2,7 +2,8 @@
 // resolver. No social graph, no learned tags yet (Phase 2/3). Resolution is
 // case-insensitive match against the contact's name and any aliases.
 
-import { readFileSync, writeFileSync, renameSync } from "node:fs";
+import { readFileSync } from "node:fs";
+import { writeSecretAtomic } from "./secure-fs.ts";
 
 // Display names (the user's own, a nickname, a contact's self-name) are capped at
 // this many characters. Generous for any real name, but a hard limit so nobody can
@@ -279,9 +280,7 @@ export function loadContacts(path: string): ContactBook {
 // a newly-seen sender — so a plain full-file writeFileSync from each could interleave
 // and truncate it. Temp-write + rename means a reader always sees a complete file.
 export function saveContacts(path: string, book: ContactBook): void {
-  const tmp = `${path}.${process.pid}.tmp`;
-  writeFileSync(tmp, JSON.stringify(book, null, 2) + "\n");
-  renameSync(tmp, path);
+  writeSecretAtomic(path, JSON.stringify(book, null, 2) + "\n");
 }
 
 export type ResolveResult =
