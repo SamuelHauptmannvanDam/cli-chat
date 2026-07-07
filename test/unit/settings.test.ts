@@ -21,7 +21,7 @@ function withTmp(fn: (path: string) => void): void {
 
 test("loadSettings returns the default mode when the file is missing", () => {
   withTmp((path) => {
-    assert.deepEqual(loadSettings(path), { tagMode: DEFAULT_TAG_MODE });
+    assert.deepEqual(loadSettings(path), { tagMode: DEFAULT_TAG_MODE, requestsOnly: false });
   });
 });
 
@@ -31,8 +31,8 @@ test("default tag mode is auto", () => {
 
 test("saveSettings then loadSettings round-trips the mode", () => {
   withTmp((path) => {
-    saveSettings(path, { tagMode: "off" });
-    assert.deepEqual(loadSettings(path), { tagMode: "off" });
+    saveSettings(path, { tagMode: "off", requestsOnly: false });
+    assert.deepEqual(loadSettings(path), { tagMode: "off", requestsOnly: false });
   });
 });
 
