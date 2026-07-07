@@ -125,6 +125,7 @@ test("D1: handle registry register/resolve/isRegistered round-trips", async () =
   assert.deepEqual({ ...(await store.resolveHandle("AbC123")) }, {
     signPub: "signpub-1",
     boxPub: "boxpub-1",
+    requestsOnly: false, // FRIENDS.md: off by default
   });
   assert.equal(await store.resolveHandle("nope"), null);
   assert.equal(await store.isRegistered("signpub-1"), true);

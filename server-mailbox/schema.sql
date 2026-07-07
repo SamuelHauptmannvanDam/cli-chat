@@ -32,12 +32,19 @@ CREATE TABLE IF NOT EXISTS known (
 -- stored so contacts-of-contacts can show a second-degree person by their own name.
 -- On an existing D1 the CREATE is a no-op, so add the column once:
 --   wrangler d1 execute cli-chat --remote --command "ALTER TABLE handles ADD COLUMN name TEXT"
+-- `requests_only` (FRIENDS.md): when 1, GET /resolve/:handle returns 404 — the
+-- out-of-band send path is off, so strangers can't turn the code into a boxPub.
+-- The ONLY thing it changes; the user stays discoverable + requestable. On an
+-- existing D1 the CREATE is a no-op, so add the column once:
+--   wrangler d1 execute cli-chat --remote --command \
+--     "ALTER TABLE handles ADD COLUMN requests_only INTEGER NOT NULL DEFAULT 0"
 CREATE TABLE IF NOT EXISTS handles (
-  handle      TEXT PRIMARY KEY,
-  signPub     TEXT NOT NULL,
-  boxPub      TEXT NOT NULL,
-  name        TEXT,
-  created_at  INTEGER NOT NULL
+  handle        TEXT PRIMARY KEY,
+  signPub       TEXT NOT NULL,
+  boxPub        TEXT NOT NULL,
+  name          TEXT,
+  requests_only INTEGER NOT NULL DEFAULT 0,
+  created_at    INTEGER NOT NULL
 );
 -- Reverse lookup for the recipient-exists check on POST /messages.
 CREATE INDEX IF NOT EXISTS idx_handles_signpub ON handles (signPub);
@@ -59,6 +66,37 @@ CREATE TABLE IF NOT EXISTS edge_hidden (
   signpub TEXT PRIMARY KEY,
   since   INTEGER NOT NULL
 );
+
+-- Friend requests (FRIENDS.md): the consent handshake for the network path. A
+-- friend-of-friend is discovered as a NAME only (no boxPub → un-messageable);
+-- to reach them you send a request, which carries YOUR public keys so the
+-- recipient can seal an accept back. The recipient's boxPub is disclosed only on
+-- accept (via friend_accepts), so discovery never hands out send capability.
+-- One pending request per (to, from). Keys stored here are already-public
+-- (same class as the handles directory) — no message body is ever server-readable.
+CREATE TABLE IF NOT EXISTS friend_requests (
+  to_signpub   TEXT NOT NULL,   -- recipient (routes delivery)
+  from_signpub TEXT NOT NULL,   -- requester identity
+  from_boxpub  TEXT NOT NULL,   -- so the recipient can seal an accept back
+  from_name    TEXT,            -- requester self-name (shown on the card)
+  via_signpub  TEXT,            -- which mutual it came through ("via Niels")
+  created_at   INTEGER NOT NULL,
+  PRIMARY KEY (to_signpub, from_signpub)
+);
+CREATE INDEX IF NOT EXISTS idx_reqs_to ON friend_requests (to_signpub);
+
+-- Accept notifications: when C accepts A's request, a row is written here for A
+-- carrying C's public keys, so A learns the accept AND gains C's boxPub (the
+-- send capability) on their next pull. Read-and-clear (like a mail drain).
+CREATE TABLE IF NOT EXISTS friend_accepts (
+  to_signpub   TEXT NOT NULL,   -- the original requester, being notified
+  peer_signpub TEXT NOT NULL,   -- who accepted (now a confirmed friend)
+  peer_boxpub  TEXT NOT NULL,   -- their sealing key — the capability being granted
+  peer_name    TEXT,
+  created_at   INTEGER NOT NULL,
+  PRIMARY KEY (to_signpub, peer_signpub)
+);
+CREATE INDEX IF NOT EXISTS idx_accepts_to ON friend_accepts (to_signpub);
 
 -- ===========================================================================
 -- Account layer (AUTH-SYNC.md): optional, paid online account for multi-device

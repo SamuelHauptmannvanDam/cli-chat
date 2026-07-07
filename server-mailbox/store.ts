@@ -19,6 +19,28 @@ export interface MailSummary {
 export interface HandleRecord {
   signPub: string;
   boxPub: string;
+  // FRIENDS.md: when true the handle is in requests-only mode — /resolve returns
+  // 404, so the out-of-band send path is off. The route checks this and 404s.
+  requestsOnly?: boolean;
+}
+
+// --- Friend requests (FRIENDS.md) -------------------------------------------
+// One incoming connect request. Carries the requester's public keys + self-name
+// (so the recipient can seal an accept back) and the mutual it came through.
+export interface FriendRequestRecord {
+  fromSignPub: string;
+  fromBoxPub: string;
+  fromName: string | null;
+  viaSignPub: string | null;
+  createdAt: number;
+}
+
+// A person who accepted your request: their public identity, so you can save
+// them and (via boxPub) finally message them. Read-and-cleared like a mail drain.
+export interface AcceptedRecord {
+  signPub: string;
+  boxPub: string;
+  name: string | null;
 }
 
 // --- Account layer (AUTH-SYNC.md) -------------------------------------------
@@ -41,15 +63,15 @@ export interface VaultRecord {
   version: number;
 }
 
-// --- Contacts of contacts (CONTACTS-OF-CONTACTS.md) -------------------------
-// One person in the caller's second-degree network: their own public identity
-// (handle/name/boxPub, so you can write them) plus WHY they surfaced — how many
-// of your contacts have them (`mutuals`, for ranking) and which (`via`, signPubs
-// the client maps to your nicknames). No tags, no nicknames: a bare reachable node.
+// --- Contacts of contacts (CONTACTS-OF-CONTACTS.md, FRIENDS.md) --------------
+// One person in the caller's second-degree network. Deliberately NAME-ONLY: it
+// carries `signPub` (an opaque routing id used to address a connect request) but
+// NOT `boxPub` or `handle` — so discovery cannot hand out send capability. A
+// friend-of-friend is un-messageable by construction (no boxPub → can't seal);
+// you reach them via a friend request they accept (FRIENDS.md §1, §4a). `mutuals`
+// ranks; `via` are signPubs of YOUR contacts who link to them (mapped to nicks).
 export interface NetworkPerson {
   signPub: string;
-  boxPub: string;
-  handle: string;
   name: string | null; // their own self-name; null if they never set one
   mutuals: number;
   via: string[]; // signPubs of YOUR contacts who link to them
@@ -168,6 +190,50 @@ export interface Store {
   contactsOfContacts(owner: string, limit: number): NetworkPerson[] | Promise<NetworkPerson[]>;
   // Quiet opt-out: never surface this signPub in anyone's results. Never prompted.
   hideFromNetwork(signPub: string, now: number): void | Promise<void>;
+
+  // --- Friend requests (FRIENDS.md) -----------------------------------------
+  // Create a connect request from `from` → `to`. The requester's boxPub/name are
+  // looked up from their registered handle (not trusted from the client). Returns
+  // "self" (to == from), "unregistered" (requester has no handle to send from),
+  // "already_friends" (from already has an edge to to), "exists" (a pending
+  // request already sits there), or "ok".
+  createFriendRequest(
+    from: string,
+    to: string,
+    via: string | null,
+    now: number,
+  ):
+    | "ok" | "self" | "exists" | "already_friends" | "unregistered"
+    | Promise<"ok" | "self" | "exists" | "already_friends" | "unregistered">;
+  // Incoming requests waiting for `to`.
+  listFriendRequests(to: string): FriendRequestRecord[] | Promise<FriendRequestRecord[]>;
+  // `acceptor` accepts `requester`'s request: write BOTH edges (mutual), queue an
+  // accept notification back to the requester (with the acceptor's keys), delete
+  // the request, and return the requester's identity so the acceptor can save
+  // them. null if there was no such request.
+  acceptFriendRequest(
+    acceptor: string,
+    requester: string,
+    now: number,
+  ): AcceptedRecord | null | Promise<AcceptedRecord | null>;
+  // Drop a request without connecting.
+  declineFriendRequest(acceptor: string, requester: string): void | Promise<void>;
+  // Read-and-clear the accept notifications waiting for `requester` (people who
+  // accepted them). Draining these is how a requester gains the acceptor's boxPub.
+  takeAccepts(requester: string): AcceptedRecord[] | Promise<AcceptedRecord[]>;
+
+  // --- Handle controls (FRIENDS.md) -----------------------------------------
+  // Turn requests-only mode on/off for this identity's handle (kills/reopens the
+  // out-of-band /resolve path). No-op if the identity has no handle.
+  setRequestsOnly(signPub: string, on: boolean, now: number): void | Promise<void>;
+  // Swap this identity's handle for a fresh code: register newHandle → same keys,
+  // delete every other handle row for this signPub. "taken" if newHandle belongs
+  // to someone else; "no_identity" if this signPub has no handle to rotate.
+  rotateHandle(
+    signPub: string,
+    newHandle: string,
+    now: number,
+  ): "ok" | "taken" | "no_identity" | Promise<"ok" | "taken" | "no_identity">;
 }
 
 export function nodeSqliteStore(path: string): Store {
@@ -187,13 +253,35 @@ export function nodeSqliteStore(path: string): Store {
     CREATE INDEX IF NOT EXISTS idx_recipient ON messages (recipient, fetched_at);
     CREATE INDEX IF NOT EXISTS idx_created ON messages (created_at);
     CREATE TABLE IF NOT EXISTS handles (
-      handle      TEXT PRIMARY KEY,
-      signPub     TEXT NOT NULL,
-      boxPub      TEXT NOT NULL,
-      name        TEXT,
-      created_at  INTEGER NOT NULL
+      handle        TEXT PRIMARY KEY,
+      signPub       TEXT NOT NULL,
+      boxPub        TEXT NOT NULL,
+      name          TEXT,
+      requests_only INTEGER NOT NULL DEFAULT 0,
+      created_at    INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_handles_signpub ON handles (signPub);
+    -- Friend requests + accept notifications (FRIENDS.md). Kept in step with
+    -- server-mailbox/schema.sql. All CREATE IF NOT EXISTS → safe to re-apply.
+    CREATE TABLE IF NOT EXISTS friend_requests (
+      to_signpub   TEXT NOT NULL,
+      from_signpub TEXT NOT NULL,
+      from_boxpub  TEXT NOT NULL,
+      from_name    TEXT,
+      via_signpub  TEXT,
+      created_at   INTEGER NOT NULL,
+      PRIMARY KEY (to_signpub, from_signpub)
+    );
+    CREATE INDEX IF NOT EXISTS idx_reqs_to ON friend_requests (to_signpub);
+    CREATE TABLE IF NOT EXISTS friend_accepts (
+      to_signpub   TEXT NOT NULL,
+      peer_signpub TEXT NOT NULL,
+      peer_boxpub  TEXT NOT NULL,
+      peer_name    TEXT,
+      created_at   INTEGER NOT NULL,
+      PRIMARY KEY (to_signpub, peer_signpub)
+    );
+    CREATE INDEX IF NOT EXISTS idx_accepts_to ON friend_accepts (to_signpub);
     -- Contacts of contacts (CONTACTS-OF-CONTACTS.md): the second-degree graph.
     -- One row per (owner, contact) address-book edge, keyed by signPub.
     CREATE TABLE IF NOT EXISTS edges (
@@ -268,6 +356,12 @@ export function nodeSqliteStore(path: string): Store {
   } catch {
     /* column already present */
   }
+  // Same self-heal for requests-only mode (FRIENDS.md), added later still.
+  try {
+    db.exec(`ALTER TABLE handles ADD COLUMN requests_only INTEGER NOT NULL DEFAULT 0`);
+  } catch {
+    /* column already present */
+  }
   // Created after the column is guaranteed to exist (fresh or self-healed).
   db.exec(`CREATE INDEX IF NOT EXISTS idx_admission ON messages (recipient, sender, received_at)`);
 
@@ -324,11 +418,11 @@ export function nodeSqliteStore(path: string): Store {
     },
 
     resolveHandle(handle) {
-      return (
-        (db.prepare(`SELECT signPub, boxPub FROM handles WHERE handle = ?`).get(handle) as
-          | HandleRecord
-          | undefined) ?? null
-      );
+      const row = db
+        .prepare(`SELECT signPub, boxPub, requests_only FROM handles WHERE handle = ?`)
+        .get(handle) as { signPub: string; boxPub: string; requests_only: number } | undefined;
+      if (!row) return null;
+      return { signPub: row.signPub, boxPub: row.boxPub, requestsOnly: !!row.requests_only };
     },
 
     isRegistered(signPub) {
@@ -517,15 +611,22 @@ export function nodeSqliteStore(path: string): Store {
     },
 
     contactsOfContacts(owner, limit) {
-      // Self-join: my edges (e1) → my contacts' edges (e2). Exclude myself, people
-      // I already have, and anyone hidden. INNER JOIN handles so only reachable
-      // (registered) people surface, carrying handle/name/boxPub to write them.
+      // Mutual-only traversal (FRIENDS.md §4a): only CONFIRMED two-way friendships
+      // propagate, so a one-way save can't leak someone into a stranger's network.
+      //   e1  : me → friend        e1r : friend → me     (me ⇄ friend)
+      //   e2  : friend → fof       e2r : fof → friend    (friend ⇄ fof)
+      // Exclude myself, anyone I already have an edge to, and anyone hidden. JOIN
+      // handles so only registered people surface, but return NAME ONLY — no
+      // boxPub/handle — so discovery can't hand out send capability (§1). `signPub`
+      // is an opaque routing id used to address a connect request.
       const rows = db
         .prepare(
-          `SELECT e2.contact AS signPub, h.handle AS handle, h.name AS name, h.boxPub AS boxPub,
+          `SELECT e2.contact AS signPub, h.name AS name,
                   COUNT(*) AS mutuals, GROUP_CONCAT(e1.contact) AS via
            FROM edges e1
-           JOIN edges e2 ON e2.owner = e1.contact
+           JOIN edges e1r ON e1r.owner = e1.contact AND e1r.contact = e1.owner
+           JOIN edges e2  ON e2.owner  = e1.contact
+           JOIN edges e2r ON e2r.owner = e2.contact AND e2r.contact = e1.contact
            JOIN handles h ON h.signPub = e2.contact
            WHERE e1.owner = ?
              AND e2.contact <> ?
@@ -537,16 +638,12 @@ export function nodeSqliteStore(path: string): Store {
         )
         .all(owner, owner, owner, limit) as unknown as {
         signPub: string;
-        handle: string;
         name: string | null;
-        boxPub: string;
         mutuals: number;
         via: string;
       }[];
       return rows.map((r) => ({
         signPub: r.signPub,
-        boxPub: r.boxPub,
-        handle: r.handle,
         name: r.name,
         mutuals: Number(r.mutuals),
         via: r.via ? r.via.split(",") : [],
@@ -557,6 +654,138 @@ export function nodeSqliteStore(path: string): Store {
       db.prepare(
         `INSERT INTO edge_hidden (signpub, since) VALUES (?, ?) ON CONFLICT(signpub) DO NOTHING`,
       ).run(signPub, now);
+    },
+
+    // --- Friend requests (FRIENDS.md) --------------------------------------
+    createFriendRequest(from, to, via, now) {
+      if (!to || to === from) return "self";
+      // Requester's public keys come from THEIR registered handle, never trusted
+      // from the client — no handle means nothing to seal an accept back to.
+      const me = db
+        .prepare(`SELECT boxPub, name FROM handles WHERE signPub = ? LIMIT 1`)
+        .get(from) as { boxPub: string; name: string | null } | undefined;
+      if (!me) return "unregistered";
+      // Already connected (I have an edge to them) → nothing to request.
+      if (db.prepare(`SELECT 1 FROM edges WHERE owner = ? AND contact = ? LIMIT 1`).get(from, to))
+        return "already_friends";
+      const res = db
+        .prepare(
+          `INSERT INTO friend_requests (to_signpub, from_signpub, from_boxpub, from_name, via_signpub, created_at)
+           VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(to_signpub, from_signpub) DO NOTHING`,
+        )
+        .run(to, from, me.boxPub, me.name, via ?? null, now);
+      return Number(res.changes ?? 0) > 0 ? "ok" : "exists";
+    },
+
+    listFriendRequests(to) {
+      const rows = db
+        .prepare(
+          `SELECT from_signpub, from_boxpub, from_name, via_signpub, created_at
+           FROM friend_requests WHERE to_signpub = ? ORDER BY created_at ASC`,
+        )
+        .all(to) as unknown as {
+        from_signpub: string;
+        from_boxpub: string;
+        from_name: string | null;
+        via_signpub: string | null;
+        created_at: number;
+      }[];
+      return rows.map((r) => ({
+        fromSignPub: r.from_signpub,
+        fromBoxPub: r.from_boxpub,
+        fromName: r.from_name,
+        viaSignPub: r.via_signpub,
+        createdAt: Number(r.created_at),
+      }));
+    },
+
+    acceptFriendRequest(acceptor, requester, now) {
+      const req = db
+        .prepare(
+          `SELECT from_boxpub, from_name FROM friend_requests
+           WHERE to_signpub = ? AND from_signpub = ?`,
+        )
+        .get(acceptor, requester) as { from_boxpub: string; from_name: string | null } | undefined;
+      if (!req) return null;
+      // The acceptor's own keys (to hand back to the requester) come from their
+      // registered handle — canonical, not client-claimed.
+      const meRow = db
+        .prepare(`SELECT boxPub, name FROM handles WHERE signPub = ? LIMIT 1`)
+        .get(acceptor) as { boxPub: string; name: string | null } | undefined;
+      // Mutual edges: both now have each other, so they're confirmed friends and
+      // stop appearing in each other's contacts-of-contacts.
+      const addEdge = db.prepare(
+        `INSERT INTO edges (owner, contact, added_at) VALUES (?, ?, ?)
+         ON CONFLICT(owner, contact) DO NOTHING`,
+      );
+      addEdge.run(acceptor, requester, now);
+      addEdge.run(requester, acceptor, now);
+      // Queue the accept back to the requester, carrying the acceptor's boxPub —
+      // the send capability the requester gains only now.
+      if (meRow)
+        db.prepare(
+          `INSERT INTO friend_accepts (to_signpub, peer_signpub, peer_boxpub, peer_name, created_at)
+           VALUES (?, ?, ?, ?, ?) ON CONFLICT(to_signpub, peer_signpub) DO UPDATE SET
+             peer_boxpub = excluded.peer_boxpub, peer_name = excluded.peer_name`,
+        ).run(requester, acceptor, meRow.boxPub, meRow.name, now);
+      db.prepare(`DELETE FROM friend_requests WHERE to_signpub = ? AND from_signpub = ?`).run(
+        acceptor,
+        requester,
+      );
+      return { signPub: requester, boxPub: req.from_boxpub, name: req.from_name };
+    },
+
+    declineFriendRequest(acceptor, requester) {
+      db.prepare(`DELETE FROM friend_requests WHERE to_signpub = ? AND from_signpub = ?`).run(
+        acceptor,
+        requester,
+      );
+    },
+
+    takeAccepts(requester) {
+      const rows = db
+        .prepare(
+          `DELETE FROM friend_accepts WHERE to_signpub = ?
+           RETURNING peer_signpub, peer_boxpub, peer_name`,
+        )
+        .all(requester) as unknown as {
+        peer_signpub: string;
+        peer_boxpub: string;
+        peer_name: string | null;
+      }[];
+      return rows.map((r) => ({ signPub: r.peer_signpub, boxPub: r.peer_boxpub, name: r.peer_name }));
+    },
+
+    // --- Handle controls (FRIENDS.md) --------------------------------------
+    setRequestsOnly(signPub, on, now) {
+      db.prepare(`UPDATE handles SET requests_only = ? WHERE signPub = ?`).run(
+        on ? 1 : 0,
+        signPub,
+      );
+      void now;
+    },
+
+    rotateHandle(signPub, newHandle, now) {
+      const mine = db
+        .prepare(`SELECT boxPub, name, requests_only FROM handles WHERE signPub = ? LIMIT 1`)
+        .get(signPub) as
+        | { boxPub: string; name: string | null; requests_only: number }
+        | undefined;
+      if (!mine) return "no_identity";
+      const taken = db.prepare(`SELECT signPub FROM handles WHERE handle = ?`).get(newHandle) as
+        | { signPub: string }
+        | undefined;
+      if (taken && taken.signPub !== signPub) return "taken";
+      // Claim the new code (carrying keys + mode), then drop every other code for
+      // this identity — one active handle per signPub. Friends key on signPub, so
+      // they're unaffected; anyone holding the old code now 404s on resolve.
+      db.prepare(
+        `INSERT INTO handles (handle, signPub, boxPub, name, requests_only, created_at)
+         VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(handle) DO UPDATE SET
+           boxPub = excluded.boxPub, name = excluded.name, requests_only = excluded.requests_only`,
+      ).run(newHandle, signPub, mine.boxPub, mine.name, mine.requests_only, now);
+      db.prepare(`DELETE FROM handles WHERE signPub = ? AND handle <> ?`).run(signPub, newHandle);
+      return "ok";
     },
   };
 }

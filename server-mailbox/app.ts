@@ -312,6 +312,129 @@ export function createApp(deps: AppDeps): Hono {
     return c.json({ ok: true });
   });
 
+  // ==========================================================================
+  // Friend requests (FRIENDS.md): the consent handshake for the network path.
+  // You discover a friend-of-friend as a NAME + signPub (no boxPub → can't seal
+  // mail); to reach them you POST a request here. Your public keys ride with it
+  // (looked up from your handle, server-side); their boxPub is disclosed to you
+  // only when they accept. All routes signed by the local identity, like /edges.
+  // ==========================================================================
+  const isSignPub = (x: unknown): x is string => typeof x === "string" && /^[0-9a-f]{64}$/.test(x);
+
+  // Send a connect request to a second-degree person (owner = verified pubkey).
+  app.post("/requests", async (c) => {
+    if (await limited("post-ip", clientIp(c))) return c.json({ error: "rate limited" }, 429);
+    const raw = await c.req.text();
+    const auth = await verifyRequest((h) => c.req.header(h), "POST", "/requests", raw, now());
+    if (!auth.ok) return c.json({ error: auth.reason }, 401);
+    let body: { to?: string; via?: string };
+    try {
+      body = JSON.parse(raw);
+    } catch {
+      return c.json({ error: "invalid json" }, 400);
+    }
+    if (!isSignPub(body.to)) return c.json({ error: "missing or bad to" }, 400);
+    const via = isSignPub(body.via) ? body.via : null;
+    const result = await store.createFriendRequest(auth.pubkey, body.to, via, now());
+    if (result === "ok") {
+      notify?.(body.to); // wake the recipient so the request surfaces live
+      return c.json({ ok: true });
+    }
+    // Non-fatal outcomes carry a reason the client turns into a one-liner.
+    return c.json({ ok: false, reason: result }, result === "unregistered" ? 400 : 409);
+  });
+
+  // Your incoming connect requests (people who want to reach you).
+  app.get("/requests", async (c) => {
+    const auth = await verifyRequest((h) => c.req.header(h), "GET", "/requests", "", now());
+    if (!auth.ok) return c.json({ error: auth.reason }, 401);
+    const requests = await store.listFriendRequests(auth.pubkey);
+    return c.json({ ok: true, requests });
+  });
+
+  // Accept a request: writes both edges (mutual → confirmed friends), hands you
+  // the requester's identity to save, and queues the accept back to them (with
+  // your boxPub, the capability they gain). 404 if no such request is pending.
+  app.post("/requests/accept", async (c) => {
+    const raw = await c.req.text();
+    const auth = await verifyRequest((h) => c.req.header(h), "POST", "/requests/accept", raw, now());
+    if (!auth.ok) return c.json({ error: auth.reason }, 401);
+    let body: { from?: string };
+    try {
+      body = JSON.parse(raw);
+    } catch {
+      return c.json({ error: "invalid json" }, 400);
+    }
+    if (!isSignPub(body.from)) return c.json({ error: "missing or bad from" }, 400);
+    const contact = await store.acceptFriendRequest(auth.pubkey, body.from, now());
+    if (!contact) return c.json({ ok: false, reason: "no_request" }, 404);
+    notify?.(body.from); // wake the requester so they pull the accept in real time
+    return c.json({ ok: true, contact });
+  });
+
+  // Dismiss a request without connecting.
+  app.post("/requests/decline", async (c) => {
+    const raw = await c.req.text();
+    const auth = await verifyRequest((h) => c.req.header(h), "POST", "/requests/decline", raw, now());
+    if (!auth.ok) return c.json({ error: auth.reason }, 401);
+    let body: { from?: string };
+    try {
+      body = JSON.parse(raw);
+    } catch {
+      return c.json({ error: "invalid json" }, 400);
+    }
+    if (!isSignPub(body.from)) return c.json({ error: "missing or bad from" }, 400);
+    await store.declineFriendRequest(auth.pubkey, body.from);
+    return c.json({ ok: true });
+  });
+
+  // Read-and-clear the accepts waiting for you (people who accepted YOUR request).
+  // Draining these is how you gain the acceptor's boxPub and can finally message.
+  app.get("/requests/accepted", async (c) => {
+    const auth = await verifyRequest((h) => c.req.header(h), "GET", "/requests/accepted", "", now());
+    if (!auth.ok) return c.json({ error: auth.reason }, 401);
+    const accepted = await store.takeAccepts(auth.pubkey);
+    return c.json({ ok: true, accepted });
+  });
+
+  // Requests-only mode ("kill my handle"): turn the out-of-band /resolve path
+  // off (or back on). You stay discoverable + requestable; only instant contact
+  // by code goes away. Signed = only for your own handle.
+  app.post("/handle/requests-only", async (c) => {
+    const raw = await c.req.text();
+    const auth = await verifyRequest((h) => c.req.header(h), "POST", "/handle/requests-only", raw, now());
+    if (!auth.ok) return c.json({ error: auth.reason }, 401);
+    let body: { on?: boolean };
+    try {
+      body = JSON.parse(raw);
+    } catch {
+      return c.json({ error: "invalid json" }, 400);
+    }
+    await store.setRequestsOnly(auth.pubkey, body.on !== false, now());
+    return c.json({ ok: true, requestsOnly: body.on !== false });
+  });
+
+  // Rotate your handle: claim a fresh code for your keys and strand the old one.
+  // Friends key on signPub so they're unaffected; anyone holding the old code
+  // 404s on resolve. Signed = only for your own identity.
+  app.post("/handle/rotate", async (c) => {
+    const raw = await c.req.text();
+    const auth = await verifyRequest((h) => c.req.header(h), "POST", "/handle/rotate", raw, now());
+    if (!auth.ok) return c.json({ error: auth.reason }, 401);
+    let body: { handle?: string };
+    try {
+      body = JSON.parse(raw);
+    } catch {
+      return c.json({ error: "invalid json" }, 400);
+    }
+    if (!body.handle || !/^[0-9A-Za-z]{6}$/.test(body.handle))
+      return c.json({ error: "handle must be 6 letters/digits" }, 400);
+    const result = await store.rotateHandle(auth.pubkey, body.handle, now());
+    if (result === "taken") return c.json({ ok: false, reason: "taken" }, 409);
+    if (result === "no_identity") return c.json({ ok: false, reason: "no_identity" }, 404);
+    return c.json({ ok: true, handle: body.handle });
+  });
+
   // Resolve a handle → public keys. The values returned are public keys, but the
   // route is the one that turns a handle into a messageable key, so it's gated two
   // ways against directory harvesting (PLAN open Q#7): a per-IP rate limit (the
@@ -327,8 +450,11 @@ export function createApp(deps: AppDeps): Hono {
     const auth = await verifyRequest((h) => c.req.header(h), "GET", path, "", now());
     if (!auth.ok) return c.json({ error: auth.reason }, 401);
     const rec = await store.resolveHandle(c.req.param("handle"));
-    if (!rec) return c.json({ error: "not found" }, 404);
-    return c.json(rec);
+    // A requests-only handle (FRIENDS.md) reads as not-found for the out-of-band
+    // path: the code can't be turned into a boxPub, so strangers can't seal mail.
+    // The owner stays reachable via connect requests, just not by code.
+    if (!rec || rec.requestsOnly) return c.json({ error: "not found" }, 404);
+    return c.json({ signPub: rec.signPub, boxPub: rec.boxPub });
   });
 
   // ==========================================================================
