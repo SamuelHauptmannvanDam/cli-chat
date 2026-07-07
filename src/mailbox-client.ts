@@ -5,16 +5,36 @@ import { makeAuthHeaders } from "./auth.ts";
 import type { Identity } from "./crypto.ts";
 import type { WireMessage } from "./identity.ts";
 
-// One person in your second-degree network (CONTACTS-OF-CONTACTS.md). `via` are
-// the signPubs of YOUR contacts who link to them (the client maps to nicknames).
+// One person in your second-degree network (CONTACTS-OF-CONTACTS.md, FRIENDS.md).
+// NAME-ONLY: `signPub` is an opaque routing id for addressing a connect request —
+// there's no boxPub/handle, so you can't message them directly (that's the point).
+// `via` are the signPubs of YOUR contacts who link to them (mapped to nicknames).
 export interface NetworkPerson {
   signPub: string;
-  boxPub: string;
-  handle: string;
   name: string | null;
   mutuals: number;
   via: string[];
 }
+
+// One incoming connect request (FRIENDS.md). Carries the requester's public keys
+// (so you can seal an accept back) + which mutual it came `via`.
+export interface FriendRequest {
+  fromSignPub: string;
+  fromBoxPub: string;
+  fromName: string | null;
+  viaSignPub: string | null;
+  createdAt: number;
+}
+
+// A confirmed contact handed back on accept / drained from your accept-inbox: the
+// person's public identity, including the boxPub you need to finally message them.
+export interface AcceptedContact {
+  signPub: string;
+  boxPub: string;
+  name: string | null;
+}
+
+export type RequestOutcome = "ok" | "self" | "exists" | "already_friends" | "unregistered";
 
 export interface MailboxClient {
   send(msg: WireMessage): Promise<void>;
@@ -29,6 +49,16 @@ export interface MailboxClient {
   getNetwork(): Promise<NetworkPerson[]>;
   // Quiet opt-out: never appear in anyone's contacts-of-contacts. Never surfaced.
   hideFromNetwork(): Promise<void>;
+  // Friend requests (FRIENDS.md): request a second-degree person by signPub, list
+  // your incoming requests, accept/decline, and drain the accepts owed to you.
+  requestContact(to: string, via?: string | null): Promise<RequestOutcome>;
+  getRequests(): Promise<FriendRequest[]>;
+  acceptRequest(from: string): Promise<AcceptedContact | null>;
+  declineRequest(from: string): Promise<void>;
+  takeAccepts(): Promise<AcceptedContact[]>;
+  // Handle controls (FRIENDS.md): requests-only mode + handle rotation.
+  setRequestsOnly(on: boolean): Promise<void>;
+  rotateHandle(handle: string): Promise<"ok" | "taken" | "no_identity">;
 }
 
 export function createMailboxClient(
@@ -149,6 +179,84 @@ export function createMailboxClient(
         headers: headers("POST", "/edges/hidden", ""),
       });
       if (!res.ok) await fail(res, "hide");
+    },
+
+    async requestContact(to, via) {
+      const body = JSON.stringify({ to, ...(via ? { via } : {}) });
+      const res = await fetch(`${base}/requests`, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...headers("POST", "/requests", body) },
+        body,
+      });
+      // 409/400 carry a `reason` the caller turns into a one-liner; 401/5xx throw.
+      if (res.status === 409 || res.status === 400) {
+        const data = (await res.json().catch(() => ({}))) as { reason?: RequestOutcome };
+        if (data.reason) return data.reason;
+      }
+      if (!res.ok) await fail(res, "request");
+      return "ok";
+    },
+
+    async getRequests() {
+      const res = await fetch(`${base}/requests`, { headers: headers("GET", "/requests", "") });
+      if (!res.ok) await fail(res, "requests");
+      const data = (await res.json()) as { requests: FriendRequest[] };
+      return data.requests ?? [];
+    },
+
+    async acceptRequest(from) {
+      const body = JSON.stringify({ from });
+      const res = await fetch(`${base}/requests/accept`, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...headers("POST", "/requests/accept", body) },
+        body,
+      });
+      if (res.status === 404) return null;
+      if (!res.ok) await fail(res, "accept");
+      const data = (await res.json()) as { contact: AcceptedContact };
+      return data.contact ?? null;
+    },
+
+    async declineRequest(from) {
+      const body = JSON.stringify({ from });
+      const res = await fetch(`${base}/requests/decline`, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...headers("POST", "/requests/decline", body) },
+        body,
+      });
+      if (!res.ok) await fail(res, "decline");
+    },
+
+    async takeAccepts() {
+      const res = await fetch(`${base}/requests/accepted`, {
+        headers: headers("GET", "/requests/accepted", ""),
+      });
+      if (!res.ok) await fail(res, "accepts");
+      const data = (await res.json()) as { accepted: AcceptedContact[] };
+      return data.accepted ?? [];
+    },
+
+    async setRequestsOnly(on) {
+      const body = JSON.stringify({ on });
+      const res = await fetch(`${base}/handle/requests-only`, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...headers("POST", "/handle/requests-only", body) },
+        body,
+      });
+      if (!res.ok) await fail(res, "requests-only");
+    },
+
+    async rotateHandle(handle) {
+      const body = JSON.stringify({ handle });
+      const res = await fetch(`${base}/handle/rotate`, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...headers("POST", "/handle/rotate", body) },
+        body,
+      });
+      if (res.status === 409) return "taken";
+      if (res.status === 404) return "no_identity";
+      if (!res.ok) await fail(res, "rotate");
+      return "ok";
     },
   };
 }

@@ -15,7 +15,9 @@ before(async () => {
 });
 after(() => mb.close());
 
-// me → alice → carol. carol is registered (reachable) with a self-name.
+// me ⇄ alice ⇄ carol, all mutual — contacts-of-contacts now traverses CONFIRMED
+// (two-way) friendships only (FRIENDS.md §4a), so every edge is reciprocated.
+// carol is registered (reachable) with a self-name.
 async function scenario() {
   const me = generateIdentity();
   const alice = generateIdentity();
@@ -24,12 +26,13 @@ async function scenario() {
   const aliceC = createMailboxClient(mb.baseUrl, alice, now);
   const carolC = createMailboxClient(mb.baseUrl, carol, now);
   await carolC.registerHandle(carol.signPub.slice(0, 6), "Carol C");
-  await meC.pushEdges([alice.signPub]); // alice is my contact
-  await aliceC.pushEdges([carol.signPub]); // carol is alice's contact
+  await meC.pushEdges([alice.signPub]); // me → alice
+  await aliceC.pushEdges([me.signPub, carol.signPub]); // alice → me, alice → carol
+  await carolC.pushEdges([alice.signPub]); // carol → alice
   return { me, alice, carol, meC, aliceC, carolC };
 }
 
-test("getNetwork returns a contact-of-contact with name + via", async () => {
+test("getNetwork returns a contact-of-contact with name + via (no send key)", async () => {
   const { alice, carol, meC } = await scenario();
   const net = await meC.getNetwork();
   assert.equal(net.length, 1);
@@ -38,7 +41,25 @@ test("getNetwork returns a contact-of-contact with name + via", async () => {
   assert.equal(p.name, "Carol C"); // their OWN self-name
   assert.equal(p.mutuals, 1);
   assert.deepEqual(p.via, [alice.signPub]); // my contact who links to them
-  assert.ok(p.boxPub && p.handle); // reachable → writeable
+  // Discovery is NAME-ONLY: no boxPub/handle, so a friend-of-friend can't be
+  // sealed mail directly — you reach them via a connect request (FRIENDS.md §1).
+  assert.equal((p as unknown as Record<string, unknown>).boxPub, undefined);
+  assert.equal((p as unknown as Record<string, unknown>).handle, undefined);
+});
+
+test("a one-way (non-mutual) edge does NOT propagate into the network", async () => {
+  const me = generateIdentity();
+  const alice = generateIdentity();
+  const carol = generateIdentity();
+  const meC = createMailboxClient(mb.baseUrl, me, now);
+  const aliceC = createMailboxClient(mb.baseUrl, alice, now);
+  const carolC = createMailboxClient(mb.baseUrl, carol, now);
+  await carolC.registerHandle(carol.signPub.slice(0, 6), "Carol C");
+  // me ⇄ alice is mutual, but alice → carol is one-way (carol never saved alice).
+  await meC.pushEdges([alice.signPub]);
+  await aliceC.pushEdges([me.signPub, carol.signPub]);
+  const net = await meC.getNetwork();
+  assert.equal(net.length, 0, "a one-way save must not leak someone into the graph");
 });
 
 test("a second-degree person you already have is excluded", async () => {

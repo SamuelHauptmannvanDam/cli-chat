@@ -708,11 +708,12 @@ const TOOLS: {
       "data you filter to resolve 'who's tagged work?' and to build the roster for " +
       "'write everyone from work' — see the server instructions for the group-send flow. " +
       "ALSO returns `contactsOfContacts`: people reachable THROUGH your contacts " +
-      "(second-degree), each with `name` (their own self-name), `handle`, `via` (which " +
-      "of your contacts they come through), and `fullKey`. Render these as a separate " +
-      "'Contacts of contacts' section — e.g. 'Tobias · via Niels · handle'. To write " +
-      "one, they aren't saved yet, so send_message with their `handle` as `key` (or the " +
-      "`fullKey`); the `via` field is what resolves 'write the Tobias that Niels knows'.",
+      "(second-degree), each with `name` (their own self-name), `via` (which of your " +
+      "contacts they come through), and `signPub` (an opaque routing id — NO handle, " +
+      "by design). Render these as a separate 'Contacts of contacts' section — e.g. " +
+      "'Tobias · via Niels'. They are NAME-ONLY and not directly messageable; to reach " +
+      "one you send a connect request they accept (the request flow ships in the client " +
+      "stage). The `via` field is what resolves 'the Tobias that Niels knows'.",
     inputSchema: {},
     run: async (s) => {
       const fmt = (c: (typeof s.book.contacts)[number]) => ({
@@ -738,11 +739,13 @@ const TOOLS: {
       let contactsOfContacts: unknown[] = [];
       try {
         const people = await s.ctx.client.getNetwork();
+        // Name-only (FRIENDS.md): no handle/fullKey — a friend-of-friend isn't
+        // directly messageable. `signPub` is the routing id used to send them a
+        // connect request (request_contact, added in the client stage).
         contactsOfContacts = people.map((p) => ({
-          name: p.name ?? p.handle, // their OWN self-name (fallback: handle)
-          handle: p.handle,
+          name: p.name, // their OWN self-name
           via: p.via.map(nick),
-          fullKey: encodeKey(p.signPub, p.boxPub),
+          signPub: p.signPub,
         }));
       } catch {
         /* offline / unreachable — just omit the section */

@@ -4,7 +4,9 @@
 // Node adapter is the dev/test path; this is the production target.
 
 import type {
+  AcceptedRecord,
   AccountRecord,
+  FriendRequestRecord,
   HandleRecord,
   LoginPoll,
   MailSummary,
@@ -91,10 +93,12 @@ export function d1Store(db: D1Like): Store {
     },
 
     async resolveHandle(handle: string): Promise<HandleRecord | null> {
-      return (await db
-        .prepare(`SELECT signPub, boxPub FROM handles WHERE handle = ?`)
+      const row = (await db
+        .prepare(`SELECT signPub, boxPub, requests_only FROM handles WHERE handle = ?`)
         .bind(handle)
-        .first()) as HandleRecord | null;
+        .first()) as { signPub: string; boxPub: string; requests_only: number } | null;
+      if (!row) return null;
+      return { signPub: row.signPub, boxPub: row.boxPub, requestsOnly: !!row.requests_only };
     },
 
     async isRegistered(signPub: string): Promise<boolean> {
@@ -317,12 +321,18 @@ export function d1Store(db: D1Like): Store {
     },
 
     async contactsOfContacts(owner: string, limit: number): Promise<NetworkPerson[]> {
+      // Mutual-only traversal (FRIENDS.md §4a): me⇄friend (e1/e1r) and friend⇄fof
+      // (e2/e2r) must both exist, so only confirmed two-way friendships propagate.
+      // Return NAME ONLY — no boxPub/handle — so discovery can't hand out send
+      // capability; `signPub` is an opaque routing id for addressing a request.
       const { results } = await db
         .prepare(
-          `SELECT e2.contact AS signPub, h.handle AS handle, h.name AS name, h.boxPub AS boxPub,
+          `SELECT e2.contact AS signPub, h.name AS name,
                   COUNT(*) AS mutuals, GROUP_CONCAT(e1.contact) AS via
            FROM edges e1
-           JOIN edges e2 ON e2.owner = e1.contact
+           JOIN edges e1r ON e1r.owner = e1.contact AND e1r.contact = e1.owner
+           JOIN edges e2  ON e2.owner  = e1.contact
+           JOIN edges e2r ON e2r.owner = e2.contact AND e2r.contact = e1.contact
            JOIN handles h ON h.signPub = e2.contact
            WHERE e1.owner = ?
              AND e2.contact <> ?
@@ -336,15 +346,11 @@ export function d1Store(db: D1Like): Store {
         .all();
       return (results as {
         signPub: string;
-        handle: string;
         name: string | null;
-        boxPub: string;
         mutuals: number;
         via: string;
       }[]).map((r) => ({
         signPub: r.signPub,
-        boxPub: r.boxPub,
-        handle: r.handle,
         name: r.name,
         mutuals: Number(r.mutuals),
         via: r.via ? r.via.split(",") : [],
@@ -356,6 +362,149 @@ export function d1Store(db: D1Like): Store {
         .prepare(`INSERT INTO edge_hidden (signpub, since) VALUES (?, ?) ON CONFLICT(signpub) DO NOTHING`)
         .bind(signPub, now)
         .run();
+    },
+
+    // --- Friend requests (FRIENDS.md) --------------------------------------
+    async createFriendRequest(from: string, to: string, via: string | null, now: number) {
+      if (!to || to === from) return "self";
+      const me = (await db
+        .prepare(`SELECT boxPub, name FROM handles WHERE signPub = ? LIMIT 1`)
+        .bind(from)
+        .first()) as { boxPub: string; name: string | null } | null;
+      if (!me) return "unregistered";
+      const edge = await db
+        .prepare(`SELECT 1 AS x FROM edges WHERE owner = ? AND contact = ? LIMIT 1`)
+        .bind(from, to)
+        .first();
+      if (edge != null) return "already_friends";
+      const res = (await db
+        .prepare(
+          `INSERT INTO friend_requests (to_signpub, from_signpub, from_boxpub, from_name, via_signpub, created_at)
+           VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(to_signpub, from_signpub) DO NOTHING`,
+        )
+        .bind(to, from, me.boxPub, me.name, via ?? null, now)
+        .run()) as { meta?: { changes?: number } };
+      return Number(res?.meta?.changes ?? 0) > 0 ? "ok" : "exists";
+    },
+
+    async listFriendRequests(to: string): Promise<FriendRequestRecord[]> {
+      const { results } = await db
+        .prepare(
+          `SELECT from_signpub, from_boxpub, from_name, via_signpub, created_at
+           FROM friend_requests WHERE to_signpub = ? ORDER BY created_at ASC`,
+        )
+        .bind(to)
+        .all();
+      return (results as {
+        from_signpub: string;
+        from_boxpub: string;
+        from_name: string | null;
+        via_signpub: string | null;
+        created_at: number;
+      }[]).map((r) => ({
+        fromSignPub: r.from_signpub,
+        fromBoxPub: r.from_boxpub,
+        fromName: r.from_name,
+        viaSignPub: r.via_signpub,
+        createdAt: Number(r.created_at),
+      }));
+    },
+
+    async acceptFriendRequest(acceptor: string, requester: string, now: number): Promise<AcceptedRecord | null> {
+      const req = (await db
+        .prepare(
+          `SELECT from_boxpub, from_name FROM friend_requests
+           WHERE to_signpub = ? AND from_signpub = ?`,
+        )
+        .bind(acceptor, requester)
+        .first()) as { from_boxpub: string; from_name: string | null } | null;
+      if (!req) return null;
+      const meRow = (await db
+        .prepare(`SELECT boxPub, name FROM handles WHERE signPub = ? LIMIT 1`)
+        .bind(acceptor)
+        .first()) as { boxPub: string; name: string | null } | null;
+      await db
+        .prepare(
+          `INSERT INTO edges (owner, contact, added_at) VALUES (?, ?, ?)
+           ON CONFLICT(owner, contact) DO NOTHING`,
+        )
+        .bind(acceptor, requester, now)
+        .run();
+      await db
+        .prepare(
+          `INSERT INTO edges (owner, contact, added_at) VALUES (?, ?, ?)
+           ON CONFLICT(owner, contact) DO NOTHING`,
+        )
+        .bind(requester, acceptor, now)
+        .run();
+      if (meRow)
+        await db
+          .prepare(
+            `INSERT INTO friend_accepts (to_signpub, peer_signpub, peer_boxpub, peer_name, created_at)
+             VALUES (?, ?, ?, ?, ?) ON CONFLICT(to_signpub, peer_signpub) DO UPDATE SET
+               peer_boxpub = excluded.peer_boxpub, peer_name = excluded.peer_name`,
+          )
+          .bind(requester, acceptor, meRow.boxPub, meRow.name, now)
+          .run();
+      await db
+        .prepare(`DELETE FROM friend_requests WHERE to_signpub = ? AND from_signpub = ?`)
+        .bind(acceptor, requester)
+        .run();
+      return { signPub: requester, boxPub: req.from_boxpub, name: req.from_name };
+    },
+
+    async declineFriendRequest(acceptor: string, requester: string) {
+      await db
+        .prepare(`DELETE FROM friend_requests WHERE to_signpub = ? AND from_signpub = ?`)
+        .bind(acceptor, requester)
+        .run();
+    },
+
+    async takeAccepts(requester: string): Promise<AcceptedRecord[]> {
+      const { results } = await db
+        .prepare(
+          `DELETE FROM friend_accepts WHERE to_signpub = ?
+           RETURNING peer_signpub, peer_boxpub, peer_name`,
+        )
+        .bind(requester)
+        .all();
+      return (results as { peer_signpub: string; peer_boxpub: string; peer_name: string | null }[]).map(
+        (r) => ({ signPub: r.peer_signpub, boxPub: r.peer_boxpub, name: r.peer_name }),
+      );
+    },
+
+    // --- Handle controls (FRIENDS.md) --------------------------------------
+    async setRequestsOnly(signPub: string, on: boolean, _now: number) {
+      await db
+        .prepare(`UPDATE handles SET requests_only = ? WHERE signPub = ?`)
+        .bind(on ? 1 : 0, signPub)
+        .run();
+    },
+
+    async rotateHandle(signPub: string, newHandle: string, now: number) {
+      const mine = (await db
+        .prepare(`SELECT boxPub, name, requests_only FROM handles WHERE signPub = ? LIMIT 1`)
+        .bind(signPub)
+        .first()) as { boxPub: string; name: string | null; requests_only: number } | null;
+      if (!mine) return "no_identity";
+      const taken = (await db
+        .prepare(`SELECT signPub FROM handles WHERE handle = ?`)
+        .bind(newHandle)
+        .first()) as { signPub: string } | null;
+      if (taken && taken.signPub !== signPub) return "taken";
+      await db
+        .prepare(
+          `INSERT INTO handles (handle, signPub, boxPub, name, requests_only, created_at)
+           VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(handle) DO UPDATE SET
+             boxPub = excluded.boxPub, name = excluded.name, requests_only = excluded.requests_only`,
+        )
+        .bind(newHandle, signPub, mine.boxPub, mine.name, mine.requests_only, now)
+        .run();
+      await db
+        .prepare(`DELETE FROM handles WHERE signPub = ? AND handle <> ?`)
+        .bind(signPub, newHandle)
+        .run();
+      return "ok";
     },
   };
 }
