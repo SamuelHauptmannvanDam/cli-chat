@@ -1508,11 +1508,13 @@ server.registerTool(
       "CHAT ('auto chat' / 'auto' / 'chat assist': same loop, but YOU answer per the " +
       "rails). Pass quiet=true ONLY for 'auto chat, quiet' (suppresses mail notices " +
       "in the user's other sessions; only assistant escalations get through there). " +
-      "Run the `command` as a background task; when it EXITS, call `chat_batch` to " +
-      "fetch the waiting messages, render them as the live feed, then run the SAME " +
-      "command again in the background to keep the inbox live. Do NOT read the " +
-      "waker's output file or narrate the raw command. (Full choreography is in the " +
-      "server instructions.)",
+      "Run the `command` this tool RETURNS as a background task — call this tool " +
+      "FIRST, alone, and only then launch (never batch the launch in parallel with " +
+      "this call, and never reconstruct the command yourself from docs or memory). " +
+      "When the waker EXITS, call `chat_batch` to fetch the waiting messages, render " +
+      "them as the live feed, then run the SAME command again in the background to " +
+      "keep the inbox live. Do NOT read the waker's output file or narrate the raw " +
+      "command. (Full choreography is in the server instructions.)",
     inputSchema: {
       quiet: z
         .boolean()

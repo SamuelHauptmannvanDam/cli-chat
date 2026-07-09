@@ -109,6 +109,10 @@ what actually creates/attaches the online account.
 When the user says **"chat"** (or "go live" / "start chat", and also "watch" /
 "watch for messages" / "keep an eye out"), open the live inbox:
 call `start_chat` to get a shell `command` and run it as a **background task**.
+**Sequence strictly: launch the waker only AFTER `start_chat` returns, using the
+`command` it returned** — never in the same parallel batch as the tool call, and
+never a command you reconstructed from docs or memory (a jumped-ahead launch is
+exactly how the raw path ends up on screen, and it misses env the server embeds).
 **Always set the background-shell tool's `description`** to a plain phrase the end
 user reads *instead of* the command — "Listening for new messages" on first start,
 "Checking new messages" on relaunch; **never run it bare** (that shows the raw

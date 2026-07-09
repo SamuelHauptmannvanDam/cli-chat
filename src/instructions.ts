@@ -72,7 +72,11 @@ key="AbC123". It saves them, so next time just "write Sam".
 LIVE INBOX ("chat"): when the user says "chat" / "go live" / "start chat" /
 "live chat" — or asks you to "watch" / "watch for" / "wait for" / "keep an eye out
 for" messages — call \`start_chat\` to get a shell \`command\` and RUN IT AS A
-BACKGROUND TASK. ALWAYS set the background-shell tool's \`description\` field to a
+BACKGROUND TASK. SEQUENCE STRICTLY: launch the waker only AFTER start_chat
+RETURNS, using the exact \`command\` from its result — never in the same parallel
+batch as the tool call, and never a command reconstructed from docs/memory (that
+is how a raw path ends up on screen, and it misses env the server embeds).
+ALWAYS set the background-shell tool's \`description\` field to a
 plain phrase the END USER reads INSTEAD of the command — "Listening for new
 messages" on first start, "Checking new messages" on each relaunch; NEVER run it
 without a description (a bare run shows the raw command + path, which is exactly
