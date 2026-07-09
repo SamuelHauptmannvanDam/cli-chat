@@ -1,10 +1,10 @@
 # Push delivery spec — background WebSocket warmer
 
-Status: design — the background warmer is implemented; the live mode is now the
-"chat" inbox (await-mail waker + `chat_batch`, see `LIVE-INBOX.md`), which replaced
-the old in-call `watch` tool. The desktop notification is opt-in via
-`MESSENGER_NOTIFY=1`, off by default.
-Supersedes the 3-second poll loop in `listen_for_messages`.
+Status: implemented and deployed. The background warmer runs in the MCP server;
+the live mode is the "chat" inbox (await-mail waker + `chat_batch`, see
+`LIVE-INBOX.md`), which replaced the old in-call `watch` tool. The desktop
+notification is opt-in via `MESSENGER_NOTIFY=1`, off by default.
+Superseded the 3-second poll loop in `listen_for_messages`.
 
 ## Goal
 Deliver new mail to a user's machine **the instant it lands**, while the user keeps
@@ -80,8 +80,6 @@ Why wake-then-pull instead of pushing ciphertext directly:
 - **Reuses all existing client code** — the warmer's only job on wake is to call
   `sync(ctx)`, which already drains, decrypts, caches, and marks fetched.
 - Cost is one extra sub-second round-trip per message — negligible at chat rates.
-- (Pushing full ciphertext in the frame is a possible later optimization; not
-  worth the dedup complexity now.)
 
 #### WebSocket auth
 The MCP server runs on Node, so it can set arbitrary headers on the upgrade
@@ -180,19 +178,3 @@ the same store swap that drops the Node floor off `node:sqlite`/Node 24.
   one pull per actual message.
 - D1 reads were never the binding constraint (billions/month); Worker **request
   count** was — and that's exactly what push removes.
-
-## Rollout (backward compatible)
-1. Ship the DO + `/connect` route; keep all HTTP routes. Old clients keep polling
-   and work unchanged.
-2. Add the client background warmer; if the WS fails to connect, it falls back to
-   the slow poll — so it degrades gracefully on any mailbox without the DO.
-3. Once adoption is in place, lengthen/disable the legacy 3s loop.
-
-## Open questions
-- Per-recipient DO vs. a sharded scheme if a single recipient ever has many
-  devices/sockets (fine as-is for now).
-- Whether to eventually push ciphertext in the wake frame to save the pull
-  round-trip (optimization, not needed initially).
-- Token/rate-limiting on `/connect` and `/messages` before opening the mailbox
-  beyond a trusted group (the relay is currently unauthenticated at the app level
-  aside from request signing).

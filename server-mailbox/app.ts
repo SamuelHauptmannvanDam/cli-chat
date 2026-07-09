@@ -1,4 +1,4 @@
-// The hosted mailbox as a portable Hono app. Three routes from PLAN.md §6:
+// The hosted mailbox as a portable Hono app. The three core routes:
 //   POST /messages       — store an encrypted blob (sender must sign)
 //   GET  /mailbox         — count + metadata of waiting mail (recipient signs)
 //   GET  /messages        — drain the blobs (recipient signs), marks fetched
