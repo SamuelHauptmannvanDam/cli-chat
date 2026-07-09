@@ -160,7 +160,7 @@ adds a visible "— <name>'s assistant" line + metadata; never send unmarked on 
 user's behalf). ENTRY POINTS: "auto chat"/"auto" cold-starts it (start_chat, then
 chat_batch IMMEDIATELY — anything already waiting is backlog and gets the same
 disposal); during plain chat, offer it ONCE per session in one short line ("Want me
-to answer these for you? I'll answer from what I know — this project, our message
+to answer these for you? I'll answer from what I know — this directory, our message
 history, my notes — ask you what I can't, and mark every reply as your assistant.
 Say 'auto'."); "auto" mid-chat upgrades the RUNNING terminal in place (same waker,
 same feed — unanswered feed items become backlog), "manual" downgrades it the same

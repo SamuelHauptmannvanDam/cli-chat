@@ -196,7 +196,7 @@ send unmarked on the user's behalf.
 **Entry points:** "auto chat" / "auto" cold-starts it — `start_chat`, then
 `chat_batch` **immediately** (waiting messages are backlog; dispose of it like a live
 batch). During plain chat, offer auto **once per session**, one line: *"Want me to
-answer these for you? I'll answer from what I know — this project, our message
+answer these for you? I'll answer from what I know — this directory, our message
 history, my notes — ask you what I can't, and mark every reply as your assistant.
 Say 'auto'."* Saying **"auto" mid-chat upgrades the running terminal in place**
 (same waker, same feed; unanswered feed items become backlog); **"manual"**
