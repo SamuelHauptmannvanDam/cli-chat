@@ -304,7 +304,7 @@ try {
   // the agent makes when chat opens (AUTO-CHAT.md). Skipped while a chat/assist
   // session is already running.
   if (!chat.active && shouldHintChat(user)) {
-    summary += `\n   ↳ Tip: say "chat" to read your mail live — or "auto chat" and I'll answer it for you.`;
+    summary += `\n   ↳ Tip: say "chat" to read your messages live — or "auto chat" and I'll answer them for you.`;
     markChatHinted(user);
   }
   if (nudgeAsk) summary += `\n   ↳ ${nameAskUser}`;
@@ -336,7 +336,7 @@ try {
     `reply, use draft_reply with the id, asking for any missing fact first. ` +
     `The summary may already include a "say chat" tip — don't add your own; ` +
     `if the user says "chat" (or "watch"), open the live inbox and auto-read ` +
-    `new mail in full as it arrives.\n` +
+    `new messages in full as they arrive.\n` +
     bodies.join("\n");
 
   if (hookEventName === "Stop") {
@@ -357,7 +357,7 @@ try {
       JSON.stringify({
         decision: "block",
         reason:
-          `New mail arrived mid-turn. Relay this to the user, then stop:\n` +
+          `New messages arrived mid-turn. Relay this to the user, then stop:\n` +
           `  ${summary}\n` +
           `Do NOT print bodies; if they ask to read, call read_message with the ` +
           `id. Waiting: ${ids}`,

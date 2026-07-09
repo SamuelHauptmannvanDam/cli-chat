@@ -565,7 +565,7 @@ const TOOLS: {
       "Returns the resolved contact; `no_contact` means nothing matched (offer to " +
       "add by code), `ambiguous` returns the candidates to disambiguate.",
     inputSchema: {
-      to: z.string().describe("Contact name, e.g. 'Sam' — or 'me' to mail the user's own inbox (escalations, notes to self)"),
+      to: z.string().describe("Contact name, e.g. 'Sam' — or 'me' to message the user's own inbox (escalations, notes to self)"),
       body: z.string().describe("The message text (encrypted end-to-end)"),
       key: z
         .string()
@@ -871,7 +871,7 @@ const TOOLS: {
     name: "messages_available",
     title: "Check for waiting messages",
     description:
-      "Proactive inbox signal. Pulls and decrypts any new mail, then returns the " +
+      "Proactive inbox signal. Pulls and decrypts any new messages, then returns the " +
       "count and previews of unread messages. Each `from` is the user's nickname " +
       "for the sender, or 'Name (handle)' for someone new (who is auto-saved on " +
       "arrival). Call this when the CLI opens.",
@@ -913,19 +913,19 @@ const TOOLS: {
     name: "history",
     title: "Recall past messages (both directions)",
     description:
-      "A chronological slice of past mail from the LOCAL history store — received " +
-      "AND sent — for recall and context, not for new-mail triage. Use when the " +
+      "A chronological slice of past messages from the LOCAL history store — received " +
+      "AND sent — for recall and context, not for new-message triage. Use when the " +
       "user asks 'what did Niels say (about X)?', 'pull up my messages with Sam', " +
       "'what was that URL he sent?'. Pass `with` = a contact name (partial match " +
-      "like send_message; omit for recent mail across everyone), `q` = a substring " +
+      "like send_message; omit for recent messages across everyone), `q` = a substring " +
       "to filter bodies (use it when the user names a topic), `limit` (default 20) " +
       "and `before` (epoch ms) to page further back. Rows come oldest-first, each " +
       "{id, direction in|out, who, body, at, in_reply_to}; `answered_by:'assistant'` " +
       "marks machine-written messages. READ-ONLY: it never marks anything read — " +
-      "unread mail still surfaces through the normal inbox. Don't use read_message " +
-      "for recall; that's for new mail.",
+      "unread messages still surface through the normal inbox. Don't use read_message " +
+      "for recall; that's for new messages.",
     inputSchema: {
-      with: z.string().optional().describe("Contact name to pull the thread with; omit for all recent mail"),
+      with: z.string().optional().describe("Contact name to pull the thread with; omit for all recent messages"),
       q: z.string().optional().describe("Substring filter on the body, e.g. 'endpoint'"),
       limit: z.number().int().optional().describe("Max messages (default 20, newest kept)"),
       before: z.number().optional().describe("Only messages older than this epoch-ms timestamp (paging)"),
@@ -1216,12 +1216,12 @@ const resultNote = (name: string, r: any): string | undefined => {
       if (r.ok)
         return (
           UNTRUSTED_BODY + " " +
-          "This is RECALL, not new mail — nothing was marked read. Quote the relevant " +
+          "This is RECALL, not new messages — nothing was marked read. Quote the relevant " +
           "messages (who + when + body), or hand the content to the task the user is in " +
           "rather than ceremonially printing the whole thread. Rows with " +
           "answered_by:'assistant' were machine-written — attribute them to the sender's " +
           "assistant. The same threads live as md pages (digest + recent tail) under the " +
-          "user dir's context/threads/ — when you're already handling a contact's mail, " +
+          "user dir's context/threads/ — when you're already handling a contact's messages, " +
           "keep their Digest section current (who they are, open loops, decisions)."
         );
       if (r.reason === "no_contact") return "No contact matched. Say so.";
@@ -1502,11 +1502,11 @@ server.registerTool(
     title: "Open the live inbox (background waker)",
     description:
       "Return the local shell command for the live-inbox WAKER: a process to run in " +
-      "the BACKGROUND that blocks until new mail arrives and then exits — it carries " +
+      "the BACKGROUND that blocks until new messages arrive and then exits — it carries " +
       "NO output you need to read. Use when the user says 'chat' / 'go live' / " +
       "'start chat' — their explicit, per-session 'my chat terminal' — and for AUTO " +
       "CHAT ('auto chat' / 'auto' / 'chat assist': same loop, but YOU answer per the " +
-      "rails). Pass quiet=true ONLY for 'auto chat, quiet' (suppresses mail notices " +
+      "rails). Pass quiet=true ONLY for 'auto chat, quiet' (suppresses message notices " +
       "in the user's other sessions; only assistant escalations get through there). " +
       "Run the `command` this tool RETURNS as a background task — call this tool " +
       "FIRST, alone, and only then launch (never batch the launch in parallel with " +
@@ -1535,7 +1535,7 @@ server.registerTool(
       "shows the user the raw command + path, which is exactly what to avoid). Do " +
       "NOT otherwise narrate or explain the command, and do NOT read the background " +
       "task's output file; it's internal plumbing. The command is a " +
-      "WAKER: it blocks until mail arrives, then exits. When it EXITS, call " +
+      "WAKER: it blocks until messages arrive, then exits. When it EXITS, call " +
       "`chat_batch` to get the waiting messages, render them as the live feed " +
       "(sender + body, keep each id), let the user reply to one/some/all in a single " +
       "turn (draft_reply per id; anything they don't address stays pending), then " +

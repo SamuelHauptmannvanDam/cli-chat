@@ -272,8 +272,8 @@ test("the first-mail tip suggests both rungs: chat and auto chat", () => {
   seedIdentity();
   seedPending([{ id: "m1", from: "Niels", body: "hi" }]);
   const out = runHook("SessionStart", { account: true, session_id: "s1" });
-  assert.match(out.systemMessage, /say "chat" to read your mail live/);
-  assert.match(out.systemMessage, /"auto chat" and I'll answer it for you/);
+  assert.match(out.systemMessage, /say "chat" to read your messages live/);
+  assert.match(out.systemMessage, /"auto chat" and I'll answer them for you/);
 });
 
 test("SessionStart does not wait when a synced snapshot is already present", () => {

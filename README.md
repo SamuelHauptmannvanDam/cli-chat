@@ -53,11 +53,11 @@ they're told a message is waiting and asked if they want it read; they reply the
 same way.
 
 ## Receiving messages
-You don't have to poll — there are three ways mail reaches you, from fully
+You don't have to poll — there are several ways messages reach you, from fully
 automatic to fully on-demand:
 
 **🔔 Automatic — on open and on every message you type (default)**
-> Waiting mail is announced the moment you open your CLI, and again the next time
+> Waiting messages are announced the moment you open your CLI, and again the next time
 > you type anything. You're shown only *who it's from* and asked if you want it
 > read — say *"read it"* and the agent reads it out. Nothing to turn on, no
 > background cost.
@@ -73,7 +73,7 @@ automatic to fully on-demand:
 > for you, grounded in your own context — this project's files, your message
 > history, and its notes. Every reply it sends is shown as it happens and clearly
 > marked as your assistant, both to you and to the recipient. What it can't
-> answer, it asks *you* — in the feed, or by mailing your own inbox so you see it
+> answer, it asks *you* — in the feed, or by dropping a message in your own inbox so you see it
 > wherever you're next working — then passes your answer on (and remembers it).
 > Only saved contacts ever get auto-replies. Add *", quiet"* and your other
 > sessions stay silent except when your assistant needs you; ask *"what did you
@@ -87,7 +87,7 @@ A message from someone new shows their name and handle and saves them as a conta
 automatically — so a plain *"write Sam"* works afterwards. Your own nickname for a
 contact always wins on screen.
 
-## Your mail is memory
+## Your messages are memory
 Everything you send and receive stays on your device, and your agent can recall
 it from any session: ask *"what did Niels say about the endpoint?"* or *"what was
 that address Sam sent?"* and the thread is pulled straight into whatever you're
