@@ -23,6 +23,7 @@ import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 import { writeFileSync } from "node:fs";
 import { currentUser } from "./current-user.ts";
+import { loadSession, markVaultDirty } from "./session.ts";
 import { loadIdentity } from "./identity.ts";
 import { loadContacts } from "./contacts.ts";
 import { openMailbox, unreadFor } from "./db.ts";
@@ -37,6 +38,7 @@ import {
   pendingFile,
   pendingAckFile,
   chatLockFile,
+  threadsDir,
 } from "./paths.ts";
 
 const PENDING_STALE_MS = 120_000; // matches check-inbox: older snapshot → warmer dead
@@ -53,10 +55,14 @@ export function pickUnsurfaced(messages: InboxMessage[], acked: Set<string>): In
 
 // Heartbeat the chat lock so the session hook knows chat is live and stays silent.
 // Bumped every tick; never removed — a clean "stop" or kill just lets it go stale,
-// and a relaunch refreshes it well within the hook's freshness window.
+// and a relaunch refreshes it well within the hook's freshness window. The lock
+// carries the session's MODE: "quiet" (auto chat, quiet — start_chat set
+// MESSENGER_CHAT_MODE) sharpens the hook's suppression in other sessions to
+// "everything except assistant escalations" (AUTO-CHAT.md).
+const chatMode = process.env.MESSENGER_CHAT_MODE === "quiet" ? "quiet" : "chat";
 function touchLock(lockPath: string): void {
   try {
-    writeFileSync(lockPath, String(Date.now()));
+    writeFileSync(lockPath, JSON.stringify({ at: Date.now(), mode: chatMode }));
   } catch {
     /* best-effort heartbeat */
   }
@@ -96,6 +102,15 @@ async function runPoll(user: string, lockPath: string): Promise<void> {
     client: createMailboxClient(resolveMailboxUrl(), me, now),
     now,
     contactsPath: contactsFile(user),
+    threadsPath: threadsDir(user),
+    // A sender auto-saved during a poll-mode drain must reach the vault too.
+    onBookChange: () => {
+      try {
+        if (loadSession(user)) markVaultDirty(user);
+      } catch {
+        /* best-effort */
+      }
+    },
   };
   for (;;) {
     touchLock(lockPath);

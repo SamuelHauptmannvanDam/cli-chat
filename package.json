@@ -1,6 +1,6 @@
 {
   "name": "cli-chat-mcp",
-  "version": "0.10.0",
+  "version": "0.12.0",
   "type": "module",
   "description": "Headless cross-CLI messenger for coding agents (MCP)",
   "license": "PolyForm-Noncommercial-1.0.0",
@@ -34,6 +34,7 @@
     "test:auth": "node test/e2e/live-auth.ts",
     "dev:mailbox": "node test/e2e/dev-mailbox.ts",
     "test:mcp": "node test/e2e/live-net-mcp.ts",
+    "test:features": "node test/e2e/live-features.ts",
     "test:push": "node test/e2e/live-push.ts",
     "init": "node src/init-identity.ts",
     "install-clis": "node src/install.ts",

@@ -68,6 +68,18 @@ automatic to fully on-demand:
 > one, some, or all whenever you like. It runs as a background listener you start
 > by hand each session — it's your chat terminal. Say *"stop"* to close it.
 
+**🤖 Auto chat — say *"auto chat"* (your assistant answers for you)**
+> The same live inbox, one step further: your assistant answers incoming messages
+> for you, grounded in your own context — this project's files, your message
+> history, and its notes. Every reply it sends is shown as it happens and clearly
+> marked as your assistant, both to you and to the recipient. What it can't
+> answer, it asks *you* — in the feed, or by mailing your own inbox so you see it
+> wherever you're next working — then passes your answer on (and remembers it).
+> Only saved contacts ever get auto-replies. Add *", quiet"* and your other
+> sessions stay silent except when your assistant needs you; ask *"what did you
+> handle?"* any time for the ledger. *"manual"* takes the feed back; *"stop"*
+> closes it.
+
 **💬 On demand — just ask**
 > Ask *"any messages?"* whenever you like and the agent checks for you.
 
@@ -75,13 +87,27 @@ A message from someone new shows their name and handle and saves them as a conta
 automatically — so a plain *"write Sam"* works afterwards. Your own nickname for a
 contact always wins on screen.
 
+## Your mail is memory
+Everything you send and receive stays on your device, and your agent can recall
+it from any session: ask *"what did Niels say about the endpoint?"* or *"what was
+that address Sam sent?"* and the thread is pulled straight into whatever you're
+working on. Each contact also gets a living page (a short digest plus the recent
+back-and-forth) that the agent keeps current, and *"remember I'm out Friday"*
+saves a fact your messenger can use anywhere — it's what auto chat answers from.
+
 ## What you can ask your agent to do
 - *"what's my code?"* — show your handle to share
 - *"write Sam at AbC123: …"* / *"write Sam: …"* — send a message
 - *"chat"* (or *"watch"*) — open your live inbox (messages stream in; reply to all when you like)
+- *"auto chat"* — same inbox, but your assistant answers what it can, marked as itself
+- *"what did Sam say about …?"* — recall any past message, from any session
+- *"remember …"* — save a fact to your messenger's memory
+- *"write me: …"* — drop a note into your own inbox (it surfaces wherever you're next active)
 - *"who are my contacts?"* — list your address book
 - *"rename Sam to …"* / *"delete Sam"* — manage contacts
 - *"call me …"* — change the name others see
+
+Scripts and CI can send too, headlessly: `npx cli-chat-mcp send Niels "deploy landed"`.
 
 ## Good to know
 - **Two-way chat needs both codes shared once.** A message can't safely carry a
@@ -89,8 +115,9 @@ contact always wins on screen.
   contact exchange codes once, out of band — same as swapping phone numbers.
 - **Your messages are private to the server**, which only ever sees ciphertext.
   Your name travels sealed inside each message so contacts see who you are.
-- **One identity per machine for now** — there's no way yet to move an identity to
-  another device.
+- **Use your account on any device** — say *"log in"*: the agent emails you a
+  magic link, and the same account (handle, contacts, tags) is restored and kept
+  in sync on every device you log in on.
 - **Your handle directory can't be walked.** Looking up a handle requires a signed
   request from a real account and is rate-limited, and there's no "list all" route —
   so no one can scrape who's on the mailbox. A lookup only ever returns public keys,
