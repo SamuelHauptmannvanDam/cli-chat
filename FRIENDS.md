@@ -238,8 +238,7 @@ best-effort like the edge push):
   and drains `accepted` (people who accepted the user's own request, auto-saved as
   contacts). `accept_request {signPub}` / `decline_request {signPub}` act on the
   incoming ones. Accept writes the contact locally + both edges land server-side.
-  *(Future enhancement: fold a `[requests]` count into the on-keystroke inbox hook
-  for hands-free surfacing, like `[inbox]`; today it's tool-driven.)*
+  Surfacing is tool-driven (no hook injection).
 - `contacts` — the **Contacts of contacts** section renders `name · via <contact>`
   and **no handle**, with the affordance "say 'request <name>' to connect." Drop
   `fullKey`/`handle` from those rows.
@@ -266,31 +265,8 @@ best-effort like the edge push):
   working; you stay findable and requestable; only instant-contact-by-code goes
   away") and the known limit (can't retract a code someone already grabbed).
 
-## 7. What it costs / migration
+## 7. Privacy note
 
-- **Additive server migration** (`friend_requests` table, `handles.requests_only`
-  column) like the auth tables — no destructive change. Redeploy the Worker.
-- **The `/network` projection change is the breaking one for clients**: old clients
-  built `fullKey` from `boxPub`; new response omits it. Ship the client + server
-  together, or have the client tolerate a missing `boxPub` (render name-only,
-  request-to-connect) so a stale client degrades gracefully instead of crashing.
-- Existing one-way edges: switching the join to mutual-only **shrinks** everyone's
-  contacts-of-contacts to genuine two-way friends. That's the intended tightening,
-  not data loss — saved contacts are unchanged.
-- No new server-readable secrets; requests carry only already-public keys + names.
-
-## 8. Build order
-
-1. Server: `friend_requests` table + `handles.requests_only` column (migration);
-   `/requests` `POST`/`GET`/`accept`/`decline`, `/handle/requests-only`,
-   `/handle/rotate`; mutual-edge rewrite of `contactsOfContacts`;
-   drop `boxPub`/`handle` from `/network`. Tests against the node store.
-2. Client: `request_contact`, accept/decline, `set_requests_only`, `rotate_handle`;
-   `[requests]` hook surfacing; `contacts` COC render change; `send_message`
-   steer-to-request.
-3. CLAUDE.md + instructions.ts rewrites (§6).
-4. Deploy Worker; verify end-to-end with three accounts: A⇄B friends, B⇄C friends,
-   A discovers C by name only, A requests C, C accepts, A can now message C; then A
-   goes requests-only and B (a friend) still reaches A while a stranger with A's
-   old handle cannot; then A rotates and the stranger's old handle 404s.
-```
+No new server-readable secrets: requests carry only already-public keys +
+self-names — the same class of data the `handles` table already holds. Message
+bodies stay sealed end-to-end throughout.

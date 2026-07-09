@@ -75,6 +75,28 @@ export function chatHintFile(user: string): string {
   return join(userDir(user), "chat-hint.json");
 }
 
+// The messenger's own memory (HISTORY.md / AUTO-CHAT.md): a per-user directory of
+// plain md files, GLOBAL on purpose (never the working directory — mail must not
+// get committed to a repo because a context dir sat in the cwd). Holds the living
+// thread files (threads/) and the agent's learned notes (notes/). Same at-rest
+// posture as the inbox cache: plaintext, 0600 files / 0700 dirs, local-only —
+// never synced to the vault (it's server-readable by design).
+export function contextDir(user: string): string {
+  return join(userDir(user), "context");
+}
+
+// One living page per contact: agent-curated digest on top, mechanical tail of
+// recent messages below. See threads.ts.
+export function threadsDir(user: string): string {
+  return join(contextDir(user), "threads");
+}
+
+// Topical fact files the agent curates ("remember X", facts learned from mail,
+// answered escalations, pending questions). See threads.ts (notes helpers).
+export function notesDir(user: string): string {
+  return join(contextDir(user), "notes");
+}
+
 // Account layer (AUTH-SYNC.md). The bearer session token for the online account
 // (magic-link login). Saved alongside the keys; sent as `Authorization: Bearer`
 // on the vault routes. Never leaves the device except as that header.

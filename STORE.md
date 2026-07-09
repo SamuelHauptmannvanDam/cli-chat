@@ -1,9 +1,8 @@
-# Refactor plan: library shims → native Node APIs
+# Library shims → native Node APIs
 
 Floor is **Node 22**. One library shim remains, on purpose, isolated to a single
-file so it can be swapped to the native API later with no ripple. This documents
-it, records the WebSocket shim we already removed, and says **when** to do the
-remaining swap.
+file so it carries no ripple. This documents it and records the WebSocket shim
+we already removed.
 
 | Concern | Now (Node 22) | Native API | Native needs | Isolated to | Status |
 |---|---|---|---|---|---|
@@ -35,12 +34,6 @@ through `openMailbox()` and `.run/.all/.get`.
 **Verified:** `npm test` 96/96 on both drivers; a 12-way concurrent cross-process
 stress test passes on both (no `CANTOPEN`); live push e2e against the hosted
 worker passes.
-
-### Future cleanup (optional, not urgent)
-When Node 24+ is a safe baseline for the whole user base, the wasm branch +
-`node-sqlite3-wasm` dependency can simply be deleted, leaving `NativeStore` as the
-only path and bumping `engines.node` to `>=24`. No call-site changes — just drop
-the fallback. Until then, keep both.
 
 ---
 

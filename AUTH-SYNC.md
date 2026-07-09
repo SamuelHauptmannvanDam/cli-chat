@@ -12,9 +12,11 @@ unchanged**: message bodies are still sealed end-to-end to the recipient's box k
 (`POST /messages` still stores only ciphertext). Only the *account vault* —
 identity + address book — becomes server-readable.
 
-**Unlock.** Going online is a **one-time €1** purchase. Free accounts keep working
-exactly as now (local-only); paying flips a `paid` flag that the vault routes
-require.
+**Unlock.** The billing machinery is a **one-time €1** purchase that flips a
+`paid` flag the vault routes require — but it is currently **dormant**: the
+Worker runs with `FREE_SYNC=1`, which makes online login/sync free for everyone
+(the Stripe checkout/webhook stays wired, just never gates). Flip the env var
+off to re-enable the gate. Local-only accounts always work regardless.
 
 **Sync cadence.** Pull at **session start**; push on local mutation (after
 `create_account`, `add_contact`, `tag_contact`, settings changes). Last-write-wins
@@ -110,7 +112,7 @@ CREATE INDEX IF NOT EXISTS idx_sessions_account ON sessions (account_id);
 -- The synced account state. One blob per account; opaque to the routes.
 CREATE TABLE IF NOT EXISTS vault (
   account_id  TEXT PRIMARY KEY,
-  blob        TEXT NOT NULL,           -- JSON (or AES-GCM ciphertext, see §4)
+  blob        TEXT NOT NULL,           -- JSON (server-readable, see §4)
   version     INTEGER NOT NULL,
   updated_at  INTEGER NOT NULL
 );
@@ -157,31 +159,28 @@ The vault blob is the device's account state, assembled client-side:
 restored (can open sealed mail and sign as you). Consequence to surface in UX:
 **email becomes the master key** to the whole identity.
 
-Encryption-at-rest options for `blob`:
-- **v1 (simplest):** store as-is; rely on D1/account isolation + the bearer wall.
-  Server can read it — consistent with the accepted trade.
-- **Hardening (recommended soon):** client wraps the blob with **AES-GCM** under a
-  key the Worker holds in an env secret (`crypto.subtle`, no libsodium needed on
-  Workers). Protects the at-rest DB without changing the trust model. A later,
-  stronger step is a passphrase-derived key (Argon2id) — but that breaks pure
-  email-only recovery, so it's deliberately *not* v1.
+At-rest storage of `blob` (as shipped): stored as-is; rely on D1/account
+isolation + the bearer wall. Server can read it — consistent with the accepted
+trade. (A passphrase-derived key would be stronger but breaks pure email-only
+recovery, which is deliberately the recovery model.)
 
 Conflict rule: `PUT` only when `version === stored+1`; on `409`, client pulls,
 merges (contacts union by `fullKey`, last-write-wins on fields), re-pushes.
 
 ---
 
-## 5. The €1 unlock
+## 5. The €1 unlock (built, dormant)
 
-Separate from auth. A one-time charge, gated by EU VAT (user is in Denmark,
-charging EUR):
-- **Recommended:** a Merchant-of-Record — **Lemon Squeezy** or **Polar** — handles
-  EU VAT for you. Hosted checkout link from `POST /billing/checkout`; their webhook
-  hits `POST /billing/webhook` → `accounts.paid=1`.
-- **Raw Stripe** Payment Link works but leaves VAT compliance on you.
+Separate from auth. A one-time charge via a **Stripe Payment Link**:
+`POST /billing/checkout` hands back the account-tagged checkout link
+(`client_reference_id` = account id); Stripe's webhook hits
+`POST /billing/webhook` (signature-verified) → `accounts.paid=1`.
 
 `paid=0` accounts can still `login` (so the flow is testable) but `GET/PUT /vault`
-return `402 payment_required` with the checkout link.
+return `402 payment_required` with the checkout link — **except while
+`FREE_SYNC=1` is set on the Worker (the current state), which waives the gate
+entirely.** The billing deps are injected on the Worker and absent on Node, so
+tests run without billing.
 
 ---
 
@@ -191,9 +190,8 @@ Thin wrappers over the routes; mirror the existing tool style in `src/server-net
 
 | Tool | Args | Behaviour |
 |---|---|---|
-| `login` | `{ email }` | Calls `/auth/login`, prints "Check your email — I'll wait." Polls `/auth/poll` (respect `interval`) until a `session_token` comes back; saves `session.json`. If `paid=0`, surfaces the €1 checkout link. |
+| `login` | `{ email }` | Calls `/auth/login`, prints "Check your email — I'll wait." Polls `/auth/poll` (respect `interval`) until a `session_token` comes back; saves `session.json`. If the paid gate is active and `paid=0`, surfaces the €1 checkout link. On a fresh machine, a successful login restores the account locally. |
 | `sync` | — | Pull `/vault`; if newer than local, write identity/contacts/settings. Then push local if changed. Called automatically at session start (see §7). Manual `sync` forces a round-trip. |
-| `link_device` | — | Alias/UX for "I'm on a new machine": run `login`, then `sync` to materialise the account locally. |
 | `account_status` | — | Show email, paid state, last sync, version. |
 
 `login`/`sync` must handle the bootstrap case: on a fresh device there's no
@@ -221,16 +219,7 @@ vault (writes `identity.json`, `contacts.json`, `settings.json`, sets `/current`
 
 ---
 
-## 8. Build order
-
-1. Schema + `/auth/login` + `/auth/verify` + `/auth/poll` + bearer middleware.
-2. `login` MCP tool + `session.json` + the verify landing page.
-3. `vault` routes + `sync`/`link_device` tools + session-start pull.
-4. Dirty-flag push on contact/tag mutations.
-5. €1: MoR checkout + webhook + `paid` gate (can ship behind the rest).
-6. Hardening: AES-GCM wrap of the blob at rest.
-
-## 9. Infra & free-tier limits
+## 8. Infra & free-tier limits
 
 Runs on the existing Cloudflare stack plus **one new dependency**: an outbound
 email sender for the magic links (Cloudflare can't send arbitrary email — Email
@@ -257,15 +246,3 @@ The existing push/live-chat WebSocket (Durable Objects) is heavier than anything
 auth adds, so if anything moves you to Workers Paid first, it's that — not this.
 Email provider is injected (`sendEmail` dep on the Hono app), so it's swappable
 and absent in Node tests.
-
-## 10. Open decisions
-
-- **Account ↔ handle binding:** bind `signPub` to the account on first `sync`. What
-  if the same email logs in and pulls a *different* existing identity? v1: one
-  identity per account; the vault is the source of truth on `link_device`.
-- **Multiple devices, live:** last-write-wins is fine for contacts; revisit if it
-  bites. No real-time vault push in v1 (session-start + on-mutation only).
-- **Revocation:** deleting a `sessions` row logs a device out. Expose later as
-  "log out other devices".
-- **At-rest encryption:** ship v1 plaintext-in-D1 or jump straight to AES-GCM?
-  Recommend AES-GCM from the start — it's cheap and avoids a migration.

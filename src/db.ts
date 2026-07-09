@@ -78,6 +78,7 @@ export interface MessageRow {
   fetched_at: number | null; // null until pulled by recipient
   read_at: number | null; // null until surfaced to the human
   in_reply_to: string | null; // threading: id of the message this answers
+  answered_by?: string | null; // "assistant" when the sender's agent wrote it (AUTO-CHAT.md); absent/null = human
 }
 
 const SCHEMA = `
@@ -90,10 +91,25 @@ const SCHEMA = `
     created_at  INTEGER NOT NULL,
     fetched_at  INTEGER,
     read_at     INTEGER,
-    in_reply_to TEXT
+    in_reply_to TEXT,
+    answered_by TEXT
   );
   CREATE INDEX IF NOT EXISTS idx_recipient ON messages (recipient, created_at);
 `;
+
+// Columns added after 0.10.0. CREATE TABLE IF NOT EXISTS never alters an existing
+// table, so a pre-upgrade inbox.db needs each new column bolted on; "duplicate
+// column" just means it's already there.
+const MIGRATIONS = [`ALTER TABLE messages ADD COLUMN answered_by TEXT`];
+function applyMigrations(exec: (sql: string) => void): void {
+  for (const sql of MIGRATIONS) {
+    try {
+      exec(sql);
+    } catch {
+      /* duplicate column — already migrated */
+    }
+  }
+}
 
 // ---- native (node:sqlite) -------------------------------------------------
 // One persistent handle in WAL mode. Safe across processes, so the server can
@@ -109,6 +125,7 @@ class NativeStore implements Store {
       /* :memory: or a VFS without WAL — fine */
     }
     this.#db.exec(SCHEMA);
+    applyMigrations((sql) => this.#db.exec(sql));
   }
   run(sql: string, params: unknown[] = []): void {
     this.#db.prepare(sql).run(...params);
@@ -161,6 +178,7 @@ function openWasm(path: string) {
     /* :memory: — fine */
   }
   db.exec(SCHEMA);
+  applyMigrations((sql) => db.exec(sql));
   return db;
 }
 
@@ -229,9 +247,9 @@ export function insertMessage(db: Mailbox, m: MessageRow): void {
   // atomic). A duplicate id is then a harmless no-op rather than a PRIMARY KEY throw.
   db.run(
     `INSERT OR IGNORE INTO messages
-       (id, recipient, sender, body, tags, created_at, fetched_at, read_at, in_reply_to)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [m.id, m.recipient, m.sender, m.body, m.tags, m.created_at, m.fetched_at, m.read_at, m.in_reply_to],
+       (id, recipient, sender, body, tags, created_at, fetched_at, read_at, in_reply_to, answered_by)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [m.id, m.recipient, m.sender, m.body, m.tags, m.created_at, m.fetched_at, m.read_at, m.in_reply_to, m.answered_by ?? null],
   );
 }
 
@@ -248,6 +266,45 @@ export function unreadFor(db: Mailbox, me: string): MessageRow[] {
 export function getMessage(db: Mailbox, id: string): MessageRow | undefined {
   // Both drivers return undefined for a miss (wasm null is coerced in the store).
   return (db.get(`SELECT * FROM messages WHERE id = ?`, [id]) as unknown as MessageRow) ?? undefined;
+}
+
+// A chronological slice of the thread with one person (or with everyone, when
+// `other` is null), BOTH directions — this is the `history` tool's query
+// (HISTORY.md). Read-only by contract: it never touches read_at, so an unread
+// message appearing in a history slice still surfaces through the normal inbox
+// paths. Newest-first internally (so `limit` takes the most recent), returned
+// oldest-first so it reads like a conversation.
+export function historyFor(
+  db: Mailbox,
+  me: string,
+  other: string | null,
+  opts: { limit?: number; before?: number; q?: string } = {},
+): MessageRow[] {
+  const limit = Math.max(1, Math.min(opts.limit ?? 20, 200));
+  const where: string[] = [];
+  const params: unknown[] = [];
+  if (other) {
+    where.push(`((recipient = ? AND sender = ?) OR (recipient = ? AND sender = ?))`);
+    params.push(me, other, other, me);
+  } else {
+    where.push(`(recipient = ? OR sender = ?)`);
+    params.push(me, me);
+  }
+  if (opts.before != null) {
+    where.push(`created_at < ?`);
+    params.push(opts.before);
+  }
+  if (opts.q) {
+    // Substring match; escape LIKE wildcards so a literal "%" in the query
+    // doesn't turn into match-everything.
+    where.push(`body LIKE ? ESCAPE '\\'`);
+    params.push(`%${opts.q.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`);
+  }
+  const rows = db.all(
+    `SELECT * FROM messages WHERE ${where.join(" AND ")} ORDER BY created_at DESC, id DESC LIMIT ?`,
+    [...params, limit],
+  ) as unknown as MessageRow[];
+  return rows.reverse();
 }
 
 export function markFetched(db: Mailbox, id: string, now: number): void {

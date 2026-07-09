@@ -4,8 +4,8 @@
 // restored — it can open sealed mail and sign as the user. That also makes email
 // the master key to the identity; the trade is spelled out in AUTH-SYNC.md.
 //
-// v1 stores the blob as plain JSON (the route already gates it behind the bearer
-// session + paid wall). AES-GCM-at-rest is the next hardening step (§4/§10).
+// The blob is stored as plain JSON — server-readable by design (AUTH-SYNC.md §4);
+// the route gates it behind the bearer session + paid wall.
 
 import { existsSync, readFileSync } from "node:fs";
 import { identityFile, contactsFile, settingsFile, userDir } from "./paths.ts";
