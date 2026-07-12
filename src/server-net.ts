@@ -1251,6 +1251,12 @@ const resultNote = (name: string, r: any): string | undefined => {
             "Never answer on secrets/keys/money/commitments/personal matters — those always surface. " +
             "What you can't ground: ask the user in the feed, or escalate by mail " +
             "(send_message to='me', as_assistant:true), and `remember` the answer when it comes back. " +
+            "IF DRAFT CHAT IS ON: same grounding + code of conduct as auto chat, but do NOT send — " +
+            "render a proposed draft under each message ('↳ draft: …') and wait; when the user " +
+            "approves ('send 1', 'send all', or after an edit), send THAT draft with draft_reply " +
+            "WITHOUT as_assistant (reviewed-and-approved goes out as the user). No draft for a " +
+            "flagged message, never secrets/keys in a draft, ungroundable items get 'needs you' + " +
+            "your question instead — NOTHING sends without the user's explicit go. " +
             "AUTO-TAG (unless tagging mode is 'off'): for any message that clearly signals a circle " +
             "(work/family/gaming), tag that sender with tag_contact. Then relaunch the chat waker in the background."
         : "Nothing new. Relaunch the chat waker in the background to keep listening.";
@@ -1504,7 +1510,9 @@ server.registerTool(
       "Return the local shell command for the live-inbox WAKER: a process to run in " +
       "the BACKGROUND that blocks until new messages arrive and then exits — it carries " +
       "NO output you need to read. Use when the user says 'chat' / 'go live' / " +
-      "'start chat' — their explicit, per-session 'my chat terminal' — and for AUTO " +
+      "'start chat' — their explicit, per-session 'my chat terminal' — and for DRAFT " +
+      "CHAT ('draft chat' / 'auto draft': same loop, but you draft each reply and send " +
+      "only on the user's approval) and AUTO " +
       "CHAT ('auto chat' / 'auto' / 'chat assist': same loop, but YOU answer per the " +
       "rails). Pass quiet=true ONLY for 'auto chat, quiet' (suppresses message notices " +
       "in the user's other sessions; only assistant escalations get through there). " +
@@ -1541,9 +1549,11 @@ server.registerTool(
       "turn (draft_reply per id; anything they don't address stays pending), then " +
       "run the SAME command again in the background. DRAIN THE BACKLOG FIRST: call " +
       "chat_batch once right after starting the waker — anything already waiting " +
-      "must not sit outside the feed (in auto chat, dispose of it like any live " +
-      "batch). If plain chat (not auto) and you haven't offered yet this session, " +
-      "offer auto mode ONCE in one short line (see instructions); saying 'auto' " +
+      "must not sit outside the feed (in draft/auto chat, dispose of it like any " +
+      "live batch). If plain chat (not draft/auto) and you haven't offered yet this " +
+      "session, offer the assist rungs ONCE in one short line (draft = you approve " +
+      "each reply before it sends; auto = the assistant answers for you — see " +
+      "instructions); saying 'draft' or 'auto' " +
       "mid-chat upgrades THIS terminal in place — same waker, same feed, treat " +
       "unanswered feed items as backlog. 'manual' downgrades the same way. On " +
       "'stop', stop relaunching and kill the background task. If chat_batch " +

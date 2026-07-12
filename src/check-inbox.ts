@@ -296,15 +296,16 @@ try {
   let summary = quietFilter
     ? `🤖 Your assistant needs you — ${noun} waiting. Want me to read ${toShow.length > 1 ? "them" : "it"}?`
     : `📬 ${noun} from ${senders.join(", ")} — want me to read ${toShow.length > 1 ? "them" : "it"}?`;
-  // Nudge the hands-free options (live chat, and auto chat where the assistant
-  // answers) on the FIRST mail notice of the session — at open OR mid-session, so
-  // an inbox that was empty at open still surfaces the tip when mail first lands.
-  // Shown at most once per session; marked the moment we add it. The tip only
-  // SUGGESTS both rungs — the full explanation of auto mode lives in the offer
-  // the agent makes when chat opens (AUTO-CHAT.md). Skipped while a chat/assist
-  // session is already running.
+  // Nudge the hands-free options (live chat, draft chat where the assistant
+  // drafts and the user approves each send, and auto chat where it answers) on
+  // the FIRST mail notice of the session — at open OR mid-session, so an inbox
+  // that was empty at open still surfaces the tip when mail first lands. Shown
+  // at most once per session; marked the moment we add it. The tip only
+  // SUGGESTS the rungs — the full explanation of the assist modes lives in the
+  // offer the agent makes when chat opens (AUTO-CHAT.md). Skipped while a
+  // chat/assist session is already running.
   if (!chat.active && shouldHintChat(user)) {
-    summary += `\n   ↳ Tip: say "chat" to read your messages live — or "auto chat" and I'll answer them for you.`;
+    summary += `\n   ↳ Tip: say "chat" to read your messages live, "draft chat" and I'll draft replies for you to approve, or "auto chat" and I'll answer them for you.`;
     markChatHinted(user);
   }
   if (nudgeAsk) summary += `\n   ↳ ${nameAskUser}`;

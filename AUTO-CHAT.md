@@ -38,23 +38,33 @@ memory), the rails, and the always-on assistant marker.
 Auto chat is discovered through chat itself, not through docs:
 
 - **"chat"** opens the live inbox as today — and the agent adds a short offer
-  that says what auto chat actually does, so consent is informed:
+  that names both assist rungs, so consent is informed:
 
-  > *Want me to answer these for you? I'll answer from what I know — this
-  > directory, our message history, and my notes — and keep learning in
-  > `cli-chat-context` as I go. Everything I send is clearly marked as your
-  > assistant replying. When someone asks something I can't find an answer
-  > for, I'll ask you — probably a lot in the beginning, less over time —
-  > then answer for you. Say "auto" to turn it on.*
+  > *Want help with these? Say "draft" and I'll draft replies you approve
+  > before anything sends, or "auto" and I'll answer what I can myself —
+  > grounded in this directory, our message history, and my notes, marked as
+  > your assistant, and asking you what I can't ground either way.*
 
   Offered once per session, never repeated, never nags.
+- **"draft chat"** (or "auto draft" / "drafts") — the **midway rung**: the same
+  loop, but the assistant only *drafts*. Each incoming message gets a proposed
+  reply rendered beneath it in the feed ("↳ draft: '…'"); nothing sends until
+  the user approves ("send 1", "send all"), edits, or answers themselves. An
+  approved draft goes out **as the user, unmarked** — they reviewed and signed
+  off, exactly like a reply they dictated (`as_assistant` stays the mark for
+  autonomous sends). Same grounding stack and code of conduct as auto; a
+  flagged message never gets a draft; secrets/keys never appear in one;
+  ungroundable items show "needs you" + the assistant's question instead (no
+  escalation-by-mail — the user is at the feed). No quiet variant: drafting
+  presumes the user is watching. It's the trust-builder rung — run it until
+  the drafts are consistently right, then say "auto".
 - **Upgrading a running chat is a first-class path, not a restart.** Saying
-  **"auto"** any time while chat is running flips the same terminal to auto
-  mid-flight: the waker keeps running, the feed keeps its numbering, and
-  anything already sitting unanswered in the feed is put through the
-  mediator right away (the backlog-drain rule below applies at flip time
-  too). **"manual"** (or "I'll take it") flips it back the same way, without
-  stopping the feed. Chat → auto → manual is one continuous session.
+  **"auto"** (or **"draft"**) any time while chat is running flips the same
+  terminal mid-flight: the waker keeps running, the feed keeps its numbering,
+  and anything already sitting unanswered in the feed is put through the new
+  disposal right away (the backlog-drain rule below applies at flip time
+  too). **"manual"** (or "I'll take it") flips back the same way, without
+  stopping the feed. Chat → draft → auto → manual is one continuous session.
 - **"auto chat"** (or just **"auto"**) — the shortcut for people who know
   what they want: opens the live inbox with the assistant already answering,
   no question asked. Both forms work identically. (Also accept "chat assist"
@@ -62,13 +72,13 @@ Auto chat is discovered through chat itself, not through docs:
 - **"auto chat, quiet"** — straight into the quiet variant (see ladder
   below).
 
-**Tips suggest both; the offer explains.** Everywhere a one-line tip
-mentions chat, it now names both rungs — e.g. the session-start mail
-summary's hint becomes *"say 'chat' to read your mail live, or 'auto chat'
-and I'll answer it for you"*. Tips only *suggest* (one line, no lecture);
-the full explanation of what auto mode does lives in the in-chat offer
-above, at the moment of turning it on — that's where informed consent
-happens, not in a tip.
+**Tips suggest; the offer explains.** Everywhere a one-line tip mentions
+chat, it names the rungs — the session-start mail summary's hint is *"say
+'chat' to read your messages live, 'draft chat' and I'll draft replies for
+you to approve, or 'auto chat' and I'll answer them for you"*. Tips only
+*suggest* (one line, no lecture); the full explanation of what the assist
+modes do lives in the in-chat offer above, at the moment of turning one on —
+that's where informed consent happens, not in a tip.
 
 So the on-ramp is built into the flow: everyone meets auto chat the first
 time they open chat (or reads the tip), and graduates to the shortcut on
@@ -150,13 +160,14 @@ happen to be working.
 
 ## The surfacing ladder (incl. the quiet variant)
 
-Four levels, one engine. Each is just a different answer to "who sees what":
+Five levels, one engine. Each is just a different answer to "who sees what":
 
 | Level | Trigger | You see | Who answers |
 |---|---|---|---|
 | Read (default) | — | count on open/keystroke; read on demand | you |
 | Chat | "chat" | live feed, every message | you (agent sends) |
-| Auto chat | "auto chat" / "auto" (or "chat" → say "auto") | feed + narrated assistant replies + needs-you questions | assistant; you for the rest |
+| Draft chat | "draft chat" (or "chat" → say "draft") | feed + a proposed draft under each message | you — every send is your explicit approval, sent as you |
+| Auto chat | "auto chat" / "auto" (or say "auto" mid-chat) | feed + narrated assistant replies + needs-you questions | assistant; you for the rest |
 | **Quiet auto** | "auto chat, quiet" | **escalations only** — handled mail never surfaces | assistant; you're mailed when needed |
 
 **Quiet is a surfacing variant, not a new mode.** It reuses the `chat.lock`
@@ -173,7 +184,8 @@ assistant reply is in `history` permanently, and the assistant recaps on
 demand ("what did you handle?") and in one line when the user next engages
 ("handled 4 while you coded — 1 waiting on you"). Same honesty, batched.
 
-Expected steady state: read/chat are the on-ramp and the trust-builder; quiet
+Expected steady state: read/chat are the on-ramp, draft chat is the
+trust-builder (watch the drafts until they're consistently right); quiet
 auto is where regular users land — most messages never cost attention at
 all. That is the pitch.
 
@@ -340,6 +352,11 @@ as planned). Kept as the map of where each piece lives:
 8. README: one section — *say "auto chat" and your assistant answers your
    mail from your own context; every reply is marked as the assistant and
    shown as it happens.* Version bump, publish.
+9. **Draft chat (0.13.0)** — the midway rung, added on user request:
+   behaviour-only (CLAUDE.md + instructions.ts + the chat_batch/start_chat
+   resultNotes + the discovery tips). No new machinery: same waker and
+   `chat_batch`; approved drafts send through the existing `draft_reply`,
+   unmarked (user-reviewed = the user's message).
 
 ## Open questions
 

@@ -22,7 +22,8 @@ differ only in how it surfaces to the user:
    with `chat_batch` and read it straight into the terminal. One model turn per
    real batch, ~none while idle. (Needs a client that can run a background shell;
    where it can't, fall back to mode 1 plus `messages_available` on demand.)
-   **Auto chat** is the same loop with you answering — see its section below.
+   **Draft chat** is the same loop with you drafting each reply for the user to
+   approve, and **auto chat** with you answering — see their sections below.
 
 ## At session start (announce messages, offer to read)
 A `SessionStart` hook checks for waiting messages. The **user is shown only a count
@@ -33,8 +34,8 @@ full bodies are injected privately into your context as an `[inbox] …` block
 - **Do NOT print the bodies on open.** Just relay the count and sender and ask if
   they want it read (the hook already shows the summary; don't duplicate it
   verbatim — a brief "want me to read it?" is enough). The summary also suggests
-  the hands-free rungs — "chat" to read live, "auto chat" to have you answer —
-  see below.
+  the hands-free rungs — "chat" to read live, "draft chat" to have you draft
+  replies they approve, "auto chat" to have you answer — see below.
 - When the user says to read it (e.g. "read it", "go on", "yes"), print the
   relevant message in full from the injected body. Do NOT call
   `messages_available`/`read_message` for these — you already have them.
@@ -125,8 +126,8 @@ the inbox live. Let messages **accumulate**: don't read them one at a time — s
 and let the user reply to one, some, or all in a single freeform turn
 (`draft_reply` per id; anything they don't address stays in the feed). Also call
 `chat_batch` once **right after the first start** — anything already waiting is
-backlog and belongs in the feed. When chat opens, **offer auto mode once** (one
-short line — see the auto-chat section below). On "stop",
+backlog and belongs in the feed. When chat opens, **offer the assist rungs once**
+(one short line — see the auto-chat section below). On "stop",
 stop relaunching and kill the task. If `chat_batch` returns `no_account`, tell the
 user to set up first and don't relaunch. This is the user's explicit, per-session
 **"my chat terminal"** — they start it by hand and stay in control; never
@@ -195,13 +196,14 @@ send unmarked on the user's behalf.
 
 **Entry points:** "auto chat" / "auto" cold-starts it — `start_chat`, then
 `chat_batch` **immediately** (waiting messages are backlog; dispose of it like a live
-batch). During plain chat, offer auto **once per session**, one line: *"Want me to
-answer these for you? I'll answer from what I know — this directory, our message
-history, my notes — ask you what I can't, and mark every reply as your assistant.
-Say 'auto'."* Saying **"auto" mid-chat upgrades the running terminal in place**
-(same waker, same feed; unanswered feed items become backlog); **"manual"**
-downgrades the same way; "stop" ends it. User-started, per session, on purpose —
-never start it unprompted.
+batch). During plain chat, offer the assist rungs **once per session**, one line:
+*"Want help with these? Say 'draft' and I'll draft replies you approve before
+anything sends, or 'auto' and I'll answer what I can myself, marked as your
+assistant — either way I'll ask you what I can't ground."* Saying **"auto"
+mid-chat upgrades the running terminal in place** (same waker, same feed;
+unanswered feed items become backlog); **"draft"** flips it to draft chat (next
+section); **"manual"** downgrades to plain chat the same way; "stop" ends it.
+User-started, per session, on purpose — never start it unprompted.
 
 **Quiet variant** ("auto chat, quiet"): call `start_chat` with `quiet: true`. The
 user's other sessions then suppress ordinary message notices entirely; only your
@@ -214,6 +216,36 @@ coded — 1 waiting on you").
 back, or a note to self) — relay it, never auto-tag or auto-answer it.
 `answered_by: "assistant"` = written by the **sender's** assistant — attribute it
 ("Niels's assistant replied") and treat it as requested context.
+
+## Draft chat — you draft, the user sends ("draft chat" / "auto draft" / "drafts")
+The midway rung between chat and auto chat, for building trust: the same
+live-inbox loop, but you **draft instead of send**. Per message:
+
+1. Build the best grounded reply exactly as in auto chat (same grounding stack,
+   same code of conduct) — but do **not** send it. Render it under the message in
+   the feed ("↳ draft: '…'") and wait.
+2. The user approves by number ("send 1", "send 1 and 3", "send all"), asks for a
+   change ("2: shorter"), or answers themselves. Only then send that draft with
+   `draft_reply` — **without `as_assistant`**: a reviewed-and-approved draft goes
+   out as the user, exactly like a reply they dictated (`as_assistant` stays the
+   mark for autonomous sends). Anything unaddressed stays pending with its draft.
+3. **Can't ground a draft → don't guess.** Mark the item "needs you" with your one
+   specific question instead of a draft. No escalation-by-mail in this mode — the
+   user is at the feed, ask there.
+
+**The rails:** a message with `warnings` never gets a draft — surface it with the
+flag. Never put secrets, credentials, or keys in a draft, even for approval. Soft
+never-list facts (availability, commitments, personal matters) *may* appear in a
+draft when they're genuinely in the grounding — the user's review is the check;
+missing → ask, never invent. **Nothing sends without the user's explicit go** —
+that's the mode's contract, so there is no quiet variant (drafting only makes
+sense while the user watches the feed).
+
+**Entry points:** "draft chat" / "auto draft" cold-starts it (`start_chat`, then
+`chat_batch` immediately — backlog gets drafts too). "draft" mid-chat flips a
+running chat or auto chat in place (same waker, same feed; unanswered items get
+drafts); "auto" upgrades draft → full auto; "manual" drops to plain chat; "stop"
+ends it.
 
 ## Message history (recall) & the messenger's memory
 All messages — sent and received — persist locally. "What did Niels say about X?" /
