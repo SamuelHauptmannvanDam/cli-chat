@@ -111,6 +111,14 @@ export function vaultDirtyFile(user: string): string {
   return join(userDir(user), "vault-dirty");
 }
 
+// Outbox for the history sync (AUTH-SYNC.md): messages seen on this device
+// (sent AND received) queue here as JSONL until the next encrypted push to the
+// account's history stream. Appended by the message paths, drained by
+// history-sync.ts; absent/empty = nothing to push.
+export function historyOutboxFile(user: string): string {
+  return join(userDir(user), "history-outbox.jsonl");
+}
+
 // While the live inbox ("chat") listener is running it heartbeats this lock file
 // (bumping its mtime every tick). A FRESH lock tells the session hook that chat is
 // live, so the hook suppresses its count-only notice and the listener's feed is

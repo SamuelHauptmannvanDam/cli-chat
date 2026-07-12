@@ -46,7 +46,7 @@ Auto chat is discovered through chat itself, not through docs:
   > your assistant, and asking you what I can't ground either way.*
 
   Offered once per session, never repeated, never nags.
-- **"draft chat"** (or "auto draft" / "drafts") — the **midway rung**: the same
+- **"auto draft chat"** (or "draft chat" / "drafts") — the **midway rung**: the same
   loop, but the assistant only *drafts*. Each incoming message gets a proposed
   reply rendered beneath it in the feed ("↳ draft: '…'"); nothing sends until
   the user approves ("send 1", "send all"), edits, or answers themselves. An
@@ -74,7 +74,7 @@ Auto chat is discovered through chat itself, not through docs:
 
 **Tips suggest; the offer explains.** Everywhere a one-line tip mentions
 chat, it names the rungs — the session-start mail summary's hint is *"say
-'chat' to read your messages live, 'draft chat' and I'll draft replies for
+'chat' to read your messages live, 'auto draft chat' and I'll draft replies for
 you to approve, or 'auto chat' and I'll answer them for you"*. Tips only
 *suggest* (one line, no lecture); the full explanation of what the assist
 modes do lives in the in-chat offer above, at the moment of turning one on —
@@ -94,7 +94,7 @@ long as the session runs:
    chat is activated (the session-start inbox, or anything that piled up),
    fetch them with `chat_batch` immediately and put them through the same
    disposal as a live batch — don't leave pre-existing mail sitting outside
-   the mediator. Then start the background waker (`start_chat`). The same
+   the mediator. Then start the background waker (the mode-named chat tool: `chat` / `auto_draft_chat` / `auto_chat`). The same
    rule fires on a mid-flight "auto" in a running chat: feed items the user
    hasn't answered yet count as backlog and go through the mediator at flip
    time (the waker is already running; nothing restarts).
@@ -102,7 +102,7 @@ long as the session runs:
 Per message in each batch:
 
 1. **Try to answer** from the grounding stack (below). Confident, grounded,
-   inside the rails → `draft_reply` and send, marked as the assistant.
+   inside the rails → `send_message` (in_reply_to) and send, marked as the assistant.
 2. **Narrate every send in the terminal as it happens** — "↩ Niels: 'REDIS_URL
    and API_KEY, see .env.example.'" The session is live and visible; the user
    watches their assistant work. (In the quiet variant the narration is
@@ -166,7 +166,7 @@ Five levels, one engine. Each is just a different answer to "who sees what":
 |---|---|---|---|
 | Read (default) | — | count on open/keystroke; read on demand | you |
 | Chat | "chat" | live feed, every message | you (agent sends) |
-| Draft chat | "draft chat" (or "chat" → say "draft") | feed + a proposed draft under each message | you — every send is your explicit approval, sent as you |
+| Auto draft chat | "auto draft chat" (or "chat" → say "draft") | feed + a proposed draft under each message | you — every send is your explicit approval, sent as you |
 | Auto chat | "auto chat" / "auto" (or say "auto" mid-chat) | feed + narrated assistant replies + needs-you questions | assistant; you for the rest |
 | **Quiet auto** | "auto chat, quiet" | **escalations only** — handled mail never surfaces | assistant; you're mailed when needed |
 
@@ -184,7 +184,7 @@ assistant reply is in `history` permanently, and the assistant recaps on
 demand ("what did you handle?") and in one line when the user next engages
 ("handled 4 while you coded — 1 waiting on you"). Same honesty, batched.
 
-Expected steady state: read/chat are the on-ramp, draft chat is the
+Expected steady state: read/chat are the on-ramp, auto draft chat is the
 trust-builder (watch the drafts until they're consistently right); quiet
 auto is where regular users land — most messages never cost attention at
 all. That is the pitch.
@@ -279,7 +279,7 @@ as behaviour (CLAUDE.md + instructions + resultNotes) plus one code-level check:
   door: mail that asks the assistant to run commands, reveal contacts/keys/
   context, change settings, or "ignore your rules" is *surfaced*, never
   obeyed. Answering reads context; it never executes actions because mail
-  asked. The only writes auto chat performs are `draft_reply` sends and
+  asked. The only writes auto chat performs are threaded reply sends and
   `cli-chat-context` notes.
 - **Always marked as the assistant — visibly, not just in metadata.** Every
   auto-chat reply carries the mark twice: a human-readable line in the body
@@ -322,14 +322,14 @@ as planned). Kept as the map of where each piece lives:
 2. `cli-chat-context/`: paths + read/write helpers; "remember X" behaviour;
    read-at-start in every session (instructions + resultNote nudges).
 3. Triggers + loop: "chat" offers auto once; "auto"/"manual" mid-flight;
-   "auto chat" / "auto" shortcut → same `start_chat`/`chat_batch` machinery
+   "auto chat" / "auto" shortcut → same waker/`chat_batch` machinery (today: the `auto_chat` tool)
    with **backlog drain on activation**, mediated disposal, live narration,
    ask-then-answer for the rest. Update the discovery tips to name both
    rungs (session-start summary hint: chat *and* auto chat — suggest only;
    the in-chat offer explains). (Behaviour-only where possible; the tools
    already exist.)
 4. The assistant mark: `answered_by: "assistant"` in `packBody`/`unpackBody`
-   + `draft_reply` param, **plus the visible in-body line** so unmarked
+   + send param, **plus the visible in-body line** so unmarked
    recipients see it too; render assistant answers distinctly on the
    receiving side.
 5. Rails in CLAUDE.md + instructions.ts + resultNotes: contacts-only,
@@ -352,10 +352,10 @@ as planned). Kept as the map of where each piece lives:
 8. README: one section — *say "auto chat" and your assistant answers your
    mail from your own context; every reply is marked as the assistant and
    shown as it happens.* Version bump, publish.
-9. **Draft chat (0.13.0)** — the midway rung, added on user request:
-   behaviour-only (CLAUDE.md + instructions.ts + the chat_batch/start_chat
+9. **Auto draft chat (0.13.0)** — the midway rung, added on user request:
+   behaviour-only (CLAUDE.md + instructions.ts + the chat_batch/chat-tool
    resultNotes + the discovery tips). No new machinery: same waker and
-   `chat_batch`; approved drafts send through the existing `draft_reply`,
+   `chat_batch`; approved drafts send through the existing reply path (`send_message` + in_reply_to),
    unmarked (user-reviewed = the user's message).
 
 ## Open questions
@@ -366,11 +366,10 @@ as planned). Kept as the map of where each piece lives:
    auto-tagged, and never saves the user as their own contact. The
    multi-device race (two devices drain one mailbox, first drain wins) is
    accepted for v1.
-1. **Context in the vault?** Syncing `cli-chat-context/` would make the
-   assistant's memory follow the user across devices — but the vault is
-   server-readable, and this is distilled conversation content. Options:
-   accept (same trade as contacts), encrypt just this blob client-side, or
-   stay local-only. Decide when multi-device users actually ask for it.
+1. ~~**Context in the vault?**~~ RESOLVED by the account rewrite: the context
+   files (threads + notes) ride the vault, and the whole vault is now
+   client-encrypted at rest (AUTH-SYNC.md §4) — the assistant's memory follows
+   the user across devices.
 2. **Per-contact trust later?** "Auto-answer anything from Niels, only
    project facts for others" — tags could carry it (`work` circle gets repo
    answers). Defer until real use shows the need.

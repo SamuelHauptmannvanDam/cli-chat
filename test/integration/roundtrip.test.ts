@@ -10,7 +10,6 @@ import {
   sendMessage,
   messagesAvailable,
   readMessage,
-  draftReply,
   addContact,
   sync,
 } from "../../src/core-net.ts";
@@ -41,7 +40,7 @@ describe("happy path: send → available → read → reply", () => {
     // Reading clears the inbox.
     assert.equal((await messagesAvailable(bob)).count, 0);
 
-    const reply = await draftReply(bob, { in_reply_to: sentId, body: "I'm in." });
+    const reply = await sendMessage(bob, { in_reply_to: sentId, body: "I'm in." });
     assert.ok(reply.ok && reply.to.name === "Alice");
 
     const back = await readMessage(alice, {});
@@ -118,7 +117,7 @@ describe("onboarding by code", () => {
     const code = encodeKey(bobId.signPub, bobId.boxPub);
 
     const r = await sendMessage(alice, { to: "Bob", body: "hi via code", key: code });
-    assert.ok(r.ok && r.saved === true);
+    assert.ok(r.ok && "saved" in r && r.saved === true);
     // Saved for next time: a bare "write Bob" now resolves.
     assert.equal(alice.book.contacts.find((c) => c.name === "Bob")?.signPub, bobId.signPub);
 
@@ -179,7 +178,7 @@ describe("onboarding by code", () => {
 describe("reply failures", () => {
   test("replying to an unknown message is not_found", async () => {
     const { b: bob } = await twoUsers(mb.baseUrl);
-    const r = await draftReply(bob, { in_reply_to: "nope", body: "x" });
+    const r = await sendMessage(bob, { in_reply_to: "nope", body: "x" });
     assert.equal(r.ok === false && r.reason, "not_found");
   });
 
@@ -200,7 +199,7 @@ describe("reply failures", () => {
     await sync(bob);
     // Auto-saved under their own name.
     assert.equal(bob.book.contacts.find((c) => c.signPub === strangerId.signPub)?.name, "Mallory");
-    const r = await draftReply(bob, { in_reply_to: sent.ok ? sent.id : "", body: "hello!" });
+    const r = await sendMessage(bob, { in_reply_to: sent.ok ? sent.id : "", body: "hello!" });
     assert.ok(r.ok && r.to.name === "Mallory");
   });
 
@@ -229,7 +228,7 @@ describe("reply failures", () => {
     assert.equal(bob.book.contacts.length, 0);
     const read = await readMessage(bob, { id });
     assert.ok(read.ok && read.body === "plain legacy body");
-    const r = await draftReply(bob, { in_reply_to: id, body: "hello?" });
+    const r = await sendMessage(bob, { in_reply_to: id, body: "hello?" });
     assert.equal(r.ok === false && r.reason, "no_keys");
   });
 });

@@ -12,7 +12,6 @@ import { join } from "node:path";
 import { startMailbox, twoUsers, now, FIXED_NOW, type Mailbox } from "../helpers.ts";
 import {
   sendMessage,
-  draftReply,
   messageHistory,
   messagesAvailable,
   takeUnread,
@@ -54,7 +53,7 @@ test("history merges both directions in chronological order", async () => {
   await sendMessage(a, { to: "Bob", body: "one" });
   await sync(b);
   const inbox = takeUnread(b);
-  await draftReply(b, { in_reply_to: inbox[0]!.id, body: "two" });
+  await sendMessage(b, { in_reply_to: inbox[0]!.id, body: "two" });
   await sendMessage(a, { to: "Bob", body: "three" });
 
   const h = await messageHistory(a, { with: "Bob" });

@@ -49,6 +49,11 @@ export interface AccountRecord {
   email: string;
   signPub: string | null;
   paid: boolean;
+  // Per-account symmetric data key (hex). Minted server-side on first login and
+  // handed to the device over the authenticated channel; the CLIENT uses it to
+  // encrypt the vault + history blobs before pushing. The server stores both the
+  // key and the ciphertext (encryption-at-rest, not E2E — AUTH-SYNC.md §4).
+  dataKey: string | null;
 }
 
 // What a poll resolves to. "pending" = link not clicked yet; "expired" = no such
@@ -61,6 +66,13 @@ export type LoginPoll =
 export interface VaultRecord {
   blob: string;
   version: number;
+}
+
+// One encrypted history chunk (a client-sealed batch of messages). `seq` is a
+// per-account monotonic cursor: devices pull "everything after seq N".
+export interface HistoryChunk {
+  seq: number;
+  blob: string;
 }
 
 // --- Contacts of contacts (CONTACTS-OF-CONTACTS.md, FRIENDS.md) --------------
@@ -130,6 +142,10 @@ export interface Store {
   getOrCreateAccount(email: string, now: number): AccountRecord | Promise<AccountRecord>;
   // Bind the user's mailbox key to the account on first sync (no-op if unchanged).
   bindAccountSignPub(accountId: string, signPub: string, now: number): void | Promise<void>;
+  // Get-or-set the account's data key atomically: `candidate` is written only when
+  // no key exists yet, and the stored key is returned either way — so concurrent
+  // logins can't mint two keys for one account.
+  ensureDataKey(accountId: string, candidate: string, now: number): string | Promise<string>;
   // Flip the paid flag (Stripe webhook). Idempotent.
   setAccountPaid(accountId: string, now: number): void | Promise<void>;
 
@@ -174,6 +190,19 @@ export interface Store {
     version: number,
     now: number,
   ): "ok" | { stale: VaultRecord } | Promise<"ok" | { stale: VaultRecord }>;
+  // History (AUTH-SYNC.md): append-only, client-encrypted message chunks. Append
+  // assigns each blob the next per-account seq and returns the last one written.
+  appendHistory(accountId: string, blobs: string[], now: number): number | Promise<number>;
+  // Pull chunks strictly after `since`, oldest first, capped at `limit`. `last` is
+  // the account's newest seq so the caller knows whether to page again.
+  historySince(
+    accountId: string,
+    since: number,
+    limit: number,
+  ): { chunks: HistoryChunk[]; last: number } | Promise<{ chunks: HistoryChunk[]; last: number }>;
+  // Drop an account's whole history (unused by routes today; retention/tooling).
+  deleteHistory(accountId: string): void | Promise<void>;
+
   // Retention sweep for the account layer: drop expired login tokens + sessions.
   purgeAuth(now: number): number | Promise<number>;
 
@@ -312,6 +341,7 @@ export function nodeSqliteStore(path: string): Store {
       email       TEXT NOT NULL UNIQUE,
       signPub     TEXT,
       paid        INTEGER NOT NULL DEFAULT 0,
+      data_key    TEXT,
       created_at  INTEGER NOT NULL,
       updated_at  INTEGER NOT NULL
     );
@@ -339,6 +369,16 @@ export function nodeSqliteStore(path: string): Store {
       version     INTEGER NOT NULL,
       updated_at  INTEGER NOT NULL
     );
+    -- Message history (AUTH-SYNC.md): append-only, client-encrypted chunks with a
+    -- per-account monotonic seq. Devices push what they saw and pull past their
+    -- cursor; the server can't read the blobs.
+    CREATE TABLE IF NOT EXISTS history (
+      account_id  TEXT NOT NULL,
+      seq         INTEGER NOT NULL,
+      blob        TEXT NOT NULL,
+      created_at  INTEGER NOT NULL,
+      PRIMARY KEY (account_id, seq)
+    );
   `);
   // Self-heal a dev DB created before received_at existed (the CREATE above is a
   // no-op on an existing table). Throws if the column is already there — fine.
@@ -359,6 +399,12 @@ export function nodeSqliteStore(path: string): Store {
   // Same self-heal for requests-only mode (FRIENDS.md), added later still.
   try {
     db.exec(`ALTER TABLE handles ADD COLUMN requests_only INTEGER NOT NULL DEFAULT 0`);
+  } catch {
+    /* column already present */
+  }
+  // Same self-heal for the per-account data key (encrypted vault/history).
+  try {
+    db.exec(`ALTER TABLE accounts ADD COLUMN data_key TEXT`);
   } catch {
     /* column already present */
   }
@@ -487,15 +533,24 @@ export function nodeSqliteStore(path: string): Store {
     getOrCreateAccount(email, now) {
       const e = email.toLowerCase();
       const found = db
-        .prepare(`SELECT id, email, signPub, paid FROM accounts WHERE email = ?`)
-        .get(e) as { id: string; email: string; signPub: string | null; paid: number } | undefined;
-      if (found) return { id: found.id, email: found.email, signPub: found.signPub, paid: !!found.paid };
+        .prepare(`SELECT id, email, signPub, paid, data_key FROM accounts WHERE email = ?`)
+        .get(e) as
+        | { id: string; email: string; signPub: string | null; paid: number; data_key: string | null }
+        | undefined;
+      if (found)
+        return {
+          id: found.id,
+          email: found.email,
+          signPub: found.signPub,
+          paid: !!found.paid,
+          dataKey: found.data_key,
+        };
       const id = randomId();
       db.prepare(
         `INSERT INTO accounts (id, email, signPub, paid, created_at, updated_at)
          VALUES (?, ?, NULL, 0, ?, ?)`,
       ).run(id, e, now, now);
-      return { id, email: e, signPub: null, paid: false };
+      return { id, email: e, signPub: null, paid: false, dataKey: null };
     },
 
     bindAccountSignPub(accountId, signPub, now) {
@@ -504,6 +559,18 @@ export function nodeSqliteStore(path: string): Store {
         now,
         accountId,
       );
+    },
+
+    ensureDataKey(accountId, candidate, now) {
+      // Conditional write, then read back: only the first caller's candidate
+      // lands, and every caller returns the same stored key.
+      db.prepare(
+        `UPDATE accounts SET data_key = ?, updated_at = ? WHERE id = ? AND data_key IS NULL`,
+      ).run(candidate, now, accountId);
+      const row = db.prepare(`SELECT data_key FROM accounts WHERE id = ?`).get(accountId) as
+        | { data_key: string | null }
+        | undefined;
+      return row?.data_key ?? candidate;
     },
 
     setAccountPaid(accountId, now) {
@@ -552,16 +619,29 @@ export function nodeSqliteStore(path: string): Store {
     accountBySession(tokenHash, now) {
       const row = db
         .prepare(
-          `SELECT a.id, a.email, a.signPub, a.paid, s.expires_at
+          `SELECT a.id, a.email, a.signPub, a.paid, a.data_key, s.expires_at
            FROM sessions s JOIN accounts a ON a.id = s.account_id
            WHERE s.token_hash = ?`,
         )
         .get(tokenHash) as
-        | { id: string; email: string; signPub: string | null; paid: number; expires_at: number }
+        | {
+            id: string;
+            email: string;
+            signPub: string | null;
+            paid: number;
+            data_key: string | null;
+            expires_at: number;
+          }
         | undefined;
       if (!row || row.expires_at <= now) return null;
       db.prepare(`UPDATE sessions SET last_seen = ? WHERE token_hash = ?`).run(now, tokenHash);
-      return { id: row.id, email: row.email, signPub: row.signPub, paid: !!row.paid };
+      return {
+        id: row.id,
+        email: row.email,
+        signPub: row.signPub,
+        paid: !!row.paid,
+        dataKey: row.data_key,
+      };
     },
 
     deleteSession(tokenHash) {
@@ -587,6 +667,50 @@ export function nodeSqliteStore(path: string): Store {
            version = excluded.version, updated_at = excluded.updated_at`,
       ).run(accountId, blob, version, now);
       return "ok";
+    },
+
+    appendHistory(accountId, blobs, now) {
+      // MAX+1 inside one implicit per-statement lock is enough here (node:sqlite
+      // serialises writers); D1 mirrors the same shape.
+      let last = 0;
+      const insert = db.prepare(
+        `INSERT INTO history (account_id, seq, blob, created_at)
+         SELECT ?, COALESCE(MAX(seq), 0) + 1, ?, ? FROM history WHERE account_id = ?`,
+      );
+      for (const blob of blobs) {
+        insert.run(accountId, blob, now, accountId);
+        const row = db
+          .prepare(`SELECT MAX(seq) AS seq FROM history WHERE account_id = ?`)
+          .get(accountId) as { seq: number | null };
+        last = Number(row?.seq ?? 0);
+      }
+      if (!blobs.length) {
+        const row = db
+          .prepare(`SELECT MAX(seq) AS seq FROM history WHERE account_id = ?`)
+          .get(accountId) as { seq: number | null };
+        last = Number(row?.seq ?? 0);
+      }
+      return last;
+    },
+
+    historySince(accountId, since, limit) {
+      const chunks = db
+        .prepare(
+          `SELECT seq, blob FROM history WHERE account_id = ? AND seq > ?
+           ORDER BY seq ASC LIMIT ?`,
+        )
+        .all(accountId, since, limit) as unknown as { seq: number; blob: string }[];
+      const row = db
+        .prepare(`SELECT MAX(seq) AS seq FROM history WHERE account_id = ?`)
+        .get(accountId) as { seq: number | null };
+      return {
+        chunks: chunks.map((c) => ({ seq: Number(c.seq), blob: c.blob })),
+        last: Number(row?.seq ?? 0),
+      };
+    },
+
+    deleteHistory(accountId) {
+      db.prepare(`DELETE FROM history WHERE account_id = ?`).run(accountId);
     },
 
     purgeAuth(now) {

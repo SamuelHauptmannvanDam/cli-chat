@@ -34,9 +34,10 @@ plaintext, and **`read_at = created_at`** — an outbound row is born "read."
   read_at IS NULL`; outbound rows can never match, so nothing new ever surfaces
   as inbox mail. (Belt-and-braces: the `read_at` stamp guards any future query
   that forgets the recipient filter.)
-- Privacy delta to state honestly: today your sent words don't persist on disk;
-  after this they do — same plaintext-at-rest, 0600-key-file posture as the
-  inbound cache that already exists. Local only; never synced (see limits).
+- Privacy delta to state honestly: your sent words persist on disk — same
+  plaintext-at-rest, 0600-key-file posture as the inbound cache. Since the
+  account rewrite they also sync to the online account as client-encrypted
+  history chunks (AUTH-SYNC.md §5); every read is still served locally.
 
 ## The `history` tool (new MCP surface — the only new tool)
 
@@ -112,13 +113,15 @@ mid-workflow. History is three tiers:
 
 ## Limits (state, don't oversell)
 
-- **Per-device.** History lives in the local cache and is deliberately **not**
-  in the vault — the vault is server-readable by design (AUTH-SYNC.md §4), and
-  message plaintext must never become server-readable. A new device starts with
-  history from its own first drain onward.
-- **Outbound starts at ship.** Messages sent before this version were never
+- **Reads are per-device; the account converges them.** Every query is served
+  from the local cache. Since the account rewrite, the caches themselves
+  converge: each device pushes what it sees to the account's history stream as
+  client-encrypted chunks and pulls what the others saw (AUTH-SYNC.md §5), so
+  a logged-in device — including a fresh one after `login` — ends up with the
+  full history. Synced rows land born-read; read-state itself doesn't sync.
+- **Outbound starts at ship.** Messages sent before 0.12.0 were never
   stored; their half of old threads is gone. Inbound history reaches back to
-  each device's first install.
+  the account's earliest surviving cache.
 
 ## Build map — shipped in 0.12.0 (together with AUTO-CHAT.md)
 
@@ -128,7 +131,7 @@ makes history usable as context). The list below stays as the map of where
 each piece lives:
 
 1. `core-net.ts` — store outbound in `sendSealed` (plaintext row,
-   `read_at = created_at`); covers `sendMessage` + `draftReply` paths.
+   `read_at = created_at`); covers both `sendMessage` modes (new send + threaded reply).
 2. `core-net.ts` — `historyFor(ctx, args)`: resolve name (shared
    partial-match), query both directions by `signPub`, `LIKE` filter,
    limit/before, no `markRead`. `db.ts` gains the one query helper.

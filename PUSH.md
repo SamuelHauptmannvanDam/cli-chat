@@ -135,7 +135,7 @@ and offline-resilient.
 #### Live chat (the explicit hands-free mode — AS IMPLEMENTED)
 The explicit "lean back, read mail straight into context the instant it arrives"
 mode is the live inbox the user opens by saying **"chat"** — see `LIVE-INBOX.md`
-for the full design. In short: `start_chat` hands the agent a shell command for the
+for the full design. In short: the mode-named chat tool (`chat` / `auto_draft_chat` / `auto_chat`) hands the agent a shell command for the
 `await-mail` **waker**, which the agent runs as a BACKGROUND task. The waker blocks
 on the warmer's pending snapshot and exits the moment unsurfaced mail lands; on each
 exit the agent calls `chat_batch` to drain the batch and relaunches the waker. This

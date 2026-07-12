@@ -91,13 +91,15 @@ function runHook(
   return out ? JSON.parse(out) : null;
 }
 
-test("no account on SessionStart asks for the user's name to set up", () => {
-  // No identity seeded → not set up.
+test("no account on SessionStart asks for the user's email to log in", () => {
+  // No identity seeded → not set up. Login is the only front door: the hook asks
+  // for the EMAIL (restore-or-create both start there), never a name first.
   const out = runHook("SessionStart");
   assert.match(out.systemMessage, /Welcome to cli-chat/);
-  assert.match(out.systemMessage, /What's your full name\?/);
+  assert.match(out.systemMessage, /What's your email\?/);
   assert.equal(out.hookSpecificOutput.hookEventName, "SessionStart");
-  assert.match(out.hookSpecificOutput.additionalContext, /create_account/);
+  assert.match(out.hookSpecificOutput.additionalContext, /`login`/);
+  assert.match(out.hookSpecificOutput.additionalContext, /need_name/);
 });
 
 test("no account on UserPromptSubmit stays silent (no nagging mid-session)", () => {
@@ -268,12 +270,12 @@ test("a screened (flagged) message carries its warning into the agent's private 
   assert.doesNotMatch(ctx, /id m2\) \[⚠/);
 });
 
-test("the first-mail tip suggests all three rungs: chat, draft chat and auto chat", () => {
+test("the first-mail tip suggests all three rungs: chat, auto draft chat and auto chat", () => {
   seedIdentity();
   seedPending([{ id: "m1", from: "Niels", body: "hi" }]);
   const out = runHook("SessionStart", { account: true, session_id: "s1" });
   assert.match(out.systemMessage, /say "chat" to read your messages live/);
-  assert.match(out.systemMessage, /"draft chat" and I'll draft replies for you to approve/);
+  assert.match(out.systemMessage, /"auto draft chat" and I'll draft replies for you to approve/);
   assert.match(out.systemMessage, /"auto chat" and I'll answer them for you/);
 });
 

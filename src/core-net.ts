@@ -66,6 +66,11 @@ export interface NetContext {
   // vault dirty. Without it those writes only reach other devices after some
   // unrelated tool mutation. Optional, fire-and-forget, must never throw.
   onBookChange?: () => void;
+  // Fired for every message this device SEES (a row inserted on send or drain),
+  // so the owner can queue it for the account's history stream (history-sync.ts).
+  // Never fired for rows applied FROM the stream — that would loop. Optional,
+  // fire-and-forget, must never throw or break a send/drain.
+  onHistoryAppend?: (row: MessageRow) => void;
 }
 
 // Save (or update) a contact in the book and persist it to disk if we know
@@ -425,6 +430,11 @@ export async function sync(ctx: NetContext): Promise<number> {
       answered_by: env.answered_by ?? null,
     };
     insertMessage(ctx.cache, row);
+    try {
+      ctx.onHistoryAppend?.(row);
+    } catch {
+      /* history queueing must never break a drain */
+    }
     threadAppend(ctx, { name: senderLabel(ctx.book, b.sender), signPub: b.sender }, {
       direction: "in",
       who: senderLabel(ctx.book, b.sender),
@@ -445,6 +455,8 @@ export type SendResult =
       query: string;
       candidates?: string[];
     }
+  // Neither `to` nor `in_reply_to` was given — there's no one to send to.
+  | { ok: false; reason: "need_recipient" }
   // The name isn't a saved contact but DOES match a friend-of-friend, who is
   // name-only and not directly messageable — steer the caller to a connect request
   // (FRIENDS.md) instead of failing with no_contact.
@@ -479,8 +491,8 @@ async function sendSealed(
   // and a pre-existing born-read row would swallow it (the whole point of
   // self-mail is to SURFACE — the drained row is also the history record).
   try {
-    if (to.signPub !== ctx.me.signPub)
-      insertMessage(ctx.cache, {
+    if (to.signPub !== ctx.me.signPub) {
+      const row = {
         id: wire.id,
         recipient: to.signPub,
         sender: ctx.me.signPub,
@@ -491,7 +503,10 @@ async function sendSealed(
         read_at: createdAt,
         in_reply_to,
         answered_by: asAssistant ? "assistant" : null,
-      });
+      };
+      insertMessage(ctx.cache, row);
+      ctx.onHistoryAppend?.(row);
+    }
   } catch {
     /* cache hiccup — the send already succeeded */
   }
@@ -553,50 +568,56 @@ const SELF_WORDS = new Set(["me", "myself", "self"]);
 // user's own identity ("me"/their own name) — the self-send path.
 export async function sendMessage(
   ctx: NetContext,
-  args: { to: string; body: string; key?: string; as_assistant?: boolean },
-): Promise<SendResult> {
+  args: { to?: string; body: string; key?: string; in_reply_to?: string; as_assistant?: boolean },
+): Promise<SendResult | ReplyResult> {
   const asAssistant = args.as_assistant === true;
+  // A reply: the recipient is definitionally the other side of the replied-to
+  // message — inferred from its id, never from a name lookup (`to` is ignored).
+  if (args.in_reply_to)
+    return sendReply(ctx, { in_reply_to: args.in_reply_to, body: args.body, as_assistant: asAssistant });
+  const to = args.to?.trim();
+  if (!to) return { ok: false, reason: "need_recipient" };
   // "me"/"myself" always means the user, even if a contact shares the word.
-  if (SELF_WORDS.has(args.to.trim().toLowerCase())) return sendToSelf(ctx, args.body, asAssistant);
+  if (SELF_WORDS.has(to.toLowerCase())) return sendToSelf(ctx, args.body, asAssistant);
 
-  const r = resolve(ctx.book, args.to);
+  const r = resolve(ctx.book, to);
 
   if (r.status === "none") {
     // No such contact. If the user supplied a key code or handle, resolve it,
     // remember them under the name they gave, and send.
     if (args.key) {
       if (!parseKey(args.key) && !isHandle(args.key))
-        return { ok: false, reason: "bad_key", query: args.to };
+        return { ok: false, reason: "bad_key", query: to };
       const keys = await resolveCode(ctx, args.key);
-      if (!keys) return { ok: false, reason: "bad_key", query: args.to };
+      if (!keys) return { ok: false, reason: "bad_key", query: to };
       // The code resolved to the user's own identity → self-send, never self-save.
       if (keys.signPub === ctx.me.signPub) return sendToSelf(ctx, args.body, asAssistant);
-      rememberContact(ctx, { name: args.to, signPub: keys.signPub, boxPub: keys.boxPub, handle: keys.handle });
-      const id = await sendSealed(ctx, { name: args.to, ...keys }, args.body, null, asAssistant);
-      return { ok: true, id, to: { name: args.to, signPub: keys.signPub }, saved: true };
+      rememberContact(ctx, { name: to, signPub: keys.signPub, boxPub: keys.boxPub, handle: keys.handle });
+      const id = await sendSealed(ctx, { name: to, ...keys }, args.body, null, asAssistant);
+      return { ok: true, id, to: { name: to, signPub: keys.signPub }, saved: true };
     }
     // The user's own name/handle (no contact shadows it, since resolve came up
     // empty) → self-send.
-    const q = args.to.trim().toLowerCase();
+    const q = to.toLowerCase();
     if ((ctx.me.name && q === ctx.me.name.toLowerCase()) || (ctx.me.handle && q === ctx.me.handle.toLowerCase()))
       return sendToSelf(ctx, args.body, asAssistant);
     // Not a saved contact. Before failing, check the second-degree network: if the
     // name matches a friend-of-friend, they're name-only (not messageable yet), so
     // steer to a connect request rather than a dead "no_contact" (FRIENDS.md).
-    const fof = await matchNetwork(ctx, args.to);
+    const fof = await matchNetwork(ctx, to);
     if (fof) return fof;
-    return { ok: false, reason: "no_contact", query: args.to };
+    return { ok: false, reason: "no_contact", query: to };
   }
   if (r.status === "ambiguous")
     return {
       ok: false,
       reason: "ambiguous",
-      query: args.to,
+      query: to,
       candidates: r.candidates.map((c) => c.name),
     };
   const c = r.contact;
   if (!c.signPub || !c.boxPub)
-    return { ok: false, reason: "no_keys", query: args.to };
+    return { ok: false, reason: "no_keys", query: to };
 
   const id = await sendSealed(ctx, { name: c.name, signPub: c.signPub, boxPub: c.boxPub }, args.body, null, asAssistant);
   return { ok: true, id, to: { name: c.name, signPub: c.signPub } };
@@ -764,7 +785,10 @@ export type ReplyResult =
   | { ok: true; id: string; to: { name: string; signPub: string }; self?: boolean }
   | { ok: false; reason: "not_found" | "no_keys" };
 
-export async function draftReply(
+// The reply half of sendMessage: recipient inferred from the replied-to message,
+// so a reply can never be misdirected by a name lookup. Internal — the public
+// door is sendMessage({ in_reply_to }).
+async function sendReply(
   ctx: NetContext,
   args: { in_reply_to: string; body: string; as_assistant?: boolean },
 ): Promise<ReplyResult> {

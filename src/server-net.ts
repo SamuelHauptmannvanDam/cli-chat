@@ -3,22 +3,22 @@
 // Run as:  MESSENGER_USER=sam MESSENGER_MAILBOX_URL=http://localhost:8787 node src/server-net.ts
 //
 // The server boots even with NO identity on the device: in that state only
-// `create_account` works (the rest report `no_account`), so a brand-new user
-// can mint their identity + 6-char code from inside any CLI — no `npm run init`.
+// `login` works (the rest report `no_account`), so a brand-new user logs in with
+// their email and gets their account — restored or freshly created — from inside
+// any CLI, no `npm run init`.
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { secureDir, writeSecret, hardenExisting } from "./secure-fs.ts";
 import { extname, join, relative, isAbsolute, resolve } from "node:path";
-import { userInfo } from "node:os";
 import { initCrypto, generateIdentity } from "./crypto.ts";
 import { loadIdentity } from "./identity.ts";
 import { loadContacts, saveContacts, orderedContacts, cleanName } from "./contacts.ts";
 import { openMailbox } from "./db.ts";
 import { createMailboxClient } from "./mailbox-client.ts";
 import { encodeKey } from "./key-code.ts";
-import { currentUser, setCurrentUser, resolveIdentity } from "./current-user.ts";
+import { currentUser, setCurrentUser, clearCurrentUser } from "./current-user.ts";
 import {
   userDir as userDirOf,
   identityFile,
@@ -31,7 +31,7 @@ import {
   threadsDir,
   notesDir,
 } from "./paths.ts";
-import { existsSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import { rebuildThreads, rememberNote, recallNotes } from "./threads.ts";
 import { runCliSend } from "./cli-send.ts";
 import { loadSettings, saveSettings, type TagMode } from "./settings.ts";
@@ -41,11 +41,14 @@ import {
   loadSession,
   saveSession,
   setVaultVersion,
+  setDataKey,
   isVaultDirty,
   markVaultDirty,
 } from "./session.ts";
 import { pollUntilReady, syncVault } from "./vault-sync.ts";
-import { applyVault } from "./vault.ts";
+import { applyVault, type VaultBlob } from "./vault.ts";
+import { decryptBlob } from "./blob-crypto.ts";
+import { appendOutbox, syncHistory } from "./history-sync.ts";
 import { startWarmer } from "./warmer.ts";
 import { claimHandle } from "./provision.ts";
 import { INSTRUCTIONS } from "./instructions.ts";
@@ -56,7 +59,6 @@ import {
   untagContact,
   declineTagContact,
   suggestTags,
-  draftReply,
   messagesAvailable,
   messageHistory,
   readMessage,
@@ -88,7 +90,7 @@ const LOGIN_POLL_DEADLINE_MS = 60_000;
 
 // The live-inbox listener (await-mail) sits next to this file — bundled in dist/
 // in a published install, or src/ in a dev checkout. Same extension as us, so it
-// runs under the same `node` either way. start_chat hands the agent this path.
+// runs under the same `node` either way. The chat tools hand the agent this path.
 const listenerPath = join(import.meta.dirname, `await-mail${extname(import.meta.filename)}`);
 
 await initCrypto();
@@ -102,7 +104,7 @@ if (process.argv[2] === "send") {
 }
 
 // A resolved identity + everything bound to it. Built lazily so the server can
-// start with no account and create one on demand (create_account).
+// start with no account and gain one on demand (login).
 function buildSession(user: string) {
   // Retroactively tighten perms on every startup: files created before secure-fs
   // existed (or by an older version) keep their 0644 mode until chmod'd, since
@@ -151,9 +153,25 @@ function buildSession(user: string) {
     // too — the tool-level MUTATING flagging never sees warmer/read-path writes.
     onBookChange: () => {
       try {
-        if (loadSession(user)) markVaultDirty(user);
+        if (loadSession(user)) {
+          markVaultDirty(user);
+          scheduleVaultPush();
+        }
       } catch {
         /* never let bookkeeping break a drain */
+      }
+    },
+    // Every message this device sees (sent or drained) queues for the account's
+    // encrypted history stream, then a coalesced background push ships it. Only
+    // when logged in — a local-only session has no stream to feed.
+    onHistoryAppend: (row) => {
+      try {
+        if (loadSession(user)) {
+          appendOutbox(user, row);
+          scheduleHistoryPush();
+        }
+      } catch {
+        /* history queueing must never break a send or drain */
       }
     },
   };
@@ -182,7 +200,7 @@ if (existing) {
 
 // Background push warmer (PUSH.md): a WebSocket to the inbox Durable Object that
 // drains new mail into the cache without occupying the agent's turn. Runs for the
-// active session; restarted when create_account establishes one. Opt out with
+// active session; restarted when login establishes one. Opt out with
 // MESSENGER_PUSH=0 (falls back to the on-open / per-prompt hook + live chat).
 let stopWarmer: (() => void) | null = null;
 function ensureWarmer(): void {
@@ -202,6 +220,11 @@ function ensureWarmer(): void {
       onVault: () => {
         if (S && loadSession(S.user)) void syncNow(S).catch(() => {});
       },
+      // A {t:"history"} wake means another device appended message history — pull
+      // past our cursor so "what did X say" is answerable here too.
+      onHistory: () => {
+        if (S && loadSession(S.user)) void syncHistoryNow(S).catch(() => {});
+      },
     });
 }
 ensureWarmer();
@@ -210,7 +233,7 @@ ensureWarmer();
 // public display name to the directory and backfill all saved contacts as edges.
 // Best-effort + deduped server-side — this is what populates the graph for
 // existing users on upgrade, and self-heals any edge missed while offline. New
-// names/edges after this go through create_account / the onEdgeAdd hook.
+// names/edges after this go through login-create / the onEdgeAdd hook.
 function publishNameAndEdges(): void {
   if (!S) return;
   if (S.me.handle && S.me.name) void S.ctx.client.registerHandle(S.me.handle, S.me.name).catch(() => {});
@@ -222,7 +245,7 @@ publishNameAndEdges();
 // Behavior travels WITH the server (MCP `instructions`, sent on connect) so it
 // works in any MCP-capable CLI — not just Claude Code's CLAUDE.md. The text is
 // the single source in ./instructions.ts; esbuild inlines it into the bundle.
-const server = new McpServer({ name: "cli-chat", version: "0.12.0" }, { instructions: INSTRUCTIONS });
+const server = new McpServer({ name: "cli-chat", version: "0.14.0" }, { instructions: INSTRUCTIONS });
 const ok = (data: unknown) => ({
   content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }],
 });
@@ -232,14 +255,15 @@ const noAccount = () =>
     ok: false,
     reason: "no_account",
     note:
-      "No account on this device yet. Call create_account to generate your identity " +
-      "and 6-char code. Ask the user for their full name first; only fall back to the " +
-      "OS login name if they don't give one.",
+      "No account on this device — the user needs to log in. Ask for their EMAIL, " +
+      "then call `login` with it (they click the emailed link; call login again with " +
+      "the poll_id to finish). An existing account restores itself; a brand-new email " +
+      "will ask you for their name (`need_name`) before creating the account.",
   });
 
 type Session = NonNullable<typeof S>;
 
-// Every tool except create_account needs an established account. `guard` makes
+// Every tool except login needs an established account. `guard` makes
 // that check uniform: the wrapped handler only runs when a session exists (and
 // receives it as its first arg), otherwise the standard no_account result is
 // returned. Handlers return plain data — guard JSON-wraps it with `ok`.
@@ -248,125 +272,32 @@ const guard =
   async (args: any, extra: any) =>
     S ? ok(await handler(S, args, extra)) : noAccount();
 
-server.registerTool(
-  "create_account",
-  {
-    title: "Create your account / set your display name",
-    description:
-      "Set up the USER'S OWN identity on this device: generate their keypair " +
-      "(private keys never leave the machine), claim a short 6-character code " +
-      "(their 'number') in the registry, and return it to share. Use when the " +
-      "user wants to get set up / join / get their code, or when another tool " +
-      "reported `no_account`. Their `name` travels with every message they send " +
-      "(it's what recipients see, and how mutual contacts find them), so set a " +
-      "real one: ask for their full name (\"what's your full name?\") if you " +
-      "don't know it. Idempotent and doubles as a renamer — if they " +
-      "already have an account, calling it returns their existing code, and " +
-      "passing `name` UPDATES their display name (use for 'call me X'). (This is " +
-      "for the user themselves — to save OTHER people, use add_contact.)",
-    inputSchema: {
-      name: z
-        .string()
-        .optional()
-        .describe(
-          "The user's own display name — ideally their FULL name, e.g. 'Lars " +
-            "Andersen' — what people see when they message, and how mutual " +
-            "contacts find them. On an existing account this updates it. Defaults " +
-            "to the OS login name only if you can't get a real one.",
-        ),
-    },
-  },
-  async ({ name }) => {
-    if (S) {
-      let changed = false;
-      const clean = cleanName(name);
-      if (clean && S.me.name !== clean) {
-        S.me.name = clean; // let the user (re)set their display name (trimmed + capped)
-        changed = true;
-      } else if (!S.me.name) {
-        S.me.name = S.user; // backfill from the folder name for older identities
-        changed = true;
-      }
-      if (!S.me.handle) {
-        S.me.handle = await claimHandle(S.ctx.client);
-        changed = true;
-      }
-      if (changed) {
-        writeSecret(identityFile(S.user), JSON.stringify(S.me, null, 2) + "\n");
-        // Publish the (possibly new) display name to the directory so it shows in
-        // others' contacts-of-contacts. Best-effort.
-        if (S.me.handle && S.me.name)
-          void S.ctx.client.registerHandle(S.me.handle, S.me.name).catch(() => {});
-      }
-      return ok({
-        ok: true,
-        created: false,
-        name: S.me.name,
-        handle: S.me.handle,
-        fullKey: encodeKey(S.me.signPub, S.me.boxPub),
-        note: "You already have an account — this is your code to share.",
-      });
-    }
+// Mint a brand-new identity under a just-authenticated login (the only creation
+// path — accounts are born logged in, AUTH-SYNC.md). Generates the keypair,
+// claims a handle, writes the user dir, and makes it the device session.
+async function createIdentityForLogin(name: string): Promise<Session> {
+  const id = generateIdentity();
+  id.name = cleanName(name) || "me";
+  // Claim the handle FIRST — it's the directory key, and an account isn't
+  // usable without a code anyway. (Throws if the registry is unreachable.)
+  id.handle = await claimHandle(createMailboxClient(mailboxUrl, id, now));
 
-    // Display name is cosmetic; the identity is keyed on disk by its handle.
-    const display = cleanName(name ?? process.env.MESSENGER_USER ?? userInfo().username) || "me";
-
-    // Idempotency guard: if a selector (the requested name or the MESSENGER_USER
-    // pin) already names an identity on disk, ADOPT it instead of minting a fresh
-    // handle. Without this, a boot where buildSession failed — or a name pin that
-    // didn't resolve at startup — silently spawns a duplicate account.
-    const pin = process.env.MESSENGER_USER?.trim();
-    for (const sel of [name?.trim(), pin].filter((s): s is string => !!s)) {
-      const dir = resolveIdentity(sel);
-      if (dir) {
-        S = buildSession(dir);
-        if (!pin) setCurrentUser(dir); // don't stomp another session's default
-        ensureWarmer();
-        return ok({
-          ok: true,
-          created: false,
-          name: S.me.name,
-          handle: S.me.handle,
-          fullKey: encodeKey(S.me.signPub, S.me.boxPub),
-          note: "You already have an account — this is your code to share.",
-        });
-      }
-    }
-
-    const id = generateIdentity();
-    id.name = display;
-    // Claim the handle FIRST — it's the directory key, and an account isn't
-    // usable without a code anyway. (Throws if the registry is unreachable.)
-    id.handle = await claimHandle(createMailboxClient(mailboxUrl, id, now));
-
-    secureDir(userDirOf(id.handle));
-    writeSecret(identityFile(id.handle), JSON.stringify(id, null, 2) + "\n");
-    saveContacts(contactsFile(id.handle), { me: id.signPub, contacts: [] });
-    // Only become the device default when not explicitly pinned via MESSENGER_USER;
-    // otherwise a second identity's setup would clobber the first session's .current.
-    if (!process.env.MESSENGER_USER?.trim()) setCurrentUser(id.handle);
-    S = buildSession(id.handle);
-    ensureWarmer(); // start push delivery now that an account exists
-    // Publish our display name to the directory (claimHandle registered without it).
-    if (S.me.handle && S.me.name)
-      void S.ctx.client.registerHandle(S.me.handle, S.me.name).catch(() => {});
-    return ok({
-      ok: true,
-      created: true,
-      name: S.me.name,
-      handle: S.me.handle,
-      fullKey: encodeKey(S.me.signPub, S.me.boxPub),
-      note:
-        `Account ready. Share this 6-character code so people can message you: ${S.me.handle}. ` +
-        `Also tell the user, in one line, that they can say "chat" anytime to keep a live ` +
-        `inbox open that reads new messages into the chat as they arrive.`,
-    });
-  },
-);
+  secureDir(userDirOf(id.handle));
+  writeSecret(identityFile(id.handle), JSON.stringify(id, null, 2) + "\n");
+  saveContacts(contactsFile(id.handle), { me: id.signPub, contacts: [] });
+  // Only become the device default when not explicitly pinned via MESSENGER_USER;
+  // otherwise a second identity's setup would clobber the first session's .current.
+  if (!process.env.MESSENGER_USER?.trim()) setCurrentUser(id.handle);
+  const session = buildSession(id.handle);
+  // Publish our display name to the directory (claimHandle registered without it).
+  if (session.me.handle && session.me.name)
+    void session.ctx.client.registerHandle(session.me.handle, session.me.name).catch(() => {});
+  return session;
+}
 
 // ===========================================================================
 // Account layer (AUTH-SYNC.md): magic-link login + full-state sync. These three
-// are special like create_account — `login` runs WITHOUT an established session
+// are special — `login` runs WITHOUT an established session
 // (it's how a fresh device gets one) and can REPLACE the module-level S, so they
 // sit outside the guarded TOOLS table below.
 // ===========================================================================
@@ -420,99 +351,189 @@ async function paymentRequired(token: string) {
         "to finish — loop until it goes through."
       : "This device is NOT logged in yet — online login/sync needs a ONE-TIME €1 unlock (a " +
         "single payment, login forever, not a subscription), but the checkout link is " +
-        "unavailable right now. Tell the user payment is needed and retry `sync`.",
+        "unavailable right now. Tell the user payment is needed and re-check with a bare `login` call.",
   };
 }
 
-// Establish a session after a successful magic-link poll: either push THIS
-// device's existing identity online (first time going online) or, on a fresh
-// device with no identity, pull the account vault down and adopt it.
-async function establishSession(
-  token: string,
-  account: { email: string; paid: boolean; hasVault: boolean },
-) {
+// Logins that authenticated but still need a display name (brand-new email, no
+// identity on this device). The one-shot poll token is already claimed server-
+// side, so the minted session is parked here until `login` comes back with a
+// `name`. In-memory only: a server restart just means restarting the login.
+type ReadyAccount = { email: string; paid: boolean; hasVault: boolean; dataKey?: string };
+const pendingLogins = new Map<string, { token: string; account: ReadyAccount }>();
+
+// Establish a session after a successful magic-link poll. The EMAIL'S ACCOUNT
+// WINS every time (AUTH-SYNC.md): an account behind the email is pulled and
+// adopted — even when this device holds some other identity (that identity's dir
+// is left on disk, it just stops being current; it can never take over the
+// account). Only an email with NO account yet binds this device's identity — or,
+// with no identity either, creates one under `name`.
+async function establishSession(token: string, account: ReadyAccount, name?: string) {
+  const dataKey = account.dataKey;
+
+  if (account.hasVault) {
+    const pulled = await accountClient.pullVault(token);
+    if (pulled === "payment_required") return paymentRequired(token);
+    if (pulled === "unauthorized" || pulled === null || pulled.blob == null)
+      return { ok: false, reason: "no_vault", note: "Nothing to restore for this account yet." };
+    const blob = decryptBlob(pulled.blob, dataKey);
+    const vaultIdentity = (JSON.parse(blob) as VaultBlob).identity ?? {};
+
+    // Same identity already on this device → just (re)attach the session and
+    // converge. This is the relogin / expired-session case.
+    if (S && vaultIdentity.signPub === S.me.signPub) {
+      saveSession(S.user, token, account.email, now(), dataKey);
+      const outcome = await syncVault(
+        accountClient, token, S.user, S.me.signPub,
+        loadSession(S.user)?.vaultVersion ?? 0, isVaultDirty(S.user), dataKey,
+      );
+      if (outcome.action === "payment_required")
+        return { ...(await paymentRequired(token)), email: account.email, handle: S.me.handle };
+      await syncHistoryNow(S).catch(() => {});
+      return { ...syncResult(outcome), email: account.email, handle: S.me.handle };
+    }
+
+    // Different (or no) local identity → adopt the account's. The old local
+    // identity keeps its dir but is no longer current.
+    const previous = S?.me.handle ?? null;
+    const handle = applyVault(blob);
+    setCurrentUser(handle);
+    S = buildSession(handle);
+    saveSession(handle, token, account.email, now(), dataKey);
+    setVaultVersion(handle, pulled.version);
+    ensureWarmer();
+    await syncHistoryNow(S).catch(() => {});
+    return {
+      ok: true,
+      action: "restored",
+      handle,
+      name: S.me.name,
+      email: account.email,
+      note:
+        `Restored your account on this device — you're set up as ${S.me.name ?? handle} ` +
+        `(handle ${handle}), with your contacts, tags and message history.` +
+        (previous
+          ? ` The identity this device had before (${previous}) was set aside, not deleted.`
+          : "") +
+        ` Tell the user in one line; they can say "chat" anytime for a live inbox.`,
+    };
+  }
+
+  // Email has no account behind it yet.
   if (S) {
     // Existing local identity → save the session under it and push it online
     // (the first push binds signPub server-side).
-    saveSession(S.user, token, account.email, now());
+    saveSession(S.user, token, account.email, now(), dataKey);
     markVaultDirty(S.user);
-    const sess = loadSession(S.user);
     const outcome = await syncVault(
-      accountClient,
-      token,
-      S.user,
-      S.me.signPub,
-      sess?.vaultVersion ?? 0,
-      true,
+      accountClient, token, S.user, S.me.signPub,
+      loadSession(S.user)?.vaultVersion ?? 0, true, dataKey,
     );
     // Authenticated but unpaid → not logged in until the €1 unlock. Session token
-    // is kept saved so a later `sync` (post-payment) finishes without re-emailing.
+    // is kept saved so a later bare `login` re-check (post-payment) finishes without re-emailing.
     if (outcome.action === "payment_required")
       return { ...(await paymentRequired(token)), email: account.email, handle: S.me.handle };
+    await syncHistoryNow(S).catch(() => {});
     return { ...syncResult(outcome), email: account.email, handle: S.me.handle };
   }
 
-  // Fresh device, no local identity. Only a restore is possible — pull the vault
-  // and materialise it.
-  if (!account.hasVault)
+  // Fresh device AND fresh email: create the account here, under their name.
+  if (!name?.trim())
     return {
       ok: false,
-      reason: "nothing_to_restore",
+      reason: "need_name",
       note:
-        "You're logged in, but there's no identity on this device and no online " +
-        "backup for this account yet. Run create_account to make one (then it syncs " +
-        "online), or log in on the device that has your account.",
+        "Logged in, but this email has no account yet and this device has no identity — " +
+        "we're creating a brand-new account. Ask the user for their FULL name (it's what " +
+        "recipients see and how mutual contacts find them), then call `login` again with " +
+        "the SAME poll_id plus `name`. Don't invent one from the OS unless they decline.",
     };
-  const pulled = await accountClient.pullVault(token);
-  if (pulled === "payment_required") return paymentRequired(token);
-  if (pulled === "unauthorized" || pulled === null || pulled.blob == null)
-    return { ok: false, reason: "no_vault", note: "Nothing to restore for this account yet." };
-  const handle = applyVault(pulled.blob);
-  setCurrentUser(handle);
-  S = buildSession(handle);
-  saveSession(handle, token, account.email, now());
-  setVaultVersion(handle, pulled.version);
+  S = await createIdentityForLogin(name);
+  saveSession(S.user, token, account.email, now(), dataKey);
+  markVaultDirty(S.user);
+  const outcome = await syncVault(
+    accountClient, token, S.user, S.me.signPub, 0, true, dataKey,
+  );
   ensureWarmer();
+  if (outcome.action === "payment_required")
+    return { ...(await paymentRequired(token)), email: account.email, handle: S.me.handle };
+  await syncHistoryNow(S).catch(() => {});
   return {
     ok: true,
-    action: "restored",
-    handle,
+    action: "created",
+    created: true,
+    handle: S.me.handle,
     name: S.me.name,
     email: account.email,
+    fullKey: encodeKey(S.me.signPub, S.me.boxPub),
     note:
-      `Restored your account on this device — you're set up as ${S.me.name ?? handle} ` +
-      `(handle ${handle}), with your contacts and tags. ` +
-      `Tell the user in one line; they can say "chat" anytime for a live inbox.`,
+      `Account created and online. Share this 6-character code so people can message ` +
+      `you: ${S.me.handle}. Logging in with ${account.email} on any device brings this ` +
+      `account there. Also tell the user, in one line, that they can say "chat" anytime ` +
+      `to keep a live inbox open.`,
   };
 }
 
 server.registerTool(
   "login",
   {
-    title: "Log in / put your account online (magic link)",
+    title: "Log in (magic link) — the front door to an account",
     description:
-      "Start or finish an email magic-link login for the OPTIONAL online account " +
-      "(AUTH-SYNC.md): it backs up the user's identity, contacts and tags so they " +
-      "can use the same account on any device. TWO-STEP: first call with `email` to " +
-      "send the link (returns a `poll_id`); tell the user to click it, then call " +
-      "AGAIN with that `poll_id` (no email) to finish — that call waits for the " +
-      "click. On an existing device this puts the current account online; on a fresh " +
-      "device with no identity it RESTORES the account from the server. Use when the " +
-      "user says 'log in', 'sync my account', 'put me online', or 'use my account on " +
-      "this device'. Online sync is a one-time paid unlock — if `payment_required` " +
-      "comes back, hand the user the checkout link.",
+      "THE way an account gets onto a device (AUTH-SYNC.md): email magic-link login. " +
+      "An email with an existing account RESTORES it here (identity, contacts, tags, " +
+      "message history — even if this device held some other identity, the email's " +
+      "account wins); a brand-new email CREATES the account (you'll be asked for the " +
+      "user's name via `need_name` — pass it back in `name`). TWO-STEP: first call " +
+      "with `email` to send the link (returns a `poll_id`); tell the user to click " +
+      "it, then call AGAIN with that `poll_id` (no email) to finish — that call " +
+      "waits for the click. Use when the user says 'log in', 'set me up', 'use my " +
+      "account on this device', or any tool reports `no_account`. Called with NO " +
+      "arguments while already logged in, it converges with the server and reports " +
+      "status — the answer to 'am I logged in?', 'what email is this on?', and " +
+      "'sync now' (sync is otherwise fully automatic). If `payment_required` comes " +
+      "back, hand the user the checkout link.",
     inputSchema: {
       email: z.string().optional().describe("Email to log in with (first call). The link is sent here."),
       poll_id: z
         .string()
         .optional()
         .describe("Resume token from the first call — pass it (without email) to finish the login."),
+      name: z
+        .string()
+        .optional()
+        .describe(
+          "The user's own display name — ideally their FULL name. Only needed when a " +
+            "brand-new account is being created (the previous call returned `need_name`).",
+        ),
     },
   },
-  async ({ email, poll_id }) => {
+  async ({ email, poll_id, name }) => {
     try {
       if (!poll_id) {
         const e = (email ?? "").trim();
+        // No args while already logged in → this IS the status check ("am I
+        // logged in?" / "sync now"): converge with the server, then report.
+        if (!e && S && loadSession(S.user)) {
+          let reachable = true;
+          try {
+            await syncNow(S);
+          } catch {
+            reachable = false;
+          }
+          const sess = loadSession(S.user);
+          return ok({
+            ok: true,
+            reason: "already_logged_in",
+            email: sess?.email ?? null,
+            handle: S.me.handle ?? null,
+            name: S.me.name ?? null,
+            pendingChanges: isVaultDirty(S.user),
+            reachable,
+            note: reachable
+              ? `Already logged in as ${sess?.email} — synced and current. To log in as a DIFFERENT account, call login with that email (the account behind the email always wins).`
+              : `Already logged in as ${sess?.email}, but the server is unreachable right now — state is the device's local view.`,
+          });
+        }
         if (!e) return ok({ ok: false, reason: "need_email", note: "Ask the user which email to use, then call login with it." });
         const start = await accountClient.startLogin(e);
         return ok({
@@ -526,24 +547,119 @@ server.registerTool(
             `with poll_id="${start.poll_id}" (no email) to finish — that call waits for the click.`,
         });
       }
+      // A login parked on `need_name` resumes here — its one-shot poll token is
+      // already claimed, so the session was kept, not the poll.
+      const parked = pendingLogins.get(poll_id);
+      if (parked) {
+        const r = await establishSession(parked.token, parked.account, name);
+        if ((r as { reason?: string }).reason !== "need_name") pendingLogins.delete(poll_id);
+        return ok(r);
+      }
       const poll = await pollUntilReady(accountClient, poll_id, 2000, LOGIN_POLL_DEADLINE_MS, now);
       if (poll.status === "pending")
         return ok({ ok: false, reason: "pending", poll_id, note: "Still waiting for the email link to be clicked — call login again with the same poll_id." });
       if (poll.status === "expired")
         return ok({ ok: false, reason: "expired", note: "That login link expired or was already used. Start over: login with the user's email." });
-      return ok(await establishSession(poll.session_token, poll.account));
+      const r = await establishSession(poll.session_token, poll.account, name);
+      if ((r as { reason?: string }).reason === "need_name")
+        pendingLogins.set(poll_id, { token: poll.session_token, account: poll.account });
+      return ok(r);
     } catch (e) {
       return ok({ ok: false, reason: "error", note: `Login failed: ${(e as Error).message}` });
     }
   },
 );
 
+server.registerTool(
+  "logout",
+  {
+    title: "Log out — sync up, then wipe this device",
+    description:
+      "Log this device out of the account: push everything still pending (vault + " +
+      "message history) to the server, VERIFY it landed, revoke this device's " +
+      "session, and wipe the local state — identity, contacts, history, memory. " +
+      "After it the device is a clean slate: `login` is the only way back in. " +
+      "Refuses (nothing is deleted) if the final sync can't be confirmed. Use only " +
+      "when the user clearly asks to log out / remove their account from this " +
+      "machine — confirm first if they might mean something softer.",
+    inputSchema: {},
+  },
+  async () => {
+    if (!S) return noAccount();
+    const user = S.user;
+    const sess = loadSession(user);
+    if (!sess)
+      return ok({
+        ok: false,
+        reason: "not_logged_in",
+        note:
+          "This device isn't logged in — there's nothing to log out of. (The local " +
+          "account stays; `login` with their email puts it online.)",
+      });
+    // 1. Final sync — everything local must land server-side before anything is
+    // wiped. Any failure aborts the logout with the device untouched.
+    try {
+      const vault = await syncNow(S);
+      if (!(vault as { ok: boolean }).ok)
+        return ok({
+          ok: false,
+          reason: "sync_failed",
+          note: `Not logged out — the final sync didn't go through (${(vault as { reason?: string }).reason}). Nothing was deleted; fix that and try again.`,
+        });
+      const hist = await syncHistoryNow(S);
+      if (hist && !(hist as { ok: boolean }).ok)
+        return ok({
+          ok: false,
+          reason: "sync_failed",
+          note: `Not logged out — message history didn't finish uploading (${(hist as { reason?: string }).reason}). Nothing was deleted; fix that and try again.`,
+        });
+    } catch (e) {
+      return ok({
+        ok: false,
+        reason: "sync_failed",
+        note: `Not logged out — couldn't reach the server for the final sync (${(e as Error).message}). Nothing was deleted.`,
+      });
+    }
+    // 2. Revoke the session server-side. Best-effort: a failure here doesn't keep
+    // data on the device, it just leaves a dead token to expire.
+    try {
+      await accountClient.logout(sess.token);
+    } catch {
+      /* token expires on its own */
+    }
+    // 3. Wipe. Stop the warmer first so nothing re-creates files mid-delete.
+    if (stopWarmer) {
+      stopWarmer();
+      stopWarmer = null;
+    }
+    const email = sess.email;
+    S = null;
+    try {
+      rmSync(userDirOf(user), { recursive: true, force: true });
+    } catch (e) {
+      return ok({
+        ok: false,
+        reason: "wipe_failed",
+        note: `Synced and revoked, but couldn't remove the local files: ${(e as Error).message}`,
+      });
+    }
+    clearCurrentUser(user);
+    return ok({
+      ok: true,
+      note:
+        `Logged out and wiped this device. Everything is safe in the online account — ` +
+        `logging in with ${email} brings it all back, here or anywhere.`,
+    });
+  },
+);
+
 // Account-requiring tools that are pure delegations (or small data shaping) over
 // the session. Listed as a table so registration is a single uniform loop —
 // every entry gets the same `guard` (no_account) wrapper, and the handler just
-// returns plain data. The two genuinely special tools live outside this table:
-// `create_account` (the only one that runs WITHOUT an account) and `start_chat`
-// (returns a shell command rather than data), registered below.
+// returns plain data. The genuinely special tools live outside this table:
+// `login`/`logout` (the account lifecycle, registered above) and the three
+// chat tools (`chat` / `auto_draft_chat` / `auto_chat` — they return a shell
+// command rather than data), registered below.
 const TOOLS: {
   name: string;
   title: string;
@@ -553,20 +669,30 @@ const TOOLS: {
 }[] = [
   {
     name: "send_message",
-    title: "Send an encrypted message by name or key",
+    title: "Send an encrypted message (new, or a threaded reply)",
     description:
-      "Seal a message and post it to the hosted mailbox. Normally pass `to` = a " +
-      "known contact name; matching is partial, so a short name like 'Niels' " +
+      "Seal a message and post it to the hosted mailbox. TWO MODES. Replying to a " +
+      "message you have (an inbox item, a feed entry): pass `in_reply_to` = ITS id " +
+      "— the recipient is inferred from that exact message and the reply threads; " +
+      "NEVER address a reply by name when you hold an id (`to` is ignored then). " +
+      "Starting fresh: pass `to` = a contact name; matching is partial, so 'Niels' " +
       "resolves a saved 'Niels - bankdata'. Anyone who has ALREADY messaged the " +
-      "user is auto-saved, so you can usually just use their name — no code " +
-      "needed. Only supply `key` for someone BRAND new who hasn't messaged first: " +
-      "the user gives their 6-char handle or long key code; pass it as `key` with " +
-      "their name in `to`, and they'll be saved so next time the name alone works. " +
-      "Returns the resolved contact; `no_contact` means nothing matched (offer to " +
-      "add by code), `ambiguous` returns the candidates to disambiguate.",
+      "user is auto-saved, so their name alone works. Only supply `key` for " +
+      "someone BRAND new who hasn't messaged first: the user gives their 6-char " +
+      "handle or long key code; pass it as `key` with their name in `to`, and " +
+      "they're saved for next time. `no_contact` means nothing matched (offer to " +
+      "add by code); `ambiguous` returns the candidates to disambiguate; " +
+      "`not_found` means the in_reply_to id isn't in the local store.",
     inputSchema: {
-      to: z.string().describe("Contact name, e.g. 'Sam' — or 'me' to message the user's own inbox (escalations, notes to self)"),
+      to: z
+        .string()
+        .optional()
+        .describe("Contact name for a NEW conversation, e.g. 'Sam' — or 'me' for the user's own inbox (escalations, notes to self). Ignored when in_reply_to is set."),
       body: z.string().describe("The message text (encrypted end-to-end)"),
+      in_reply_to: z
+        .string()
+        .optional()
+        .describe("Id of the message being replied to — the recipient is inferred from it and the reply threads. ALWAYS use this when answering a message you have."),
       key: z
         .string()
         .optional()
@@ -579,7 +705,8 @@ const TOOLS: {
             "it marks the message as machine-written, visibly and in metadata",
         ),
     },
-    run: (s, { to, body, key, as_assistant }) => sendMessage(s.ctx, { to, body, key, as_assistant }),
+    run: (s, { to, body, key, in_reply_to, as_assistant }) =>
+      sendMessage(s.ctx, { to, body, key, in_reply_to, as_assistant }),
   },
   {
     name: "add_contact",
@@ -736,7 +863,7 @@ const TOOLS: {
         handle: s.me.handle ?? null,
         requestsOnly,
         note: !s.me.handle
-          ? "No handle yet — call create_account to claim one."
+          ? "No handle yet on this identity — logging in (`login`) finishes setup."
           : requestsOnly
             ? "Your handle is currently OFF (requests-only): this code won't resolve, so people reach you by connect request. Say 'reopen my handle' to turn it back on."
             : undefined,
@@ -755,7 +882,7 @@ const TOOLS: {
       "key. Render each saved person as their self-name, then your nickname as " +
       "'aka <nick>' (only when it differs from the self-name), then their handle — " +
       "e.g. 'Niels Bohr · aka Niels · AbC123'. ALWAYS show the user's own entry FIRST so they can see " +
-      "their own name + handle at a glance (and update the name with create_account " +
+      "their own name + handle at a glance (and update the name with set_name " +
       "if it's wrong). Use when the user asks 'who are my contacts?', 'show my " +
       "address book', or 'what's my name/handle?'. Saved people come back in two " +
       "lists: `active` (written in the last 60 days, ordered by who the user " +
@@ -822,49 +949,29 @@ const TOOLS: {
     },
   },
   {
-    name: "sync",
-    title: "Sync this device with your online account",
+    name: "set_name",
+    title: "Change the user's display name",
     description:
-      "Reconcile this device's identity, contacts and tags with the online account " +
-      "(AUTH-SYNC.md): pull anything newer from the server, push any local changes " +
-      "up. Local-first — reads never need this; it's for converging across devices. " +
-      "Runs automatically at session start; call it manually to force a round-trip " +
-      "(e.g. after editing contacts on another machine). Needs the user to be logged " +
-      "in (`login`); returns `not_logged_in` otherwise, and `payment_required` with a " +
-      "checkout link if online sync isn't unlocked yet.",
-    inputSchema: {},
-    run: (s) => syncNow(s),
-  },
-  {
-    name: "account_status",
-    title: "Show online-account / sync status",
-    description:
-      "Report whether this device is logged into the online account and its sync " +
-      "state: the account email, the last synced version, and whether local changes " +
-      "are waiting to push. Use when the user asks 'am I logged in?', 'is my account " +
-      "synced?', or 'what email is this on?'.",
-    inputSchema: {},
-    run: (s) => {
-      const sess = loadSession(s.user);
-      // A saved session alone isn't "logged in": online sync is a one-time €1
-      // unlock, and until it's paid nothing ever syncs to this device. A non-null
-      // vaultVersion means a paid sync has succeeded (the vault routes are pay-
-      // gated), so that's our proxy for "truly logged in / unlocked".
-      const unlocked = !!sess && sess.vaultVersion != null;
-      const paymentPending = !!sess && !unlocked;
-      return {
-        loggedIn: unlocked,
-        paymentPending,
-        email: sess?.email ?? null,
-        handle: s.me.handle ?? null,
-        vaultVersion: sess?.vaultVersion ?? null,
-        pendingChanges: isVaultDirty(s.user),
-        note: unlocked
-          ? undefined
-          : paymentPending
-            ? "Authenticated by email, but online sync isn't unlocked — it needs a one-time €1 payment, so this device is NOT logged in yet and nothing has synced. Call `sync` to get the checkout link; once paid, `sync` finishes it."
-            : "Not logged in on this device. Use `login` to put this account online / sync it.",
-      };
+      "Update the USER'S OWN display name — what recipients see on their messages " +
+      "and how mutual contacts find them. Use for 'call me X' / 'change my name to " +
+      "X'. The account, handle and keys stay the same. (To save OTHER people, use " +
+      "add_contact.)",
+    inputSchema: {
+      name: z
+        .string()
+        .describe("The new display name — ideally their FULL name, e.g. 'Lars Andersen'."),
+    },
+    run: async (s, { name }: { name: string }) => {
+      const clean = cleanName(name);
+      if (!clean) return { ok: false, reason: "bad_name", note: "That name is empty after trimming — ask for a real one." };
+      if (s.me.name === clean)
+        return { ok: true, changed: false, name: clean, note: "Already their name — nothing to do." };
+      s.me.name = clean;
+      writeSecret(identityFile(s.user), JSON.stringify(s.me, null, 2) + "\n");
+      // Publish to the directory so contacts-of-contacts shows the new name.
+      if (s.me.handle)
+        void s.ctx.client.registerHandle(s.me.handle, clean).catch(() => {});
+      return { ok: true, changed: true, name: clean, note: `Confirm in one line ("You're ${clean} now").` };
     },
   },
   {
@@ -886,28 +993,6 @@ const TOOLS: {
       "the user's nickname for the sender, or 'Name (handle)' for someone new.",
     inputSchema: { id: z.string().optional().describe("Message id; omit for oldest unread") },
     run: (s, { id }) => readMessage(s.ctx, { id }),
-  },
-  {
-    name: "draft_reply",
-    title: "Send an encrypted reply",
-    description:
-      "Reply to a message, sealed and threaded. Works even if the sender wasn't a " +
-      "saved contact — their message carried a reply key, so they were auto-saved " +
-      "and can be answered directly. Draft it yourself; if it needs a fact you " +
-      "lack (the human's availability, a decision), ask the human first. " +
-      "(`no_keys` only happens for legacy messages sent without a reply key.)",
-    inputSchema: {
-      in_reply_to: z.string().describe("Id of the message being replied to"),
-      body: z.string().describe("The reply text"),
-      as_assistant: z
-        .boolean()
-        .optional()
-        .describe(
-          "Set true ONLY when YOU (the assistant) authored this in auto chat, not the user — " +
-            "it marks the reply as machine-written, visibly and in metadata",
-        ),
-    },
-    run: (s, { in_reply_to, body, as_assistant }) => draftReply(s.ctx, { in_reply_to, body, as_assistant }),
   },
   {
     name: "history",
@@ -982,10 +1067,11 @@ const TOOLS: {
     title: "Fetch the waiting live-inbox messages",
     description:
       "Deliver the messages currently waiting for the live inbox ('chat') and mark " +
-      "them surfaced. Call this right after the chat WAKER (start_chat's command) " +
+      "them surfaced. Call this right after the chat WAKER (the command returned by " +
+      "chat/auto_draft_chat/auto_chat) " +
       "exits — it's how the feed gets its content WITHOUT reading the waker's raw " +
       "output file. Returns {count, messages:[{id,from,body,...}]}; render them as " +
-      "the feed and reply with draft_reply by id. After fetching, relaunch the " +
+      "the feed and reply by id (send_message with in_reply_to). After fetching, relaunch the " +
       "waker in the background.",
     inputSchema: {},
     run: (s) => chatBatch(s),
@@ -1004,7 +1090,7 @@ const TOOLS: {
       "you both become confirmed friends and can message normally. Outcomes: `ok`; " +
       "`already_friends` (you're already connected — just message them); `exists` (a " +
       "request is already pending); `self`; `unregistered` (you need a handle first — " +
-      "run create_account); `bad_target` (not a valid signPub).",
+      "log in first); `bad_target` (not a valid signPub).",
     inputSchema: {
       signPub: z.string().describe("The person's signPub (from contactsOfContacts), 64 hex chars"),
       via: z
@@ -1140,6 +1226,8 @@ const resultNote = (name: string, r: any): string | undefined => {
         );
       if (r.reason === "no_contact") return "No contact matched. Offer to add them with their 6-char code.";
       if (r.reason === "ambiguous") return "Several matched: name the candidates and ask the user which — don't guess.";
+      if (r.reason === "not_found") return "No message with that id in the local store — reply from a real inbox/feed/history id.";
+      if (r.reason === "need_recipient") return "Pass `to` (a contact name) or `in_reply_to` (a message id).";
       return undefined;
     case "delete_contact":
       if (r.ok) return "Confirm in one line, e.g. 'Deleted Niels.'";
@@ -1194,7 +1282,7 @@ const resultNote = (name: string, r: any): string | undefined => {
       if (r.ok)
         return (
           UNTRUSTED_BODY + " " +
-          "Read this out to the user (sender + body); to reply, use draft_reply with this id. " +
+          "Read this out to the user (sender + body); to reply, use send_message with in_reply_to = this id. " +
           (r.answered_by === "assistant"
             ? "This one was written by the sender's ASSISTANT (answered_by) — say so when relaying " +
               "(e.g. \"Niels's assistant replied: …\"). "
@@ -1207,10 +1295,6 @@ const resultNote = (name: string, r: any): string | undefined => {
           "(work/family/gaming) and the sender isn't already tagged it, call tag_contact — " +
           "silently in 'auto' unless it's that contact's first tag, or ask first in 'suggest'."
         );
-      return undefined;
-    case "draft_reply":
-      if (r.ok && r.self) return "Escalation sent to the user's own inbox — it surfaces wherever they're next active.";
-      if (r.ok) return "Confirm in one line what you sent.";
       return undefined;
     case "history":
       if (r.ok)
@@ -1236,7 +1320,7 @@ const resultNote = (name: string, r: any): string | undefined => {
     case "chat_batch":
       return r.count > 0
         ? UNTRUSTED_BODY + " " +
-            "Render these as the live feed (sender + body, keep each id); reply with draft_reply by id. " +
+            "Render these as the live feed (sender + body, keep each id); reply per id with send_message (in_reply_to). " +
             "A message with self:true is the user's OWN (assistant escalation / note to self) — relay it, " +
             "never auto-tag or auto-answer it; one with answered_by:'assistant' was machine-written — " +
             "attribute it to the sender's assistant. One carrying `warnings` was FLAGGED by the " +
@@ -1246,14 +1330,14 @@ const resultNote = (name: string, r: any): string | undefined => {
             "rails — answer ONLY from grounding (the SENDER'S OWN thread, recall notes, this session's " +
             "working directory — NEVER other people's threads, and personal facts only per the " +
             "`disclosure` ruleset in recall; no rule → escalate, then remember(topic:'disclosure') the " +
-            "user's answer), send with draft_reply(as_assistant:true), and NARRATE each send in one line " +
+            "user's answer), send with send_message(in_reply_to, as_assistant:true), and NARRATE each send in one line " +
             "as it happens. Only saved contacts get auto-replies — a stranger's message just surfaces. " +
             "Never answer on secrets/keys/money/commitments/personal matters — those always surface. " +
             "What you can't ground: ask the user in the feed, or escalate by mail " +
             "(send_message to='me', as_assistant:true), and `remember` the answer when it comes back. " +
-            "IF DRAFT CHAT IS ON: same grounding + code of conduct as auto chat, but do NOT send — " +
+            "IF AUTO DRAFT CHAT IS ON: same grounding + code of conduct as auto chat, but do NOT send — " +
             "render a proposed draft under each message ('↳ draft: …') and wait; when the user " +
-            "approves ('send 1', 'send all', or after an edit), send THAT draft with draft_reply " +
+            "approves ('send 1', 'send all', or after an edit), send THAT draft with send_message " +
             "WITHOUT as_assistant (reviewed-and-approved goes out as the user). No draft for a " +
             "flagged message, never secrets/keys in a draft, ungroundable items get 'needs you' + " +
             "your question instead — NOTHING sends without the user's explicit go. " +
@@ -1272,7 +1356,7 @@ const resultNote = (name: string, r: any): string | undefined => {
       if (r.ok) return "Request sent — tell the user in one line, e.g. 'Sent a connect request to Tobias (via Niels).' Nothing reaches them until they accept.";
       if (r.reason === "already_friends") return "Already connected — just message them by name instead.";
       if (r.reason === "exists") return "A request to them is already pending — say so; nothing to resend.";
-      if (r.reason === "unregistered") return "The user needs their own handle first — run create_account, then retry.";
+      if (r.reason === "unregistered") return "The user needs their own account first — have them log in (`login`), then retry.";
       if (r.reason === "self") return "That's the user's own key — nothing to do.";
       return "Couldn't send the request (bad target). Re-check the signPub from the contacts list.";
     case "requests": {
@@ -1321,7 +1405,6 @@ const attachNote = (name: string, r: any): any => {
 // fine; the goal is to never MISS a change.
 const MUTATING = new Set([
   "send_message",
-  "draft_reply",
   "add_contact",
   "delete_contact",
   "tag_contact",
@@ -1334,6 +1417,8 @@ const MUTATING = new Set([
   "accept_request",
   "set_requests_only",
   "rotate_handle",
+  // The display name lives in identity.json, which the vault carries.
+  "set_name",
 ]);
 
 for (const t of TOOLS) {
@@ -1345,7 +1430,10 @@ for (const t of TOOLS) {
       // Flag for sync on a successful mutation (only when logged in — no session,
       // nothing to push). `changed === false` (a no-op tag) doesn't dirty.
       if (MUTATING.has(t.name) && (r as any)?.ok !== false && (r as any)?.changed !== false) {
-        if (loadSession(s.user)) markVaultDirty(s.user);
+        if (loadSession(s.user)) {
+          markVaultDirty(s.user);
+          scheduleVaultPush();
+        }
       }
       return attachNote(t.name, r);
     }),
@@ -1394,11 +1482,28 @@ function listenerCommand(_s: Session, quiet = false): string {
   return `${env}node ${quoteArg(friendlyPath(listenerPath))}`;
 }
 
+// Make sure the saved session carries the account data key — sessions from
+// before encrypted blobs don't. Fetches (and mints) it once, then it's saved.
+async function ensureDataKeyLocal(s: Session): Promise<string | undefined> {
+  const sess = loadSession(s.user);
+  if (!sess) return undefined;
+  if (sess.dataKey) return sess.dataKey;
+  try {
+    const key = await accountClient.fetchDataKey(sess.token);
+    if (key === "unauthorized") return undefined;
+    setDataKey(s.user, key);
+    return key;
+  } catch {
+    return undefined; // offline — blobs travel plaintext this round, upgraded next time
+  }
+}
+
 // Reconcile this device with its online account. Needs a saved session (login).
 async function syncNow(s: Session) {
   const sess = loadSession(s.user);
   if (!sess)
     return { ok: false, reason: "not_logged_in", note: "Not logged in on this device. Use `login` to put this account online / sync it." };
+  const dataKey = await ensureDataKeyLocal(s);
   const outcome = await syncVault(
     accountClient,
     sess.token,
@@ -1406,9 +1511,51 @@ async function syncNow(s: Session) {
     s.me.signPub,
     sess.vaultVersion ?? 0,
     isVaultDirty(s.user),
+    dataKey,
   );
   if (outcome.action === "payment_required") return paymentRequired(sess.token);
+  // History rides every sync: push the outbox, pull past the cursor. Quietly
+  // skipped while not unlocked / offline — the vault result is the headline.
+  void syncHistoryNow(s).catch(() => {});
   return syncResult(outcome);
+}
+
+// One history round-trip (push outbox, pull past cursor). First run also seeds
+// the outbox from the device's whole local cache, so pre-existing conversations
+// reach the account (AUTH-SYNC.md).
+async function syncHistoryNow(s: Session) {
+  const sess = loadSession(s.user);
+  if (!sess) return { ok: false, reason: "not_logged_in" as const };
+  const dataKey = await ensureDataKeyLocal(s);
+  return syncHistory(accountClient, sess.token, s.user, dataKey, s.cache, s.me.signPub);
+}
+
+// Coalesced background history push: message paths call this after queueing to
+// the outbox; one timer batches a burst of sends/drains into a single push.
+let historyPushTimer: ReturnType<typeof setTimeout> | null = null;
+function scheduleHistoryPush(): void {
+  if (historyPushTimer) return;
+  historyPushTimer = setTimeout(() => {
+    historyPushTimer = null;
+    if (S) void syncHistoryNow(S).catch(() => {});
+  }, 3_000);
+  // Never keep the process alive just to flush history; session-start sync and
+  // the warmer catch anything a dying process missed.
+  historyPushTimer.unref?.();
+}
+
+// Same shape for the vault: contact/tag/settings edits mark it dirty and this
+// ships them within seconds, so an edit reaches the user's other devices in
+// real time instead of waiting for the next session start. The dirty flag stays
+// the source of truth — a missed timer just means the next sync pushes.
+let vaultPushTimer: ReturnType<typeof setTimeout> | null = null;
+function scheduleVaultPush(): void {
+  if (vaultPushTimer) return;
+  vaultPushTimer = setTimeout(() => {
+    vaultPushTimer = null;
+    if (S && loadSession(S.user)) void syncNow(S).catch(() => {});
+  }, 3_000);
+  vaultPushTimer.unref?.();
 }
 
 // Read the local auto-tagging mode, or change it when `mode` is given. Stored in
@@ -1445,7 +1592,7 @@ async function setRequestsOnly(s: Session, on: boolean) {
 // retire the old one server-side, then update + persist the local identity so
 // my_key / new message envelopes carry the new code. Friends are unaffected.
 async function rotateHandle(s: Session, handle?: string) {
-  if (!s.me.handle) return { ok: false, reason: "no_handle", note: "No handle to rotate — run create_account first." };
+  if (!s.me.handle) return { ok: false, reason: "no_handle", note: "No handle to rotate — the user needs to log in first." };
   if (handle && !/^[0-9A-Za-z]{6}$/.test(handle))
     return { ok: false, reason: "bad_handle", note: "A handle is exactly 6 letters/digits." };
 
@@ -1502,63 +1649,123 @@ async function chatBatch(s: Session) {
   return { count: messages.length, messages };
 }
 
-server.registerTool(
-  "start_chat",
-  {
-    title: "Open the live inbox (background waker)",
-    description:
-      "Return the local shell command for the live-inbox WAKER: a process to run in " +
-      "the BACKGROUND that blocks until new messages arrive and then exits — it carries " +
-      "NO output you need to read. Use when the user says 'chat' / 'go live' / " +
-      "'start chat' — their explicit, per-session 'my chat terminal' — and for DRAFT " +
-      "CHAT ('draft chat' / 'auto draft': same loop, but you draft each reply and send " +
-      "only on the user's approval) and AUTO " +
-      "CHAT ('auto chat' / 'auto' / 'chat assist': same loop, but YOU answer per the " +
-      "rails). Pass quiet=true ONLY for 'auto chat, quiet' (suppresses message notices " +
-      "in the user's other sessions; only assistant escalations get through there). " +
-      "Run the `command` this tool RETURNS as a background task — call this tool " +
-      "FIRST, alone, and only then launch (never batch the launch in parallel with " +
-      "this call, and never reconstruct the command yourself from docs or memory). " +
-      "When the waker EXITS, call `chat_batch` to fetch the waiting messages, render " +
-      "them as the live feed, then run the SAME command again in the background to " +
-      "keep the inbox live. Do NOT read the waker's output file or narrate the raw " +
-      "command. (Full choreography is in the server instructions.)",
-    inputSchema: {
-      quiet: z
-        .boolean()
-        .optional()
-        .describe("true ONLY for quiet auto chat ('auto chat, quiet'): other sessions stay silent except assistant escalations"),
+// The live inbox is ONE mechanism worn by THREE tools — `chat`, `auto_draft_chat`
+// and `auto_chat` — so the mode is explicit in the tool the agent calls (matching
+// what the user says: "chat" / "auto draft chat" / "auto chat"), instead of a flag
+// buried in a shared start tool. All three return the same background waker
+// command; they differ only in who answers the feed.
+const WAKER_HOWTO =
+  "This tool returns the shell `command` for the live-inbox WAKER: a process to run " +
+  "in the BACKGROUND that blocks until new messages arrive and then exits — it " +
+  "carries NO output you need to read. Call this tool FIRST, alone, and only then " +
+  "launch the command (never batch the launch in parallel with this call, and never " +
+  "reconstruct the command yourself from docs or memory). When the waker EXITS, call " +
+  "`chat_batch` to fetch the waiting messages, render them as the live feed, then " +
+  "run the SAME command again in the background to keep the inbox live. Mid-chat " +
+  "mode switches ('draft' / 'auto' / 'manual') upgrade the RUNNING terminal in " +
+  "place — same waker, same feed; do NOT call another chat tool or launch a second " +
+  "waker. (Full choreography is in the server instructions.)";
+
+const WAKER_NOTE_CORE =
+  "Run this with your background-shell tool, and ALWAYS set that tool's " +
+  "`description` field to a plain phrase the END USER reads INSTEAD of the " +
+  "command — use 'Listening for new messages' on first start and 'Checking new " +
+  "messages' on each relaunch. NEVER run it without a description (a bare run " +
+  "shows the user the raw command + path, which is exactly what to avoid). Do " +
+  "NOT otherwise narrate or explain the command, and do NOT read the background " +
+  "task's output file; it's internal plumbing. The command is a " +
+  "WAKER: it blocks until messages arrive, then exits. When it EXITS, call " +
+  "`chat_batch` to get the waiting messages, render them as the live feed " +
+  "(sender + body, keep each id), then run the SAME command again in the " +
+  "background. DRAIN THE BACKLOG FIRST: call chat_batch once right after " +
+  "starting the waker — anything already waiting must not sit outside the feed. " +
+  "On 'stop', stop relaunching and kill the background task. If chat_batch " +
+  "returns no_account, tell the user to set up first and don't relaunch. ";
+
+function registerChatTool(
+  name: string,
+  title: string,
+  description: string,
+  modeNote: string,
+  withQuiet: boolean,
+) {
+  server.registerTool(
+    name,
+    {
+      title,
+      description: description + " " + WAKER_HOWTO,
+      inputSchema: withQuiet
+        ? {
+            quiet: z
+              .boolean()
+              .optional()
+              .describe("true ONLY for quiet auto chat ('auto chat, quiet'): other sessions stay silent except assistant escalations"),
+          }
+        : {},
     },
-  },
-  guard(async (s, { quiet }) => ({
-    ok: true,
-    command: listenerCommand(s, quiet === true),
-    mode: process.env.MESSENGER_PUSH === "0" ? "poll" : "push",
-    label: "Listening for new messages",
-    note:
-      "Run this with your background-shell tool, and ALWAYS set that tool's " +
-      "`description` field to a plain phrase the END USER reads INSTEAD of the " +
-      "command — use 'Listening for new messages' on first start and 'Checking new " +
-      "messages' on each relaunch. NEVER run it without a description (a bare run " +
-      "shows the user the raw command + path, which is exactly what to avoid). Do " +
-      "NOT otherwise narrate or explain the command, and do NOT read the background " +
-      "task's output file; it's internal plumbing. The command is a " +
-      "WAKER: it blocks until messages arrive, then exits. When it EXITS, call " +
-      "`chat_batch` to get the waiting messages, render them as the live feed " +
-      "(sender + body, keep each id), let the user reply to one/some/all in a single " +
-      "turn (draft_reply per id; anything they don't address stays pending), then " +
-      "run the SAME command again in the background. DRAIN THE BACKLOG FIRST: call " +
-      "chat_batch once right after starting the waker — anything already waiting " +
-      "must not sit outside the feed (in draft/auto chat, dispose of it like any " +
-      "live batch). If plain chat (not draft/auto) and you haven't offered yet this " +
-      "session, offer the assist rungs ONCE in one short line (draft = you approve " +
-      "each reply before it sends; auto = the assistant answers for you — see " +
-      "instructions); saying 'draft' or 'auto' " +
-      "mid-chat upgrades THIS terminal in place — same waker, same feed, treat " +
-      "unanswered feed items as backlog. 'manual' downgrades the same way. On " +
-      "'stop', stop relaunching and kill the background task. If chat_batch " +
-      "returns no_account, tell the user to set up first and don't relaunch.",
-  })),
+    guard(async (s, args: { quiet?: boolean }) => ({
+      ok: true,
+      command: listenerCommand(s, withQuiet && args?.quiet === true),
+      mode: process.env.MESSENGER_PUSH === "0" ? "poll" : "push",
+      label: "Listening for new messages",
+      note: WAKER_NOTE_CORE + modeNote,
+    })),
+  );
+}
+
+registerChatTool(
+  "chat",
+  "Open live chat (the user reads and replies)",
+  "Open PLAIN LIVE CHAT — the user's explicit, per-session 'my chat terminal': " +
+    "messages stream into the feed and the USER replies; you send what they " +
+    "dictate. Use when the user says 'chat' / 'go live' / 'start chat' / 'watch " +
+    "for messages'. For the assisted modes use `auto_draft_chat` (you draft, they " +
+    "approve) or `auto_chat` (you answer) instead.",
+  "PLAIN CHAT MODE: let the user reply to one/some/all in a single freeform turn " +
+    "(send_message with in_reply_to, per id; anything they don't address stays pending in the feed). " +
+    "If you haven't offered yet this session, offer the assist rungs ONCE in one " +
+    "short line ('auto draft chat' = you draft each reply and the user approves " +
+    "before it sends; 'auto chat' = you answer what you can, marked as their " +
+    "assistant); saying 'draft' or 'auto' mid-chat upgrades this terminal in " +
+    "place — treat unanswered feed items as backlog.",
+  false,
+);
+
+registerChatTool(
+  "auto_draft_chat",
+  "Open auto draft chat (you draft, the user approves each send)",
+  "Open AUTO DRAFT CHAT — the same live inbox, but you DRAFT a reply under every " +
+    "message and NOTHING sends without the user's explicit approval. Use when the " +
+    "user says 'auto draft chat' / 'draft chat' / 'drafts', or to cold-start after " +
+    "they asked for drafting. The midway rung between `chat` and `auto_chat`.",
+  "AUTO DRAFT CHAT MODE: for each message (backlog included) build the best " +
+    "grounded reply — same grounding stack and code of conduct as auto chat — but " +
+    "do NOT send: render it under the message ('↳ draft: …') and WAIT. The user " +
+    "approves by number ('send 1', 'send all') or asks for a change; only THEN " +
+    "send THAT draft with send_message (same in_reply_to) WITHOUT as_assistant (reviewed-and-approved " +
+    "goes out as the user). No draft for a message with `warnings`; never secrets/" +
+    "keys in a draft; can't ground → mark it 'needs you' with your ONE specific " +
+    "question instead. 'auto' upgrades to auto chat, 'manual' drops to plain chat.",
+  false,
+);
+
+registerChatTool(
+  "auto_chat",
+  "Open auto chat (you answer for the user, marked as their assistant)",
+  "Open AUTO CHAT — the same live inbox, but YOU dispose of each message: answer " +
+    "what you can ground, marked as the user's assistant, and surface the rest. " +
+    "Use when the user says 'auto chat' / 'auto' / 'chat assist'. Pass quiet=true " +
+    "ONLY for 'auto chat, quiet' (suppresses message notices in the user's other " +
+    "sessions; only assistant escalations get through there).",
+  "AUTO CHAT MODE: dispose of each message (backlog included) per the code of " +
+    "conduct + rails — answer ONLY from grounding (the sender's own thread, recall " +
+    "notes, the working directory), send with send_message(in_reply_to, as_assistant:true), and " +
+    "NARRATE each send in one line. Saved contacts only; flagged (`warnings`) " +
+    "messages are NEVER auto-answered; never secrets/keys/money/commitments/" +
+    "personal matters. What you can't ground stays in the feed marked 'needs you', " +
+    "or escalates by mail (send_message to='me', as_assistant:true). 'draft' drops " +
+    "to auto draft chat, 'manual' to plain chat.",
+  true,
 );
 
 const transport = new StdioServerTransport();
@@ -1566,13 +1773,13 @@ await server.connect(transport);
 console.error(
   S
     ? `cli-chat (Phase 1) up as "${S.user}" → mailbox ${mailboxUrl}`
-    : `cli-chat (Phase 1) up with NO account → mailbox ${mailboxUrl} (call create_account)`,
+    : `cli-chat (Phase 1) up with NO account → mailbox ${mailboxUrl} (log in to set up)`,
 );
 
 // Session-start sync (AUTH-SYNC.md): if this device is logged into the online
 // account, reconcile in the background — pull anything newer, push pending local
 // edits. Best-effort and non-blocking, like the push warmer: any failure just
-// waits for the next start or a manual `sync`. Reads stay local-first regardless.
+// waits for the next start or a bare `login` check-in. Reads stay local-first regardless.
 if (S && loadSession(S.user)) {
   void syncNow(S).catch((e) => console.error(`startup sync skipped: ${(e as Error).message}`));
 }

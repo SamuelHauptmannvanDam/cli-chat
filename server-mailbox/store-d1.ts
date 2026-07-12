@@ -171,10 +171,19 @@ export function d1Store(db: D1Like): Store {
     async getOrCreateAccount(email: string, now: number): Promise<AccountRecord> {
       const e = email.toLowerCase();
       const found = (await db
-        .prepare(`SELECT id, email, signPub, paid FROM accounts WHERE email = ?`)
+        .prepare(`SELECT id, email, signPub, paid, data_key FROM accounts WHERE email = ?`)
         .bind(e)
-        .first()) as { id: string; email: string; signPub: string | null; paid: number } | null;
-      if (found) return { id: found.id, email: found.email, signPub: found.signPub, paid: !!found.paid };
+        .first()) as
+        | { id: string; email: string; signPub: string | null; paid: number; data_key: string | null }
+        | null;
+      if (found)
+        return {
+          id: found.id,
+          email: found.email,
+          signPub: found.signPub,
+          paid: !!found.paid,
+          dataKey: found.data_key,
+        };
       const id = randomId();
       await db
         .prepare(
@@ -183,7 +192,7 @@ export function d1Store(db: D1Like): Store {
         )
         .bind(id, e, now, now)
         .run();
-      return { id, email: e, signPub: null, paid: false };
+      return { id, email: e, signPub: null, paid: false, dataKey: null };
     },
 
     async bindAccountSignPub(accountId: string, signPub: string, now: number) {
@@ -191,6 +200,18 @@ export function d1Store(db: D1Like): Store {
         .prepare(`UPDATE accounts SET signPub = ?, updated_at = ? WHERE id = ?`)
         .bind(signPub, now, accountId)
         .run();
+    },
+
+    async ensureDataKey(accountId: string, candidate: string, now: number): Promise<string> {
+      await db
+        .prepare(`UPDATE accounts SET data_key = ?, updated_at = ? WHERE id = ? AND data_key IS NULL`)
+        .bind(candidate, now, accountId)
+        .run();
+      const row = (await db
+        .prepare(`SELECT data_key FROM accounts WHERE id = ?`)
+        .bind(accountId)
+        .first()) as { data_key: string | null } | null;
+      return row?.data_key ?? candidate;
     },
 
     async setAccountPaid(accountId: string, now: number) {
@@ -245,17 +266,30 @@ export function d1Store(db: D1Like): Store {
     async accountBySession(tokenHash: string, now: number): Promise<AccountRecord | null> {
       const row = (await db
         .prepare(
-          `SELECT a.id, a.email, a.signPub, a.paid, s.expires_at
+          `SELECT a.id, a.email, a.signPub, a.paid, a.data_key, s.expires_at
            FROM sessions s JOIN accounts a ON a.id = s.account_id
            WHERE s.token_hash = ?`,
         )
         .bind(tokenHash)
         .first()) as
-        | { id: string; email: string; signPub: string | null; paid: number; expires_at: number }
+        | {
+            id: string;
+            email: string;
+            signPub: string | null;
+            paid: number;
+            data_key: string | null;
+            expires_at: number;
+          }
         | null;
       if (!row || row.expires_at <= now) return null;
       await db.prepare(`UPDATE sessions SET last_seen = ? WHERE token_hash = ?`).bind(now, tokenHash).run();
-      return { id: row.id, email: row.email, signPub: row.signPub, paid: !!row.paid };
+      return {
+        id: row.id,
+        email: row.email,
+        signPub: row.signPub,
+        paid: !!row.paid,
+        dataKey: row.data_key,
+      };
     },
 
     async deleteSession(tokenHash: string) {
@@ -286,6 +320,46 @@ export function d1Store(db: D1Like): Store {
         .bind(accountId, blob, version, now)
         .run();
       return "ok";
+    },
+
+    async appendHistory(accountId: string, blobs: string[], now: number): Promise<number> {
+      for (const blob of blobs) {
+        await db
+          .prepare(
+            `INSERT INTO history (account_id, seq, blob, created_at)
+             SELECT ?, COALESCE(MAX(seq), 0) + 1, ?, ? FROM history WHERE account_id = ?`,
+          )
+          .bind(accountId, blob, now, accountId)
+          .run();
+      }
+      const row = (await db
+        .prepare(`SELECT MAX(seq) AS seq FROM history WHERE account_id = ?`)
+        .bind(accountId)
+        .first()) as { seq: number | null } | null;
+      return Number(row?.seq ?? 0);
+    },
+
+    async historySince(accountId: string, since: number, limit: number) {
+      const { results } = await db
+        .prepare(
+          `SELECT seq, blob FROM history WHERE account_id = ? AND seq > ?
+           ORDER BY seq ASC LIMIT ?`,
+        )
+        .bind(accountId, since, limit)
+        .all();
+      const row = (await db
+        .prepare(`SELECT MAX(seq) AS seq FROM history WHERE account_id = ?`)
+        .bind(accountId)
+        .first()) as { seq: number | null } | null;
+      const chunks = (results as { seq: number; blob: string }[]).map((c) => ({
+        seq: Number(c.seq),
+        blob: c.blob,
+      }));
+      return { chunks, last: Number(row?.seq ?? 0) };
+    },
+
+    async deleteHistory(accountId: string) {
+      await db.prepare(`DELETE FROM history WHERE account_id = ?`).bind(accountId).run();
     },
 
     async purgeAuth(now: number): Promise<number> {

@@ -107,12 +107,17 @@ CREATE INDEX IF NOT EXISTS idx_accepts_to ON friend_accepts (to_signpub);
 
 -- One online account per paying user. `signPub` ties the account to the user's
 -- mailbox identity; it's bound on the first sync. `paid` flips on the Stripe
--- webhook and gates the vault routes.
+-- webhook and gates the vault routes. `data_key` is the per-account symmetric
+-- key (hex) minted on first login; the CLIENT encrypts vault/history blobs with
+-- it before pushing (encryption at rest, not E2E — the server stores both).
+-- On an existing D1 the CREATE is a no-op, so add the column once:
+--   wrangler d1 execute cli-chat --remote --command "ALTER TABLE accounts ADD COLUMN data_key TEXT"
 CREATE TABLE IF NOT EXISTS accounts (
   id          TEXT PRIMARY KEY,
   email       TEXT NOT NULL UNIQUE,   -- lowercased
   signPub     TEXT,                   -- bound on first sync
   paid        INTEGER NOT NULL DEFAULT 0,
+  data_key    TEXT,                   -- minted on first login (hex, 32 bytes)
   created_at  INTEGER NOT NULL,
   updated_at  INTEGER NOT NULL
 );
@@ -142,10 +147,22 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE INDEX IF NOT EXISTS idx_sessions_account ON sessions (account_id);
 
 -- The synced account state: one opaque blob per account (identity + contacts +
--- tags + settings, assembled client-side). `version` drives last-write-wins.
+-- tags + settings + context files, assembled AND encrypted client-side).
+-- `version` drives last-write-wins.
 CREATE TABLE IF NOT EXISTS vault (
   account_id  TEXT PRIMARY KEY,
   blob        TEXT NOT NULL,
   version     INTEGER NOT NULL,
   updated_at  INTEGER NOT NULL
+);
+
+-- Message history (AUTH-SYNC.md): append-only, client-encrypted chunks with a
+-- per-account monotonic `seq`. Devices push the messages they saw and pull
+-- everything past their cursor; the server never reads the blobs.
+CREATE TABLE IF NOT EXISTS history (
+  account_id  TEXT NOT NULL,
+  seq         INTEGER NOT NULL,
+  blob        TEXT NOT NULL,
+  created_at  INTEGER NOT NULL,
+  PRIMARY KEY (account_id, seq)
 );

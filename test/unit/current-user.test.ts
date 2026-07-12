@@ -4,9 +4,9 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  resolveIdentity,
   currentUser,
   setCurrentUser,
+  clearCurrentUser,
 } from "../../src/current-user.ts";
 import { usersDir, userDir, identityFile } from "../../src/paths.ts";
 
@@ -41,32 +41,34 @@ function seed(handle: string, meta: { handle?: string; name?: string; signPub?: 
   writeFileSync(identityFile(handle), JSON.stringify({ handle, ...meta }));
 }
 
-// --- resolveIdentity (selector → directory) ---
+// --- selector resolution (handle | display name | signPub), via currentUser ---
 
-test("resolveIdentity matches a literal directory name (the handle)", () => {
+test("a selector that is the literal directory name (the handle) resolves", () => {
   seed("dC0v6m", { name: "Sam" });
-  assert.equal(resolveIdentity("dC0v6m"), "dC0v6m");
+  process.env.MESSENGER_USER = "dC0v6m";
+  assert.equal(currentUser(), "dC0v6m");
 });
 
-test("resolveIdentity matches a display name case-insensitively", () => {
+test("a display-name selector resolves case-insensitively", () => {
   seed("dC0v6m", { name: "Sam" });
-  assert.equal(resolveIdentity("sam"), "dC0v6m");
-  assert.equal(resolveIdentity("SAM"), "dC0v6m");
+  seed("F7wzEg", { name: "Niels" }); // >1 identity so zero-config can't mask it
+  process.env.MESSENGER_USER = "SAM";
+  assert.equal(currentUser(), "dC0v6m");
 });
 
-test("resolveIdentity matches on signPub", () => {
+test("a signPub selector resolves", () => {
   seed("dC0v6m", { name: "Sam", signPub: "deadbeef" });
-  assert.equal(resolveIdentity("deadbeef"), "dC0v6m");
+  seed("F7wzEg", { name: "Niels" });
+  process.env.MESSENGER_USER = "deadbeef";
+  assert.equal(currentUser(), "dC0v6m");
 });
 
-test("resolveIdentity returns null when nothing matches", () => {
-  seed("dC0v6m", { name: "Sam" });
-  assert.equal(resolveIdentity("nobody"), null);
-});
-
-test("resolveIdentity ignores directories without an identity.json", () => {
+test("a directory without an identity.json never resolves as an identity", () => {
   mkdirSync(userDir("empty"), { recursive: true }); // dir but no identity file
-  assert.equal(resolveIdentity("empty"), null);
+  seed("dC0v6m", { name: "Sam" });
+  process.env.MESSENGER_USER = "empty";
+  // Unresolved selectors come back raw (boots no-account), not as another identity.
+  assert.equal(currentUser(), "empty");
 });
 
 // --- currentUser (priority: env > pointer > sole identity) ---
@@ -123,4 +125,22 @@ test("setCurrentUser persists the device default for currentUser to read", () =>
   seed("F7wzEg", { name: "Niels" });
   setCurrentUser("dC0v6m");
   assert.equal(currentUser(), "dC0v6m");
+});
+
+// --- clearCurrentUser (the logout wipe) ---
+
+test("clearCurrentUser forgets the pointer it names", () => {
+  seed("dC0v6m", { name: "Sam" });
+  seed("F7wzEg", { name: "Niels" });
+  setCurrentUser("dC0v6m");
+  clearCurrentUser("dC0v6m");
+  assert.equal(currentUser(), null, "no pointer + multiple identities → no default");
+});
+
+test("clearCurrentUser leaves another identity's pointer alone", () => {
+  seed("dC0v6m", { name: "Sam" });
+  seed("F7wzEg", { name: "Niels" });
+  setCurrentUser("F7wzEg");
+  clearCurrentUser("dC0v6m"); // logging out dC0v6m must not unset Niels's default
+  assert.equal(currentUser(), "F7wzEg");
 });

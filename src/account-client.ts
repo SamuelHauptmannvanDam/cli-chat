@@ -17,7 +17,9 @@ export type PollResult =
   | {
       status: "ready";
       session_token: string;
-      account: { email: string; paid: boolean; hasVault: boolean };
+      // `dataKey` (hex) encrypts vault/history blobs client-side; optional so a
+      // pre-upgrade server that doesn't send one still logs in (plaintext blobs).
+      account: { email: string; paid: boolean; hasVault: boolean; dataKey?: string };
     };
 
 export interface VaultPull {
@@ -30,12 +32,25 @@ export type VaultPush =
   | { ok: false; reason: "stale"; current: { blob: string; version: number } }
   | { ok: false; reason: "payment_required"; checkoutUrl: string | null };
 
+export interface HistoryPull {
+  chunks: { seq: number; blob: string }[];
+  last: number;
+}
+
 export interface AccountClient {
   startLogin(email: string): Promise<LoginStart>;
   poll(pollId: string): Promise<PollResult>;
   pullVault(token: string): Promise<VaultPull | "unauthorized" | "payment_required">;
   pushVault(token: string, blob: string, version: number, signPub: string): Promise<VaultPush>;
   checkout(token: string): Promise<{ paid: boolean; checkoutUrl?: string } | "unauthorized">;
+  // Upgrade path for sessions minted before encrypted blobs: fetch (and mint if
+  // missing) the account's data key.
+  fetchDataKey(token: string): Promise<string | "unauthorized">;
+  // History stream (AUTH-SYNC.md): append encrypted chunks / pull past a cursor.
+  pushHistory(token: string, blobs: string[]): Promise<{ last: number } | "unauthorized" | "payment_required">;
+  pullHistory(token: string, since: number): Promise<HistoryPull | "unauthorized" | "payment_required">;
+  // Revoke this device's session server-side (logout). Best-effort on the caller.
+  logout(token: string): Promise<void>;
 }
 
 export function createAccountClient(baseUrl: string): AccountClient {
@@ -105,6 +120,44 @@ export function createAccountClient(baseUrl: string): AccountClient {
       if (res.status === 401) return "unauthorized";
       if (!res.ok) await fail(res, "checkout");
       return (await res.json()) as { paid: boolean; checkoutUrl?: string };
+    },
+
+    async fetchDataKey(token) {
+      const res = await fetch(`${base}/account/key`, { headers: bearer(token) });
+      if (res.status === 401) return "unauthorized";
+      if (!res.ok) await fail(res, "data key fetch");
+      const j = (await res.json()) as { dataKey: string };
+      return j.dataKey;
+    },
+
+    async pushHistory(token, blobs) {
+      const res = await fetch(`${base}/history`, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...bearer(token) },
+        body: JSON.stringify({ blobs }),
+      });
+      if (res.status === 401) return "unauthorized";
+      if (res.status === 402) return "payment_required";
+      if (!res.ok) await fail(res, "history push");
+      const j = (await res.json()) as { last: number };
+      return { last: j.last };
+    },
+
+    async pullHistory(token, since) {
+      const res = await fetch(`${base}/history?since=${encodeURIComponent(since)}`, {
+        headers: bearer(token),
+      });
+      if (res.status === 401) return "unauthorized";
+      if (res.status === 402) return "payment_required";
+      if (!res.ok) await fail(res, "history pull");
+      const j = (await res.json()) as { chunks: { seq: number; blob: string }[]; last: number };
+      return { chunks: j.chunks, last: j.last };
+    },
+
+    async logout(token) {
+      const res = await fetch(`${base}/auth/session`, { method: "DELETE", headers: bearer(token) });
+      // 401 = session already gone — that's a successful logout for our purposes.
+      if (!res.ok && res.status !== 401) await fail(res, "logout");
     },
   };
 }

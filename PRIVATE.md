@@ -1,3 +1,37 @@
+# Privacy — where your data lives, and private conversations
+
+## The posture today (shipped)
+
+The honest map of who can see what, as built:
+
+- **An email account is required.** `login` with an email is the only way onto a
+  device; the account is created bound to that email, and **email is the master
+  key** — whoever controls it can restore the whole account. There is no
+  local-only account path.
+- **The server holds a copy of your account — encrypted at rest.** Identity
+  (including the keypair), contacts, tags, memory notes, thread digests, and
+  full message history all sync to the account so any device you log in on gets
+  everything back. Every synced blob is encrypted client-side (AES-256-GCM
+  under a per-account key) before it's pushed, so a **database leak or dump
+  yields ciphertext**. But the server mints and stores that key, so this
+  protects against leaks, **not against us** — it is encryption at rest, not
+  end-to-end. Don't oversell it. (AUTH-SYNC.md §4 states the trade in full.)
+- **Message transport stays sealed end-to-end.** Bodies cross the wire and sit
+  in the mailbox sealed to the recipient's box key; the relay never has a key
+  for them. That part *is* E2E, unchanged.
+- **All reads are local.** `history`, `recall`, contacts, thread pulls — every
+  read is served from the device's own store. The server is written to (sync)
+  and never queried to answer you.
+- **Logout wipes the device.** `logout` pushes everything still pending,
+  **verifies** it landed, revokes the device's session, then removes the local
+  state entirely — and refuses to delete anything if the final sync can't be
+  confirmed. A lost or returned machine holds nothing the account hasn't got.
+
+Everything below is a **feature design on top of that posture** — private
+conversations, kept out of the agent's memory and mouth.
+
+---
+
 # Private conversations — kept out of the agent's memory and mouth
 
 **Status: on the board, not scheduled.** Not needed for the history MVP and
@@ -16,10 +50,11 @@ enforcement is a filter on history's query path, so it bolts on cleanly.
 
 ## What "private" honestly means (scope, stated plainly)
 
-Wire privacy already exists — every message is sealed E2E and the relay sees
-only ciphertext. This feature is **agent hygiene on your own device**: it
-controls what your AI may *reuse*, not who can *read* (nobody but the
-recipient could anyway). On the recipient's side it's enforceable; a
+Wire privacy already exists — every message is sealed E2E in transport and the
+relay sees only ciphertext (the account's synced history copy is encrypted at
+rest; see the posture above). This feature is **agent hygiene on your own
+device**: it controls what your AI may *reuse*, not who can *read* (nobody but
+the recipient could read it in flight anyway). On the recipient's side it's enforceable; a
 sender-set flag on outgoing mail is **advisory** — you can't control the
 other end's agent any more than you can control a human forwarding your
 words. Don't oversell it as more than that.
@@ -47,7 +82,8 @@ agent-reuse path:
 Storage: messages still land in the local store (otherwise "read it again"
 breaks) — private is a query-time and behaviour-time filter, enforced at the
 `history`/context layer, not a storage hole. The flag syncs with contacts in
-the vault like any contact field.
+the vault like any contact field, and the thread itself still rides history
+sync (encrypted at rest) so other devices honour the same filter.
 
 ## Level 2 — private send (wire-carried, advisory; small add-on)
 
