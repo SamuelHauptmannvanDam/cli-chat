@@ -68,6 +68,16 @@ automatic to fully on-demand:
 > one, some, or all whenever you like. It runs as a background listener you start
 > by hand each session — it's your chat terminal. Say *"stop"* to close it.
 
+**✍️ Draft chat — say *"draft chat"* (your assistant drafts, you send)**
+> The midway point: the same live inbox, but your assistant writes a suggested
+> reply under each incoming message — grounded in your project, your message
+> history, and its notes — and **nothing is sent until you say so**. Approve
+> (*"send 1"*, *"send all"*), ask for a tweak, or answer yourself; an approved
+> reply goes out as you, since you signed off on it. What it can't answer, it
+> asks you instead of guessing. It's the trust-builder before *"auto chat"* —
+> and *"draft"* / *"auto"* / *"manual"* switch a running inbox between the modes
+> any time.
+
 **🤖 Auto chat — say *"auto chat"* (your assistant answers for you)**
 > The same live inbox, one step further: your assistant answers incoming messages
 > for you, grounded in your own context — this project's files, your message
@@ -99,6 +109,7 @@ saves a fact your messenger can use anywhere — it's what auto chat answers fro
 - *"what's my code?"* — show your handle to share
 - *"write Sam at AbC123: …"* / *"write Sam: …"* — send a message
 - *"chat"* (or *"watch"*) — open your live inbox (messages stream in; reply to all when you like)
+- *"draft chat"* — same inbox; the assistant drafts each reply, you approve before it sends
 - *"auto chat"* — same inbox, but your assistant answers what it can, marked as itself
 - *"what did Sam say about …?"* — recall any past message, from any session
 - *"remember …"* — save a fact to your messenger's memory

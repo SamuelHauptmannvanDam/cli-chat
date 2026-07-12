@@ -268,11 +268,12 @@ test("a screened (flagged) message carries its warning into the agent's private 
   assert.doesNotMatch(ctx, /id m2\) \[⚠/);
 });
 
-test("the first-mail tip suggests both rungs: chat and auto chat", () => {
+test("the first-mail tip suggests all three rungs: chat, draft chat and auto chat", () => {
   seedIdentity();
   seedPending([{ id: "m1", from: "Niels", body: "hi" }]);
   const out = runHook("SessionStart", { account: true, session_id: "s1" });
   assert.match(out.systemMessage, /say "chat" to read your messages live/);
+  assert.match(out.systemMessage, /"draft chat" and I'll draft replies for you to approve/);
   assert.match(out.systemMessage, /"auto chat" and I'll answer them for you/);
 });
 
