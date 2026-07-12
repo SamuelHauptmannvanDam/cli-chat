@@ -14,7 +14,7 @@
 // All on-disk locations come from paths.ts (the data home), NOT the code dir, so
 // state survives an ephemeral npx install. See src/paths.ts.
 
-import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { usersDir, identityFile } from "./paths.ts";
 
@@ -52,13 +52,6 @@ function resolveDir(sel: string): string | null {
   return null;
 }
 
-// Map any selector (handle | display name | signPub | literal dir) to the
-// on-disk directory that holds it, or null if nothing matches. Exposed so
-// create_account can adopt an existing identity instead of minting a duplicate.
-export function resolveIdentity(sel: string): string | null {
-  return resolveDir(sel);
-}
-
 export function currentUser(): string | null {
   const env = process.env.MESSENGER_USER?.trim();
   if (env) return resolveDir(env) ?? env; // unresolved → return raw (boots no-account)
@@ -77,4 +70,16 @@ export function currentUser(): string | null {
 // Make `key` the device default. Pass the handle (the stable on-disk key).
 export function setCurrentUser(key: string): void {
   writeFileSync(pointerPath(), key + "\n");
+}
+
+// Forget the device default if it currently points at `key` (logout wipe). Any
+// other identity's pointer is left alone.
+export function clearCurrentUser(key: string): void {
+  const pointer = pointerPath();
+  try {
+    if (existsSync(pointer) && readFileSync(pointer, "utf8").trim() === key)
+      rmSync(pointer, { force: true });
+  } catch {
+    /* best-effort — a stale pointer resolves to nothing and boots no-account */
+  }
 }

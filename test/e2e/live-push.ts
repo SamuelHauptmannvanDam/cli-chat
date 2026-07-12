@@ -18,7 +18,7 @@ import { initCrypto, generateIdentity, type Identity } from "../../src/crypto.ts
 import { createMailboxClient } from "../../src/mailbox-client.ts";
 import { randomHandle } from "../../src/key-code.ts";
 import { openMailbox, unreadFor, markRead, type Mailbox } from "../../src/db.ts";
-import { sendMessage, draftReply, sync, type NetContext } from "../../src/core-net.ts";
+import { sendMessage, sync, type NetContext } from "../../src/core-net.ts";
 import { startWarmer } from "../../src/warmer.ts";
 import { resolveMailboxUrl } from "../../src/config.ts";
 
@@ -83,7 +83,7 @@ assert.equal(nUnread.length, 1, "Niels should have exactly 1 message");
 assert.equal(nUnread[0]!.body, "yo, e2e test 1", "body should round-trip decrypted");
 console.log(`  ✓ Niels received: "${nUnread[0]!.body}"`);
 
-await draftReply(nielsCtx, { in_reply_to: nUnread[0]!.id, body: "got it — replying" });
+await sendMessage(nielsCtx, { in_reply_to: nUnread[0]!.id, body: "got it — replying" });
 await sync(samCtx);
 const sUnread = unreadFor(samCtx.cache, sam.signPub);
 assert.equal(sUnread.length, 1, "Sam should receive the reply");

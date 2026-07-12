@@ -78,12 +78,12 @@ assert.equal(read.body, "yo let's plan a LAN, when are you free?", "body should 
 console.log(`3. Niels → read_message: "${read.body}"`);
 
 // 4. Niels replies, threaded.
-const reply = await call(niels, "draft_reply", {
+const reply = await call(niels, "send_message", {
   in_reply_to: sent.id,
   body: "Free Sat + Sun next week — lock it in.",
 });
-assert.ok(reply.ok ?? reply.id, `draft_reply should succeed: ${JSON.stringify(reply)}`);
-console.log(`4. Niels → draft_reply: sealed back to Sam`);
+assert.ok(reply.ok ?? reply.id, `reply should succeed: ${JSON.stringify(reply)}`);
+console.log(`4. Niels → reply: sealed back to Sam`);
 
 // 5. Sam receives the threaded reply.
 const samInbox = await call(sam, "messages_available");

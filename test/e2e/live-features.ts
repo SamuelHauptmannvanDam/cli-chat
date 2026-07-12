@@ -63,13 +63,13 @@ const avail = await call(niels.client, "messages_available", {});
 assert.equal(avail.count, 1);
 const read = await call(niels.client, "read_message", { id: avail.messages[0].id });
 assert.equal(read.ok, true);
-const reply = await call(niels.client, "draft_reply", {
+const reply = await call(niels.client, "send_message", {
   in_reply_to: read.id,
   body: "REDIS_URL and API_KEY, see .env.example",
   as_assistant: true,
 });
 assert.equal(reply.ok, true);
-console.log("2. draft_reply as_assistant: ok");
+console.log("2. send_message reply as_assistant: ok");
 
 // 3. Sam reads the reply — visibly marked + metadata + resultNote guidance.
 const got = await call(sam.client, "read_message", {});
@@ -121,12 +121,15 @@ assert.equal(selfRead.self, true);
 assert.match(selfRead.note ?? "", /SELF-MAIL/);
 console.log("7. self-send escalation: ok ('your assistant', self note)");
 
-// 8. start_chat quiet returns the mode-stamped command.
-const chat = await call(sam.client, "start_chat", { quiet: true });
+// 8. The three chat tools return the waker command; auto_chat quiet stamps the mode.
+const chat = await call(sam.client, "auto_chat", { quiet: true });
 assert.match(chat.command, /MESSENGER_CHAT_MODE=quiet/);
-const chatPlain = await call(sam.client, "start_chat", {});
+const chatPlain = await call(sam.client, "chat", {});
 assert.doesNotMatch(chatPlain.command, /MESSENGER_CHAT_MODE/);
-console.log("8. start_chat quiet flag: ok");
+const chatDraft = await call(sam.client, "auto_draft_chat", {});
+assert.doesNotMatch(chatDraft.command, /MESSENGER_CHAT_MODE/);
+assert.match(chatDraft.note ?? "", /AUTO DRAFT CHAT MODE/);
+console.log("8. chat / auto_draft_chat / auto_chat wakers: ok");
 
 // 9. Headless CLI send from Niels's home → lands for Sam.
 const out = execFileSync("node", [join(ROOT, "src", "server-net.ts"), "send", "Sam", "deploy", "landed,", "your", "move"], {

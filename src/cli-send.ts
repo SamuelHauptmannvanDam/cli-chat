@@ -19,6 +19,8 @@ import { currentUser } from "./current-user.ts";
 import { identityFile, contactsFile, inboxFile, threadsDir } from "./paths.ts";
 import { resolveMailboxUrl } from "./config.ts";
 import { sendMessage, type NetContext } from "./core-net.ts";
+import { appendOutbox } from "./history-sync.ts";
+import { loadSession } from "./session.ts";
 
 export async function runCliSend(argv: string[]): Promise<number> {
   // Parse: [--key CODE] [--as-assistant] <to> <body words…>
@@ -40,7 +42,7 @@ export async function runCliSend(argv: string[]): Promise<number> {
 
   const user = currentUser();
   if (!user) {
-    console.error("no account on this device (run the MCP server and create_account first)");
+    console.error("no account on this device (open the messenger and log in first)");
     return 1;
   }
   await initCrypto();
@@ -60,6 +62,11 @@ export async function runCliSend(argv: string[]): Promise<number> {
     now,
     contactsPath: contactsFile(user),
     threadsPath: threadsDir(user),
+    // One-shot process: just queue for the history stream; the long-lived MCP
+    // server (or the next session-start sync) pushes the outbox.
+    onHistoryAppend: (row) => {
+      if (loadSession(user)) appendOutbox(user, row);
+    },
   };
   const r = await sendMessage(ctx, { to, body, key, as_assistant: asAssistant });
   if (r.ok) {

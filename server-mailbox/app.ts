@@ -25,6 +25,9 @@ export interface AppDeps {
   // real time. Same transport as `notify` (the signPub inbox DO); omitted on the
   // Node runner. Must not throw / block the response.
   notifyVault?: (signPub: string) => void;
+  // Same shape for history appends: wake the account's other devices so they pull
+  // the new chunks past their cursor. Omitted on the Node runner.
+  notifyHistory?: (signPub: string) => void;
   // New-sender throttle caps (see admission control below). Override per-app
   // (tests pin small values); otherwise env, then the defaults.
   limits?: {
@@ -68,7 +71,12 @@ export interface AppDeps {
 const LOGIN_TTL_MS = 15 * 60 * 1000;
 const SESSION_TTL_MS = 365 * 24 * 60 * 60 * 1000;
 const POLL_INTERVAL_MS = 2000;
-const MAX_VAULT_BYTES = 512 * 1024;
+const MAX_VAULT_BYTES = 1024 * 1024; // blob now carries context files + is base64-encrypted
+// History chunks: each blob is one client-encrypted batch of messages. Bounds are
+// per-blob and per-request; the pull side pages with `since` + this cap.
+const MAX_HISTORY_BLOB_BYTES = 256 * 1024;
+const MAX_HISTORY_BLOBS_PER_PUSH = 64;
+const HISTORY_PULL_LIMIT = 200;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // Abuse limits. These are short text ciphertexts, so the caps are generous yet
@@ -96,7 +104,7 @@ function envInt(name: string): number | undefined {
 
 export function createApp(deps: AppDeps): Hono {
   const app = new Hono();
-  const { store, now, notify, notifyVault, rateLimit, freeSync } = deps;
+  const { store, now, notify, notifyVault, notifyHistory, rateLimit, freeSync } = deps;
   const unknownPairHourly =
     deps.limits?.unknownPairHourly ??
     envInt("MAILBOX_UNKNOWN_PAIR_HOURLY") ??
@@ -555,11 +563,40 @@ export function createApp(deps: AppDeps): Hono {
     const sessionToken = randomToken();
     await store.createSession(await sha256hex(sessionToken), account.id, now() + SESSION_TTL_MS, now());
     await store.claimLogin(pollId);
+    // The data key rides the authenticated login response: minted on the account's
+    // first login, same key returned on every later one. The client encrypts its
+    // vault/history blobs with it before pushing.
+    const dataKey = account.dataKey ?? (await store.ensureDataKey(account.id, randomToken(), now()));
     return c.json({
       status: "ready",
       session_token: sessionToken,
-      account: { email: account.email, paid: account.paid, hasVault: account.signPub != null },
+      account: {
+        email: account.email,
+        paid: account.paid,
+        hasVault: account.signPub != null,
+        dataKey,
+      },
     });
+  });
+
+  // Hand the account's data key to an already-authenticated device — the upgrade
+  // path for sessions minted before encrypted blobs existed (their login response
+  // carried no key). Mints one if the account still has none.
+  app.get("/account/key", async (c) => {
+    const account = await requireSession(c);
+    if (!account) return c.json({ error: "unauthorized" }, 401);
+    const dataKey = account.dataKey ?? (await store.ensureDataKey(account.id, randomToken(), now()));
+    return c.json({ ok: true, dataKey });
+  });
+
+  // Log this device out: revoke its bearer session. The client wipes its local
+  // state after this succeeds (AUTH-SYNC.md logout).
+  app.delete("/auth/session", async (c) => {
+    const auth = c.req.header("authorization") ?? "";
+    const token = auth.replace(/^Bearer\s+/i, "").trim();
+    if (!token) return c.json({ error: "unauthorized" }, 401);
+    await store.deleteSession(await sha256hex(token));
+    return c.json({ ok: true });
   });
 
   // Pull the synced account blob. Paid accounts only.
@@ -588,7 +625,12 @@ export function createApp(deps: AppDeps): Hono {
     }
     if (typeof body.blob !== "string" || typeof body.version !== "number")
       return c.json({ error: "missing blob/version" }, 400);
-    if (body.signPub && account.signPub !== body.signPub)
+    // signPub binds ONCE (first push). A push claiming a different identity is
+    // refused — without this, logging in on a device that holds another identity
+    // could silently take over the account's vault (the hijack case).
+    if (body.signPub && account.signPub && account.signPub !== body.signPub)
+      return c.json({ error: "identity_mismatch" }, 403);
+    if (body.signPub && !account.signPub)
       await store.bindAccountSignPub(account.id, body.signPub, now());
     const res = await store.putVault(account.id, body.blob, body.version, now());
     if (res !== "ok") return c.json({ ok: false, reason: "stale", current: res.stale }, 409);
@@ -597,6 +639,44 @@ export function createApp(deps: AppDeps): Hono {
     const signPub = body.signPub ?? account.signPub;
     if (signPub) notifyVault?.(signPub);
     return c.json({ ok: true, version: body.version });
+  });
+
+  // Append client-encrypted history chunks (AUTH-SYNC.md). Each blob is an opaque
+  // sealed batch of messages; the server just assigns per-account seqs. Same auth
+  // + pay gate as the vault.
+  app.post("/history", async (c) => {
+    const account = await requireSession(c);
+    if (!account) return c.json({ error: "unauthorized" }, 401);
+    if (!account.paid && !freeSync)
+      return c.json({ error: "payment_required", checkoutUrl: checkoutUrl ?? null }, 402);
+    let body: { blobs?: string[] };
+    try {
+      body = JSON.parse(await c.req.text());
+    } catch {
+      return c.json({ error: "invalid json" }, 400);
+    }
+    const blobs = body.blobs;
+    if (!Array.isArray(blobs) || blobs.some((b) => typeof b !== "string"))
+      return c.json({ error: "missing blobs" }, 400);
+    if (blobs.length > MAX_HISTORY_BLOBS_PER_PUSH) return c.json({ error: "too many blobs" }, 413);
+    if (blobs.some((b) => b.length > MAX_HISTORY_BLOB_BYTES))
+      return c.json({ error: "blob too large" }, 413);
+    const last = await store.appendHistory(account.id, blobs, now());
+    if (blobs.length && account.signPub) notifyHistory?.(account.signPub);
+    return c.json({ ok: true, last });
+  });
+
+  // Pull history chunks past the device's cursor, oldest first. `last` is the
+  // account's newest seq — page again while chunks come back and seq < last.
+  app.get("/history", async (c) => {
+    const account = await requireSession(c);
+    if (!account) return c.json({ error: "unauthorized" }, 401);
+    if (!account.paid && !freeSync)
+      return c.json({ error: "payment_required", checkoutUrl: checkoutUrl ?? null }, 402);
+    const since = Number(c.req.query("since") ?? 0);
+    if (!Number.isFinite(since) || since < 0) return c.json({ error: "bad since" }, 400);
+    const page = await store.historySince(account.id, since, HISTORY_PULL_LIMIT);
+    return c.json({ ok: true, chunks: page.chunks, last: page.last });
   });
 
   // Hand back the one-time checkout link for this account (client_reference_id =

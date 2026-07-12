@@ -78,6 +78,8 @@ export default {
       // version in real time. All of an account's devices share one signPub (the
       // vault carries the keypair), so this rides the same inbox DO as mail.
       notifyVault: (signPub) => ctx.waitUntil(wake(env, signPub, "vault")),
+      // Same for history appends: the account's other devices pull past their cursor.
+      notifyHistory: (signPub) => ctx.waitUntil(wake(env, signPub, "history")),
       rateLimit: makeRateLimit(env),
       // Account layer: wire email + billing only when their secrets are present,
       // so a deploy without them still serves the mailbox (account routes 503).
@@ -131,10 +133,10 @@ async function handleConnect(request: Request, env: Env): Promise<Response> {
   return env.INBOX.get(id).fetch(request);
 }
 
-// Best-effort wake of an inbox DO. `t` selects the frame: "mail" (new mail) or
-// "vault" (the account's synced vault changed). Errors are swallowed — the client
-// always has a catch-up sync on (re)connect and a slow fallback poll.
-async function wake(env: Env, recipient: string, t: "mail" | "vault" = "mail"): Promise<void> {
+// Best-effort wake of an inbox DO. `t` selects the frame: "mail" (new mail),
+// "vault" (the synced vault changed) or "history" (new history chunks). Errors
+// are swallowed — the client always has catch-up sync + a slow fallback poll.
+async function wake(env: Env, recipient: string, t: "mail" | "vault" | "history" = "mail"): Promise<void> {
   try {
     const id = env.INBOX.idFromName(recipient);
     const q = t === "mail" ? "" : `?t=${t}`;

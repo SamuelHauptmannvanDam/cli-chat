@@ -7,15 +7,19 @@ agent surfaces the message and helps them reply.
 
 - **Works across CLIs** — Claude Code, Gemini CLI, Copilot CLI, Cursor, … (any
   MCP-capable agent). The agent already knows how to use it; no commands to learn.
-- **End-to-end encrypted** — the mailbox only ever holds ciphertext, and every
-  request is signed. Your messages are unreadable to the server.
+- **End-to-end encrypted delivery** — messages travel sealed to the recipient;
+  the mailbox only ever holds ciphertext it can't read, and every request is
+  signed.
 - **Phone-number-style codes** — share a 6-character handle; that's all someone
   needs to reach you.
+- **Your account follows you** — log in with your email on any device and your
+  contacts, tags, and full message history come with you.
 - **Hosted and ready** — the mailbox is already running. Nothing to deploy.
 
 ## Requirements
-Node 22+. That's it — `npx` fetches the rest, and your identity, contacts, and
-inbox live in `~/.cli-chat` so they persist across runs.
+Node 22+ and an email address. That's it — `npx` fetches the rest, and your
+messages, contacts, and inbox live in `~/.cli-chat` (and back up to your
+account) so they persist across runs.
 
 ## Start messaging
 
@@ -35,9 +39,12 @@ codex mcp add cli-chat -- npx -y cli-chat-mcp@latest
 ```
 Any other MCP-capable CLI: point it at `npx -y cli-chat-mcp@latest`.
 
-**2. Restart your CLI** and approve the `cli-chat` server once. There's no setup
-step — your identity is created the first time you need it (the agent asks your
-name once so contacts see who you are).
+**2. Restart your CLI** and approve the `cli-chat` server once. Setup is a
+login: the first time you use it, the agent asks for your email and sends you a
+magic link — click it and you're in. If you've used cli-chat before, your whole
+account comes back exactly as you left it (contacts, tags, message history); if
+the email is new, the agent asks your name once (it's what recipients see) and
+creates your account on the spot.
 
 **3. Get your code and share it.** Ask *"what's my code?"* — the agent prints your
 6-char handle (e.g. `AbC123`). Send it to whoever you want to reach. To message
@@ -45,7 +52,7 @@ name once so contacts see who you are).
 
 **4. Write.** With their code in hand:
 ```
-write Sam at AbC123: hey      # first time: by code — saves them, and auto-creates you
+write Sam at AbC123: hey      # first time: by code — saves them as a contact
 write Sam: hey                # after that: by name
 ```
 That first send is all the setup there is. When the recipient opens their CLI
@@ -68,7 +75,7 @@ automatic to fully on-demand:
 > one, some, or all whenever you like. It runs as a background listener you start
 > by hand each session — it's your chat terminal. Say *"stop"* to close it.
 
-**✍️ Draft chat — say *"draft chat"* (your assistant drafts, you send)**
+**✍️ Auto draft chat — say *"auto draft chat"* (your assistant drafts, you send)**
 > The midway point: the same live inbox, but your assistant writes a suggested
 > reply under each incoming message — grounded in your project, your message
 > history, and its notes — and **nothing is sent until you say so**. Approve
@@ -98,8 +105,9 @@ automatically — so a plain *"write Sam"* works afterwards. Your own nickname f
 contact always wins on screen.
 
 ## Your messages are memory
-Everything you send and receive stays on your device, and your agent can recall
-it from any session: ask *"what did Niels say about the endpoint?"* or *"what was
+Everything you send and receive is kept on your device — recall is instant and
+local — and synced to your account, so every device you're logged in on has the
+same complete history. Your agent can recall it from any session: ask *"what did Niels say about the endpoint?"* or *"what was
 that address Sam sent?"* and the thread is pulled straight into whatever you're
 working on. Each contact also gets a living page (a short digest plus the recent
 back-and-forth) that the agent keeps current, and *"remember I'm out Friday"*
@@ -109,7 +117,7 @@ saves a fact your messenger can use anywhere — it's what auto chat answers fro
 - *"what's my code?"* — show your handle to share
 - *"write Sam at AbC123: …"* / *"write Sam: …"* — send a message
 - *"chat"* (or *"watch"*) — open your live inbox (messages stream in; reply to all when you like)
-- *"draft chat"* — same inbox; the assistant drafts each reply, you approve before it sends
+- *"auto draft chat"* — same inbox; the assistant drafts each reply, you approve before it sends
 - *"auto chat"* — same inbox, but your assistant answers what it can, marked as itself
 - *"what did Sam say about …?"* — recall any past message, from any session
 - *"remember …"* — save a fact to your messenger's memory
@@ -117,6 +125,7 @@ saves a fact your messenger can use anywhere — it's what auto chat answers fro
 - *"who are my contacts?"* — list your address book
 - *"rename Sam to …"* / *"delete Sam"* — manage contacts
 - *"call me …"* — change the name others see
+- *"log in"* / *"log out"* — put your account on this device, or wipe it off
 
 Scripts and CI can send too, headlessly: `npx cli-chat-mcp send Niels "deploy landed"`.
 
@@ -124,11 +133,20 @@ Scripts and CI can send too, headlessly: `npx cli-chat-mcp send Niels "deploy la
 - **Two-way chat needs both codes shared once.** A message can't safely carry a
   reply-to code (that would let the server impersonate you), so you and your
   contact exchange codes once, out of band — same as swapping phone numbers.
-- **Your messages are private to the server**, which only ever sees ciphertext.
-  Your name travels sealed inside each message so contacts see who you are.
-- **Use your account on any device** — say *"log in"*: the agent emails you a
-  magic link, and the same account (handle, contacts, tags) is restored and kept
-  in sync on every device you log in on.
+- **Delivery is end-to-end encrypted.** A message crosses the wire and waits in
+  the mailbox sealed to its recipient — the server has no key to read it. Your
+  name travels sealed inside each message so contacts see who you are.
+- **Your account backup is encrypted at rest.** Contacts, tags, notes, and
+  message history sync to your account so devices stay in step; they're
+  encrypted before upload, so a leaked database yields only ciphertext. To be
+  straight with you: the service holds the key that makes email-only recovery
+  possible — the backup is protected against leaks, not sealed from the service
+  itself. Delivery stays end-to-end regardless.
+- **Your conversations follow you.** Log in with your email on another device
+  and everything is there — contacts, tags, and your full message history. Lose
+  a laptop and nothing is lost: log in elsewhere and pick up where you left off.
+- **"log out" wipes the device.** It syncs everything up first, confirms it
+  landed, and only then clears the machine — logging back in brings it all back.
 - **Your handle directory can't be walked.** Looking up a handle requires a signed
   request from a real account and is rate-limited, and there's no "list all" route —
   so no one can scrape who's on the mailbox. A lookup only ever returns public keys,

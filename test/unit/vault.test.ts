@@ -63,6 +63,82 @@ test("applyVault refuses a blob with no handle", () => {
   });
 });
 
+test("context files (threads + notes) ride the vault and come back on apply", () => {
+  withHome((home) => {
+    const identity = { handle: "AbC123", signPub: "ff", boxPub: "ee", name: "Sam" };
+    seedUser(home, "AbC123", identity, { me: "ff", contacts: [] }, { tagMode: "auto" });
+    const ctx = join(home, "users", "AbC123", "context");
+    mkdirSync(join(ctx, "threads"), { recursive: true });
+    mkdirSync(join(ctx, "notes"), { recursive: true });
+    writeFileSync(join(ctx, "threads", "niels.md"), "# Niels\n\nDigest: bankdata.\n");
+    writeFileSync(join(ctx, "notes", "disclosure.md"), "- weekends shareable with work\n");
+    writeFileSync(join(ctx, "notes", "not-md.txt"), "ignored");
+
+    const blob = assembleVault("AbC123");
+    const parsed = JSON.parse(blob);
+    assert.deepEqual(Object.keys(parsed.files).sort(), [
+      "context/notes/disclosure.md",
+      "context/threads/niels.md",
+    ]);
+
+    rmSync(join(home, "users", "AbC123"), { recursive: true, force: true });
+    applyVault(blob);
+    assert.equal(
+      readFileSync(join(ctx, "threads", "niels.md"), "utf8"),
+      "# Niels\n\nDigest: bankdata.\n",
+    );
+    assert.equal(
+      readFileSync(join(ctx, "notes", "disclosure.md"), "utf8"),
+      "- weekends shareable with work\n",
+    );
+  });
+});
+
+test("applyVault ignores file entries outside the context dirs (no path escape)", () => {
+  withHome((home) => {
+    const blob = JSON.stringify({
+      v: 1,
+      identity: { handle: "AbC123" },
+      contacts: null,
+      settings: null,
+      files: {
+        "context/threads/../../../evil.md": "nope",
+        "somewhere/else.md": "nope",
+        "context/notes/ok.md": "kept",
+      },
+    });
+    applyVault(blob);
+    const notes = join(home, "users", "AbC123", "context", "notes");
+    assert.equal(readFileSync(join(notes, "ok.md"), "utf8"), "kept");
+    // The traversal entry lands (if anywhere) under the notes/threads dir by
+    // basename only — never outside the user tree.
+    assert.throws(() => readFileSync(join(home, "evil.md"), "utf8"));
+  });
+});
+
+test("mergeVaults unions context files, local wins per path", () => {
+  const local = JSON.stringify({
+    v: 1,
+    identity: { handle: "AbC123" },
+    contacts: { me: "ff", contacts: [] },
+    settings: null,
+    files: { "context/notes/a.md": "local a", "context/notes/b.md": "local b" },
+  });
+  const server = JSON.stringify({
+    v: 1,
+    identity: { handle: "AbC123" },
+    contacts: { me: "ff", contacts: [] },
+    settings: null,
+    files: { "context/notes/b.md": "server b", "context/notes/c.md": "server c" },
+  });
+  const merged = JSON.parse(mergeVaults(local, server));
+  assert.deepEqual(merged.files, {
+    "context/notes/a.md": "local a",
+    "context/notes/b.md": "local b",
+    "context/notes/c.md": "server c",
+  });
+});
+
 test("mergeVaults unions contacts and their tags, last-write-wins per person", () => {
   const local = JSON.stringify({
     v: 1,

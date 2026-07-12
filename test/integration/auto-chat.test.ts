@@ -9,7 +9,6 @@ import {
   packBody,
   unpackBody,
   sendMessage,
-  draftReply,
   sync,
   takeUnread,
   messageHistory,
@@ -45,7 +44,7 @@ test("an as_assistant reply arrives marked — visibly in the body AND in metada
   assert.equal(q.answered_by, undefined); // human question, unmarked
 
   b.me.name = "Bob";
-  const r = await draftReply(b, { in_reply_to: q.id, body: "REDIS_URL and API_KEY", as_assistant: true });
+  const r = await sendMessage(b, { in_reply_to: q.id, body: "REDIS_URL and API_KEY", as_assistant: true });
   assert.equal(r.ok, true);
 
   await sync(a);
@@ -110,7 +109,7 @@ test("an assistant escalation to 'me' reads as 'your assistant'", async () => {
   assert.equal(m.answered_by, "assistant");
 
   // The user's reply to the escalation threads back to their own inbox.
-  const back = await draftReply(ctx, { in_reply_to: m.id, body: "Sunday" });
+  const back = await sendMessage(ctx, { in_reply_to: m.id, body: "Sunday" });
   assert.equal(back.ok, true);
   assert.equal(back.ok && back.self, true);
   await sync(ctx);

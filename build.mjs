@@ -21,8 +21,6 @@ const entries = [
   "check-inbox", // SessionStart / UserPromptSubmit hook
   "await-mail", // A1 live-inbox listener (backgrounded on "listen")
   "install", // wires the server into each detected CLI
-  "init-identity", // one-shot identity creation
-  "add-contact", // CLI contact add
 ];
 
 await build({

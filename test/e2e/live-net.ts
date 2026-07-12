@@ -15,7 +15,6 @@ import { openMailbox } from "../../src/db.ts";
 import { createMailboxClient } from "../../src/mailbox-client.ts";
 import type { ContactBook } from "../../src/contacts.ts";
 import {
-  draftReply,
   messagesAvailable,
   readMessage,
   sendMessage,
@@ -104,7 +103,7 @@ check("Niels reads the decrypted body", read.ok === true && read.body === PLAINT
 check("inbox clears after read", (await messagesAvailable(niels)).count === 0);
 
 // 5. Grounded reply back to Sam, threaded.
-const reply = await draftReply(niels, { in_reply_to: sentId, body: "Free Sat + Sun next week." });
+const reply = await sendMessage(niels, { in_reply_to: sentId, body: "Free Sat + Sun next week." });
 check("Niels replies to Sam", reply.ok === true && reply.to.name === "Sam");
 
 const samInbox = await messagesAvailable(sam);

@@ -9,7 +9,7 @@
 // agent never reads this process's stdout, the machine-room output path stays off
 // the screen. Content comes from chat_batch instead. See server-net.ts.
 //
-// Two modes, chosen by the waker's own env (start_chat passes a matching one):
+// Two modes, chosen by the waker's own env (the chat tools pass a matching one):
 //   - push (default): the MCP server's warmer keeps pending.json current from the
 //     push socket. We only WATCH that file (no inbox.db access) and exit when it
 //     shows mail the feed hasn't surfaced yet (i.e. not in the ack file).
@@ -56,7 +56,7 @@ export function pickUnsurfaced(messages: InboxMessage[], acked: Set<string>): In
 // Heartbeat the chat lock so the session hook knows chat is live and stays silent.
 // Bumped every tick; never removed — a clean "stop" or kill just lets it go stale,
 // and a relaunch refreshes it well within the hook's freshness window. The lock
-// carries the session's MODE: "quiet" (auto chat, quiet — start_chat set
+// carries the session's MODE: "quiet" (auto chat, quiet — auto_chat set
 // MESSENGER_CHAT_MODE) sharpens the hook's suppression in other sessions to
 // "everything except assistant escalations" (AUTO-CHAT.md).
 const chatMode = process.env.MESSENGER_CHAT_MODE === "quiet" ? "quiet" : "chat";

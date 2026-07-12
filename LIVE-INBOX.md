@@ -11,7 +11,7 @@ all whenever they want.
 - On any turn (user types, or the listener exits-on-arrival and re-invokes),
   the **whole pending batch** renders as a feed with ids.
 - The user replies across the list freeform ("tell Niels yes, Sam it's live,
-  skip Ana"); the AI fans out `draft_reply` per id and reports what went where.
+  skip Ana"); the AI fans out `send_message` (in_reply_to) per id and reports what went where.
 - A message stays pending until the user disposes of it — nothing scrolls away
   unanswered.
 - Substrate: **per-session background listener**, no install, no daemon.
@@ -25,7 +25,7 @@ all whenever they want.
    unread appears and exits, without marking read. Heartbeats `chat.lock` each
    tick. Fails clean on `no_account` (just exits). *Why waker-not-printer: the
    agent never reads its stdout, so the temp output-file path stays off screen.*
-2. **`src/server-net.ts` — `start_chat` + `chat_batch`.** `start_chat` returns the
+2. **`src/server-net.ts` — the chat tools + `chat_batch`.** `chat` / `auto_draft_chat` / `auto_chat` each return the
    waker command (env embedded only when non-default, so the shown command stays
    clean). `chat_batch` DELIVERS the batch — reads the pending snapshot and acks
    it (or drains directly when no warmer) — so the feed's content arrives via a
@@ -33,7 +33,7 @@ all whenever they want.
 3. **Instructions (`src/instructions.ts` + CLAUDE.md).** The trigger: on
    "chat"/"go live" → call the tool → spawn backgrounded → on each completion
    render the pending **feed** and **relaunch**; on "stop" don't relaunch.
-   Batch-reply behavior: freeform → `draft_reply` per id.
+   Batch-reply behavior: freeform → `send_message` with in_reply_to, per id.
 4. **Reconciled with `check-inbox.ts`.** The listener heartbeats a `chat.lock`
    (mtime) every tick; the hook treats a lock fresh within 15s as "chat is live"
    and suppresses its count-only notice on keystroke/turn-end (SessionStart still

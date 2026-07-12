@@ -7,7 +7,7 @@
 //
 // The registered command is `npx -y cli-chat-mcp@latest`, so the target CLI always
 // runs the published package — no repo checkout or build needed on that machine.
-// Identity lives in ~/.cli-chat (created on first use via create_account), so
+// Identity lives in ~/.cli-chat (created on first login), so
 // MESSENGER_USER is optional; set it only to pin a specific identity by name.
 //
 // Idempotent: re-running updates the entry. Prints a manual snippet for any CLI
