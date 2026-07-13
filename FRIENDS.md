@@ -157,7 +157,7 @@ Routes (all Ed25519-signed by the local identity, `:me` = verified pubkey):
   accept (and gets `:me`'s `boxPub`) on their next `GET /requests/accepted` (a
   small "accepted since I last checked" pull) or piggybacked on the push socket.
 - `POST /requests/decline` `{from_signpub}` — delete the row. Optionally record it
-  so the same requester can't re-spam (mirror `decline_tag`'s "don't resurface").
+  so the same requester can't re-spam (mirror tag_contact action:'never's "don't resurface").
 
 Keeping it E2E: the request/accept carries only public keys and self-names — the
 same class of data the mailbox already relays. No message body is server-readable.
@@ -182,7 +182,7 @@ Add `requests_only INTEGER NOT NULL DEFAULT 0` to `handles`.
   requests — you just approve each one. (Hence the `/network` query does **not**
   filter on it.) Existing confirmed friends are unaffected — they cached your
   `boxPub` at accept time and never re-resolve.
-- `my_key` while requests-only should say so — e.g. "your handle is off right now;
+- The contacts `me` entry while requests-only should say so — e.g. "your handle is off right now;
   people reach you by connect request" — so the user doesn't share a dead code.
 - **Known limit (document, don't oversell):** this closes the door to *new*
   strangers only. It can't retract a `boxPub` someone already resolved before you
@@ -216,7 +216,7 @@ off. That's the whole value: strand the spammers, lose nothing that matters.
   signPub/boxPub}` (carrying the `requests_only` flag), delete every other
   `handles` row for `:me`'s `signPub`. One active handle per identity; the old code
   now `404`s on resolve.
-- Client caches the new handle in `identity.json`; `my_key` returns it; a sync
+- Client caches the new handle in `identity.json`; the contacts `me` entry shows it; a sync
   pushes it.
 
 **Rotation vs. requests-only — the two ends of the spam-defense ladder.** Rotate =
@@ -236,7 +236,7 @@ best-effort like the edge push):
 - Incoming requests surface via the **`requests`** tool (the agent calls it at
   session start and on demand): it returns `incoming` (people wanting to connect)
   and drains `accepted` (people who accepted the user's own request, auto-saved as
-  contacts). `accept_request {signPub}` / `decline_request {signPub}` act on the
+  contacts). `respond_request {signPub, action:'accept'|'decline'}` acts on the
   incoming ones. Accept writes the contact locally + both edges land server-side.
   Surfacing is tool-driven (no hook injection).
 - `contacts` — the **Contacts of contacts** section renders `name · via <contact>`

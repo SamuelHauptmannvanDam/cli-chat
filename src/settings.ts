@@ -18,7 +18,7 @@ export const DEFAULT_TAG_MODE: TagMode = "auto";
 export interface Settings {
   tagMode: TagMode;
   // FRIENDS.md requests-only mode: a LOCAL mirror of the server-side handle flag,
-  // kept so my_key can warn "your handle is off" without a network round-trip. The
+  // kept so the contacts `me` entry can warn "your handle is off" without a network round-trip. The
   // server is the source of truth; this just reflects the last toggle from here.
   requestsOnly: boolean;
 }

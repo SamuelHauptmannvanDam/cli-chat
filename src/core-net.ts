@@ -326,7 +326,7 @@ export type DeclineTagResult =
 // Reject a tag for a contact: remove it if it was applied AND record the decline so
 // cross-inference never re-suggests it. Covers both "no thanks" to a proposal (tag
 // not present → just declined) and "remove this wrong auto-tag for good" (present →
-// removed + declined). `untag_contact` stays a plain removal that CAN be re-suggested.
+// removed + declined). tag_contact action:'remove' stays a plain removal that CAN be re-suggested.
 export function declineTagContact(
   ctx: NetContext,
   args: { name: string; tag: string },
