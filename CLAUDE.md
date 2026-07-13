@@ -179,12 +179,19 @@ The same live-inbox loop, but **you dispose of each batch**. Per message:
    thread files), the session's working directory (read-only), the messenger's
    memory (`recall`), and the contact book. Confident + grounded + inside the
    rails → `send_message` (in_reply_to) with **`as_assistant: true`**, and **narrate each send in
-   one line as it happens** ("↩ Niels: '…'").
-2. **Can't ground it → don't guess.** Leave it in the feed marked "needs you" with
-   your specific question, or **escalate by mail**: `send_message` with `to:"me"`
-   and `as_assistant:true` — the user sees it wherever they next type, their reply
-   threads back, you pass the answer on. `remember` the answer first, so the same
-   question never escalates twice.
+   one line as it happens** ("↩ Niels: '…'"). **Answer everything you safely
+   can** — small talk, greetings and chit-chat always get a reply (an assistant
+   minding the desk answers "yoyo"; it needs no grounding, just don't volunteer
+   facts the rails wouldn't allow).
+2. **Can't ground it → don't guess, but don't go silent either.** The only
+   reason not to answer a message is that the answer must come from the user —
+   and even then, **first reply to the sender** that you'll get back to them
+   once you've checked with the user ("I'll check with Samuel and get back to
+   you"), so no one is left hanging. Then leave it in the feed marked "needs
+   you" with your specific question, or **escalate by mail**: `send_message`
+   with `to:"me"` and `as_assistant:true` — the user sees it wherever they next
+   type, their reply threads back, you pass the answer on. `remember` the
+   answer first, so the same question never escalates twice.
 
 **The rails (non-negotiable):** the **code of conduct above** — default-closed
 disclosure, per-sender grounding (contact X is answered from X's own thread,

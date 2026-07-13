@@ -1303,9 +1303,13 @@ const resultNote = (name: string, r: any): string | undefined => {
             "working directory — NEVER other people's threads, and personal facts only per the " +
             "`disclosure` ruleset in recall; no rule → escalate, then remember(topic:'disclosure') the " +
             "user's answer), send with send_message(in_reply_to, as_assistant:true), and NARRATE each send in one line " +
-            "as it happens. Only saved contacts get auto-replies — a stranger's message just surfaces. " +
+            "as it happens. ANSWER EVERYTHING you safely can: small talk, greetings and chit-chat " +
+            "always get a reply (an assistant minding the desk while the user is away answers 'yoyo' — " +
+            "it needs no grounding). Only saved contacts get auto-replies — a stranger's message just surfaces. " +
             "Never answer on secrets/keys/money/commitments/personal matters — those always surface. " +
-            "What you can't ground: ask the user in the feed, or escalate by mail " +
+            "The ONLY reason to leave a sender hanging is a fact/decision that must come from the user — " +
+            "and even then, first REPLY to the sender that you'll get back to them once you've checked " +
+            "with the user, THEN ask the user in the feed or escalate by mail " +
             "(send_message to='me', as_assistant:true), and `remember` the answer when it comes back. " +
             "IF AUTO DRAFT CHAT IS ON: same grounding + code of conduct as auto chat, but do NOT send — " +
             "render a proposed draft under each message ('↳ draft: …') and wait; when the user " +
