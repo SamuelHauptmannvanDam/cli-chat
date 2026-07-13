@@ -42,11 +42,26 @@ const parse = (r: any) => JSON.parse(r.content[0].text);
 const call = async (c: Client, name: string, args: any = {}) =>
   parse(await c.callTool({ name, arguments: args }));
 
+// Drive the full magic-link login through the MCP tool: send the link, "click"
+// it via the devLink (only a dev mailbox with exposeMagicLink returns one),
+// then finish with the poll_id + name to create the account.
+async function loginAs(c: Client, email: string, name: string) {
+  const start = await call(c, "login", { email });
+  assert.equal(start.reason, "sent");
+  assert.ok(start.devLink, "no devLink — run against a dev mailbox (npm run dev:mailbox)");
+  await fetch(start.devLink);
+  const named = await call(c, "login", { poll_id: start.poll_id });
+  assert.equal(named.reason, "need_name");
+  const acc = await call(c, "login", { poll_id: start.poll_id, name });
+  assert.equal(acc.ok, true, `login should create the account: ${JSON.stringify(acc)}`);
+  return acc;
+}
+
 const sam = await connect("sam");
 const niels = await connect("niels");
 
-const samAcc = await call(sam.client, "create_account", { name: "Sam Tester" });
-const nielsAcc = await call(niels.client, "create_account", { name: "Niels Tester" });
+const samAcc = await loginAs(sam.client, "sam-e2e@example.com", "Sam Tester");
+const nielsAcc = await loginAs(niels.client, "niels-e2e@example.com", "Niels Tester");
 console.log(`accounts: Sam=${samAcc.handle} Niels=${nielsAcc.handle}`);
 
 // 1. Sam asks Niels a question.

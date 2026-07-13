@@ -3,12 +3,14 @@
 // two-Claude-Code-terminals path, exercised through the actual MCP tools.
 //
 // Self-contained: each process gets a throwaway MESSENGER_HOME and mints its own
-// identity via create_account (no `npm run setup` / pre-seeded users/ needed), so
-// it touches the live registry/mailbox. Push is disabled (MESSENGER_PUSH=0) — this
-// test covers the tool layer; live-push.ts covers the warmer/push path.
+// account via the magic-link `login` (no `npm run setup` / pre-seeded users/
+// needed). Creating an account needs the link CLICKED, so this must run against
+// a dev mailbox (exposeMagicLink) — the script clicks the devLink itself. Push
+// is disabled (MESSENGER_PUSH=0) — this test covers the tool layer;
+// live-push.ts covers the warmer/push path.
 //
-// Run:  node test/e2e/live-net-mcp.ts
-//   (override target with MESSENGER_MAILBOX_URL=http://localhost:8787)
+// Run:  PORT=18787 npm run dev:mailbox
+//       MESSENGER_MAILBOX_URL=http://localhost:18787 node test/e2e/live-net-mcp.ts
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
@@ -33,7 +35,7 @@ async function connect(label: string): Promise<Client> {
       MESSENGER_HOME: home, // isolated identity/contacts/cache
       MESSENGER_MAILBOX_URL: url,
       MESSENGER_PUSH: "0", // tool-layer test; push is covered by live-push.ts
-      MESSENGER_USER: "", // no pre-existing identity — create_account mints one
+      MESSENGER_USER: "", // no pre-existing identity — login mints one
     },
   });
   const client = new Client({ name: `${label}-cli`, version: "0" });
@@ -46,13 +48,28 @@ async function call(client: Client, name: string, args: Record<string, unknown> 
   return JSON.parse((res.content as { text: string }[])[0]!.text);
 }
 
+// Drive the full magic-link login through the MCP tool: send the link, "click"
+// it via the devLink (only a dev mailbox with exposeMagicLink returns one),
+// then finish with the poll_id + name to create the account.
+async function loginAs(client: Client, email: string, name: string) {
+  const start = await call(client, "login", { email });
+  assert.equal(start.reason, "sent");
+  assert.ok(start.devLink, "no devLink — run against a dev mailbox (npm run dev:mailbox)");
+  await fetch(start.devLink);
+  const named = await call(client, "login", { poll_id: start.poll_id });
+  assert.equal(named.reason, "need_name");
+  const acc = await call(client, "login", { poll_id: start.poll_id, name });
+  assert.equal(acc.ok, true, `login should create the account: ${JSON.stringify(acc)}`);
+  return acc;
+}
+
 const sam = await connect("sam");
 const niels = await connect("niels");
 console.log(`Live MCP round-trip over the mailbox (${url})\n`);
 
-// Each device mints its own identity + 6-char code.
-const samAcct = await call(sam, "create_account", { name: "Sam" });
-const nielsAcct = await call(niels, "create_account", { name: "Niels" });
+// Each device mints its own account + 6-char code via login.
+const samAcct = await loginAs(sam, "sam-mcp@example.com", "Sam");
+const nielsAcct = await loginAs(niels, "niels-mcp@example.com", "Niels");
 assert.ok(samAcct.handle && nielsAcct.handle, "both should get handles");
 console.log(`accounts: Sam=${samAcct.handle} Niels=${nielsAcct.handle}`);
 
