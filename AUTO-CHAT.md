@@ -92,7 +92,7 @@ long as the session runs:
 
 0. **Drain the backlog first.** If messages are already waiting when auto
    chat is activated (the session-start inbox, or anything that piled up),
-   fetch them with `chat_batch` immediately and put them through the same
+   fetch them with `read_messages` immediately and put them through the same
    disposal as a live batch — don't leave pre-existing mail sitting outside
    the mediator. Then start the background waker (the mode-named chat tool: `chat` / `auto_draft_chat` / `auto_chat`). The same
    rule fires on a mid-flight "auto" in a running chat: feed items the user
@@ -322,7 +322,7 @@ as planned). Kept as the map of where each piece lives:
 2. `cli-chat-context/`: paths + read/write helpers; "remember X" behaviour;
    read-at-start in every session (instructions + resultNote nudges).
 3. Triggers + loop: "chat" offers auto once; "auto"/"manual" mid-flight;
-   "auto chat" / "auto" shortcut → same waker/`chat_batch` machinery (today: the `auto_chat` tool)
+   "auto chat" / "auto" shortcut → same waker/`read_messages` machinery (today: the `auto_chat` tool)
    with **backlog drain on activation**, mediated disposal, live narration,
    ask-then-answer for the rest. Update the discovery tips to name both
    rungs (session-start summary hint: chat *and* auto chat — suggest only;
@@ -353,9 +353,9 @@ as planned). Kept as the map of where each piece lives:
    mail from your own context; every reply is marked as the assistant and
    shown as it happens.* Version bump, publish.
 9. **Auto draft chat (0.13.0)** — the midway rung, added on user request:
-   behaviour-only (CLAUDE.md + instructions.ts + the chat_batch/chat-tool
+   behaviour-only (CLAUDE.md + instructions.ts + the read_messages/chat-tool
    resultNotes + the discovery tips). No new machinery: same waker and
-   `chat_batch`; approved drafts send through the existing reply path (`send_message` + in_reply_to),
+   `read_messages`; approved drafts send through the existing reply path (`send_message` + in_reply_to),
    unmarked (user-reviewed = the user's message).
 
 ## Open questions

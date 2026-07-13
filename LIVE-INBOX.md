@@ -25,9 +25,9 @@ all whenever they want.
    unread appears and exits, without marking read. Heartbeats `chat.lock` each
    tick. Fails clean on `no_account` (just exits). *Why waker-not-printer: the
    agent never reads its stdout, so the temp output-file path stays off screen.*
-2. **`src/server-net.ts` — the chat tools + `chat_batch`.** `chat` / `auto_draft_chat` / `auto_chat` each return the
+2. **`src/server-net.ts` — the chat tools + `read_messages`.** `chat` / `auto_draft_chat` / `auto_chat` each return the
    waker command (env embedded only when non-default, so the shown command stays
-   clean). `chat_batch` DELIVERS the batch — reads the pending snapshot and acks
+   clean). `read_messages` DELIVERS the batch — reads the pending snapshot and acks
    it (or drains directly when no warmer) — so the feed's content arrives via a
    clean named tool call instead of the agent reading the waker's temp file.
 3. **Instructions (`src/instructions.ts` + CLAUDE.md).** The trigger: on

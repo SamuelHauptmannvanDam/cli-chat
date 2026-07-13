@@ -2,19 +2,19 @@
 // BACKGROUND when the user says "chat": it waits until there is new mail to
 // surface, then EXITS 0 — and that's all. It carries NO output the agent needs to
 // read. The harness re-invokes the agent on that exit; the agent then fetches the
-// batch via the `chat_batch` MCP tool (a clean, named tool call — no temp-file
+// batch via the `read_messages` MCP tool (a clean, named tool call — no temp-file
 // path on screen) and relaunches this waker.
 //
 // It only DETECTS, never delivers. That split is the whole point: because the
 // agent never reads this process's stdout, the machine-room output path stays off
-// the screen. Content comes from chat_batch instead. See server-net.ts.
+// the screen. Content comes from read_messages instead. See server-net.ts.
 //
 // Two modes, chosen by the waker's own env (the chat tools pass a matching one):
 //   - push (default): the MCP server's warmer keeps pending.json current from the
 //     push socket. We only WATCH that file (no inbox.db access) and exit when it
 //     shows mail the feed hasn't surfaced yet (i.e. not in the ack file).
 //   - poll (MESSENGER_PUSH=0): no warmer, so we drain the mailbox until unread
-//     appears. We do NOT mark it read — chat_batch marks it when it delivers.
+//     appears. We do NOT mark it read — read_messages marks it when it delivers.
 //
 // Heartbeats chat.lock every tick so the check-inbox hook stays silent while chat
 // is live (the feed is the sole surfacing path). See check-inbox.ts (reader).
@@ -69,7 +69,7 @@ function touchLock(lockPath: string): void {
 }
 
 // push mode: watch the warmer's pending.json; exit the moment unsurfaced mail
-// appears. Never touches inbox.db. The ack file (written by chat_batch when it
+// appears. Never touches inbox.db. The ack file (written by read_messages when it
 // delivers) is what marks a message surfaced — so after a fetch we keep blocking
 // instead of re-firing on mail already in the feed.
 async function runPush(pendingPath: string, ackPath: string, lockPath: string): Promise<void> {
@@ -87,7 +87,7 @@ async function runPush(pendingPath: string, ackPath: string, lockPath: string): 
 }
 
 // poll mode (no warmer is maintaining pending.json): drain the mailbox ourselves
-// until unread appears, then exit. We do NOT mark it read — chat_batch does that
+// until unread appears, then exit. We do NOT mark it read — read_messages does that
 // when it delivers the batch, so the read-state stays single-owner.
 async function runPoll(user: string, lockPath: string): Promise<void> {
   await initCrypto();
@@ -126,7 +126,7 @@ async function runPoll(user: string, lockPath: string): Promise<void> {
 
 async function main(): Promise<void> {
   const user = currentUser();
-  if (!user) return; // no account → exit; chat_batch reports the real state
+  if (!user) return; // no account → exit; read_messages reports the real state
   try {
     loadIdentity(identityFile(user));
   } catch {

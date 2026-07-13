@@ -242,7 +242,7 @@ export function openMailbox(path: string): Store {
 }
 
 export function insertMessage(db: Mailbox, m: MessageRow): void {
-  // OR IGNORE: the warmer and chat_batch can both drain + insert the same id
+  // OR IGNORE: the warmer and read_messages can both drain + insert the same id
   // concurrently (especially the per-op wasm driver, where check-then-insert isn't
   // atomic). A duplicate id is then a harmless no-op rather than a PRIMARY KEY throw.
   db.run(

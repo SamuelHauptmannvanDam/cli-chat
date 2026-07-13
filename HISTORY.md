@@ -14,7 +14,7 @@ server is installed user-scope, so **every coding session in every project
 already has the tools**. What's missing is only:
 
 1. **A door** — no tool queries the store. `read_message` needs an exact id (or
-   surfaces the oldest unread); `chat_batch`/`messages_available` see only
+   surfaces the oldest unread); `read_messages`/`messages_available` see only
    unread/pending. There is no "last 20 from Niels."
 2. **Your half** — `sendSealed` encrypts, ships, bumps `sentCount`, and drops
    your words. Outbound bodies are never stored, so a thread view today could

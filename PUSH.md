@@ -1,7 +1,7 @@
 # Push delivery spec — background WebSocket warmer
 
 Status: implemented and deployed. The background warmer runs in the MCP server;
-the live mode is the "chat" inbox (await-mail waker + `chat_batch`, see
+the live mode is the "chat" inbox (await-mail waker + `read_messages`, see
 `LIVE-INBOX.md`), which replaced the old in-call `watch` tool. The desktop
 notification is opt-in via `MESSENGER_NOTIFY=1`, off by default.
 Superseded the 3-second poll loop in `listen_for_messages`.
@@ -138,7 +138,7 @@ mode is the live inbox the user opens by saying **"chat"** — see `LIVE-INBOX.m
 for the full design. In short: the mode-named chat tool (`chat` / `auto_draft_chat` / `auto_chat`) hands the agent a shell command for the
 `await-mail` **waker**, which the agent runs as a BACKGROUND task. The waker blocks
 on the warmer's pending snapshot and exits the moment unsurfaced mail lands; on each
-exit the agent calls `chat_batch` to drain the batch and relaunches the waker. This
+exit the agent calls `read_messages` to drain the batch and relaunches the waker. This
 keeps the turn free while idle (the waker runs out of band, not inside a tool call)
 and works in any client that can background a process. The old in-call `watch`
 long-poll tool has been removed.

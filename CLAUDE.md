@@ -19,7 +19,7 @@ differ only in how it surfaces to the user:
    is running, so messages don't get announced twice.
 2. **Live chat (real-time).** When the user says "chat", you open the live inbox:
    a background waker blocks until messages arrive then exits, and you fetch the batch
-   with `chat_batch` and read it straight into the terminal. One model turn per
+   with `read_messages` and read it straight into the terminal. One model turn per
    real batch, ~none while idle. (Needs a client that can run a background shell;
    where it can't, fall back to mode 1 plus `messages_available` on demand.)
    **Auto draft chat** is the same loop with you drafting each reply for the user to
@@ -109,7 +109,7 @@ the account back (here or on any device). If it refuses because the final sync
 failed, relay that plainly: nothing was deleted. It's an ends-the-account-on-
 this-device action — only run it when the user clearly asked for it.
 
-## Live chat — the `chat` trigger (background waker + `chat_batch`)
+## Live chat — the `chat` trigger (background waker + `read_messages`)
 When the user says **"chat"** (or "go live" / "start chat", and also "watch" /
 "watch for messages" / "keep an eye out"), open the live inbox:
 call the **`chat`** tool to get a shell `command` and run it as a **background
@@ -125,16 +125,16 @@ user reads *instead of* the command — "Listening for new messages" on first st
 "Checking new messages" on relaunch; **never run it bare** (that shows the raw
 command + path). Don't otherwise narrate the command, and **don't read the
 background task's output file** — it's internal plumbing. The command is a **waker**: it blocks until new
-messages arrive, then exits. Each time it **exits**, call the **`chat_batch`** tool to
+messages arrive, then exits. Each time it **exits**, call the **`read_messages`** tool to
 fetch the waiting messages, **render the whole batch as a numbered feed** (sender +
 body, keep each id), then **run the same command again** in the background to keep
 the inbox live. Let messages **accumulate**: don't read them one at a time — show the batch
 and let the user reply to one, some, or all in a single freeform turn
 (`send_message` with in_reply_to, per id; anything they don't address stays in the feed). Also call
-`chat_batch` once **right after the first start** — anything already waiting is
+`read_messages` once **right after the first start** — anything already waiting is
 backlog and belongs in the feed. When chat opens, **offer the assist rungs once**
 (one short line — see the auto-chat section below). On "stop",
-stop relaunching and kill the task. If `chat_batch` returns `no_account`, tell the
+stop relaunching and kill the task. If `read_messages` returns `no_account`, tell the
 user to set up first and don't relaunch. This is the user's explicit, per-session
 **"my chat terminal"** — they start it by hand and stay in control; never
 auto-start it.
@@ -201,7 +201,7 @@ threaded reply sends and memory notes. Every assistant send is **marked**
 send unmarked on the user's behalf.
 
 **Entry points:** "auto chat" / "auto" cold-starts it — the `auto_chat` tool, then
-`chat_batch` **immediately** (waiting messages are backlog; dispose of it like a live
+`read_messages` **immediately** (waiting messages are backlog; dispose of it like a live
 batch). During plain chat, offer the assist rungs **once per session**, one line:
 *"Want help with these? Say 'draft' and I'll draft replies you approve before
 anything sends, or 'auto' and I'll answer what I can myself, marked as your
@@ -248,7 +248,7 @@ that's the mode's contract, so there is no quiet variant (drafting only makes
 sense while the user watches the feed).
 
 **Entry points:** "auto draft chat" / "draft chat" cold-starts it (the
-`auto_draft_chat` tool, then `chat_batch` immediately — backlog gets drafts too). "draft" mid-chat flips a
+`auto_draft_chat` tool, then `read_messages` immediately — backlog gets drafts too). "draft" mid-chat flips a
 running chat or auto chat in place (same waker, same feed; unanswered items get
 drafts); "auto" upgrades draft → full auto; "manual" drops to plain chat; "stop"
 ends it.

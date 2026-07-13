@@ -223,7 +223,7 @@ try {
     // them read on its next drain. Overwrite-only, so the ack file never grows.
     // In quiet mode we only surfaced the self-mail, so only extend the ack with
     // those — the rest belongs to the assist session's feed (and we must not
-    // clobber acks chat_batch already wrote for it).
+    // clobber acks read_messages already wrote for it).
     writePendingAck(
       ackPath,
       quietFilter
