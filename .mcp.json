@@ -5,7 +5,7 @@
       "args": ["${PWD}/src/server-net.ts"],
       "env": {
         "MESSENGER_USER": "${MESSENGER_USER:-}",
-        "MESSENGER_MAILBOX_URL": "${MESSENGER_MAILBOX_URL:-https://mailbox.cli-chat-mcp.workers.dev}"
+        "MESSENGER_MAILBOX_URL": "${MESSENGER_MAILBOX_URL:-https://mailbox.cli-chat.dev}"
       }
     }
   }

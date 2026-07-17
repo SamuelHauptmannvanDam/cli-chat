@@ -34,5 +34,5 @@ test("resolveMailboxUrl treats a blank override as unset", () => {
 });
 
 test("DEFAULT_MAILBOX_URL is the hosted worker", () => {
-  assert.equal(DEFAULT_MAILBOX_URL, "https://mailbox.cli-chat-mcp.workers.dev");
+  assert.equal(DEFAULT_MAILBOX_URL, "https://mailbox.cli-chat.dev");
 });

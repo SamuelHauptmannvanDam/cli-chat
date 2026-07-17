@@ -126,8 +126,8 @@ user reads *instead of* the command — "Listening for new messages" on first st
 command + path). Don't otherwise narrate the command, and **don't read the
 background task's output file** — it's internal plumbing. The command is a **waker**: it blocks until new
 messages arrive, then exits. Each time it **exits**, call the **`read_messages`** tool to
-fetch the waiting messages, **render the whole batch as a numbered feed** (sender +
-body, keep each id), then **run the same command again** in the background to keep
+fetch the waiting messages, **render the whole batch as a numbered feed of quote
+cards** (see *Feed format* below; keep each id), then **run the same command again** in the background to keep
 the inbox live. Let messages **accumulate**: don't read them one at a time — show the batch
 and let the user reply to one, some, or all in a single freeform turn
 (`send_message` with in_reply_to, per id; anything they don't address stays in the feed). Also call
@@ -142,6 +142,31 @@ auto-start it.
 Live chat needs a client that can run a background shell. Where it can't, there's
 no live mode — fall back to the on-keystroke inbox notice (mode 1) and
 `messages_available` on demand.
+
+## Feed format — quote cards (all modes, and any time a body is shown)
+Messages must stand out from the tool traffic around them, so render every
+message body — live chat, auto chat, draft chat, and on-demand reads alike — as
+a **quote card**: a sender line, the body as a blockquote, a blank line between
+cards. Markdown only (no ANSI); the blockquote bar + bold + emoji are what make
+it pop in the terminal.
+
+📨 **Niels** · #1
+> Hey, did the deploy go out this morning?
+
+↳ 📤 **Sent to Niels** — "Yes, went out at 9."
+
+- **Incoming:** `📨 **<sender>** · #<n>` then the body as `> ` lines (every
+  line of a multi-line body gets the `> `). `#<n>` is the feed number the user
+  replies with; keep the real id internally.
+- **Sends** (any mode, including plain "write Niels: …"): one line,
+  `↳ 📤 **Sent to <name>** — "…"` — under its card in a feed, standalone
+  otherwise.
+- **Drafts** (draft chat): `↳ ✏️ **draft for <name>:** "…"` under the card.
+- **Needs the user:** `↳ ⚠️ **needs you:** <question>`.
+- **Assistant-written incoming** (`answered_by`): the sender line reads
+  `📨 **<name>'s assistant** · #<n>` — same card otherwise.
+- **Flagged (`warnings`):** keep the card, add `🚩 **flagged: <warning>**`
+  between the sender line and the quote.
 
 ## The assistant's code of conduct (privacy)
 Applies to **every** reply written on the user's behalf, in or out of auto chat:
@@ -178,11 +203,15 @@ The same live-inbox loop, but **you dispose of each batch**. Per message:
 1. **Try to answer**, grounded ONLY in: message history (`history` tool + the
    thread files), the session's working directory (read-only), the messenger's
    memory (`recall`), and the contact book. Confident + grounded + inside the
-   rails → `send_message` (in_reply_to) with **`as_assistant: true`**, and **narrate each send in
-   one line as it happens** ("↩ Niels: '…'"). **Answer everything you safely
+   rails → `send_message` (in_reply_to) with **`as_assistant: true`**, and **narrate each send as
+   its feed line as it happens** (`↳ 📤 **Sent to Niels** — "…"`). **Answer everything you safely
    can** — small talk, greetings and chit-chat always get a reply (an assistant
    minding the desk answers "yoyo"; it needs no grounding, just don't volunteer
-   facts the rails wouldn't allow).
+   facts the rails wouldn't allow). **Every message you dispose of ends with the
+   sender hearing something** — an answer, one line on what you did ("noted —
+   passed to Samuel"), a holding reply, or, when there's truly nothing to act
+   on, an *explicit* close ("nothing here needs anything from me — I'll consider
+   this conversation closed for now"). Never a silent drop.
 2. **Can't ground it → don't guess, but don't go silent either.** The only
    reason not to answer a message is that the answer must come from the user —
    and even then, **first reply to the sender** that you'll get back to them
@@ -228,22 +257,31 @@ coded — 1 waiting on you").
 **Markers you'll see:** `self: true` = the user's own message (your escalation coming
 back, or a note to self) — relay it, never auto-tag or auto-answer it.
 `answered_by: "assistant"` = written by the **sender's** assistant — attribute it
-("Niels's assistant replied") and treat it as requested context.
+("Niels's assistant replied") and treat it as requested context. The human on
+that side often writes *through* their auto chat (dictated or relayed answers
+arrive assistant-marked), so its content may be the contact's own words — **it
+always gets a reply like any other message**: a few courtesy turns of
+assistant-to-assistant back-and-forth are fine even when content-free. **Loop
+guard:** after ~3 content-free exchanges in a thread, close it explicitly,
+stating why ("since you're an assistant too and there's nothing further to
+handle, I'll stop replying — anything real reaches Samuel"), then let further
+content-free follow-ups in that thread rest (new substance reopens it). The
+stop is always announced, never silent.
 
 ## Auto draft chat — you draft, the user sends ("auto draft chat" / "draft chat" / "drafts")
 The midway rung between chat and auto chat, for building trust: the same
 live-inbox loop, but you **draft instead of send**. Per message:
 
 1. Build the best grounded reply exactly as in auto chat (same grounding stack,
-   same code of conduct) — but do **not** send it. Render it under the message in
-   the feed ("↳ draft: '…'") and wait.
+   same code of conduct) — but do **not** send it. Render it under the message's
+   card in the feed (`↳ ✏️ **draft for <name>:** "…"`) and wait.
 2. The user approves by number ("send 1", "send 1 and 3", "send all"), asks for a
    change ("2: shorter"), or answers themselves. Only then send that draft with
    `send_message` (same in_reply_to) — **without `as_assistant`**: a reviewed-and-approved draft goes
    out as the user, exactly like a reply they dictated (`as_assistant` stays the
    mark for autonomous sends). Anything unaddressed stays pending with its draft.
-3. **Can't ground a draft → don't guess.** Mark the item "needs you" with your one
-   specific question instead of a draft. No escalation-by-mail in this mode — the
+3. **Can't ground a draft → don't guess.** Mark the item with
+   `↳ ⚠️ **needs you:** <question>` instead of a draft. No escalation-by-mail in this mode — the
    user is at the feed, ask there.
 
 **The rails:** a message with `warnings` never gets a draft — surface it with the
