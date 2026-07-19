@@ -24,9 +24,9 @@ const ROOT = resolve(import.meta.dirname, "..", "..");
 const url = resolveMailboxUrl(); // hosted worker by default; MESSENGER_MAILBOX_URL overrides
 const homes: string[] = [];
 
-async function connect(label: string): Promise<Client> {
-  const home = mkdtempSync(join(tmpdir(), `cc-mcp-${label}-`));
-  homes.push(home);
+async function connect(label: string, extraEnv: Record<string, string> = {}, reuseHome?: string): Promise<Client> {
+  const home = reuseHome ?? mkdtempSync(join(tmpdir(), `cc-mcp-${label}-`));
+  if (!reuseHome) homes.push(home);
   const transport = new StdioClientTransport({
     command: "node",
     args: [join(ROOT, "src", "server-net.ts")],
@@ -36,6 +36,8 @@ async function connect(label: string): Promise<Client> {
       MESSENGER_MAILBOX_URL: url,
       MESSENGER_PUSH: "0", // tool-layer test; push is covered by live-push.ts
       MESSENGER_USER: "", // no pre-existing identity — login mints one
+      MESSENGER_FEEDBACK_HANDLE: "", // no feedback seed unless a step opts in (step 6)
+      ...extraEnv,
     },
   });
   const client = new Client({ name: `${label}-cli`, version: "0" });
@@ -110,7 +112,51 @@ assert.equal(samRead.body, "Free Sat + Sun next week — lock it in.");
 assert.equal(samRead.in_reply_to, sent.id, "reply should be threaded to the original");
 console.log(`5. Sam → read_message: "${samRead.body}" (threaded=${samRead.in_reply_to === sent.id})`);
 
+// 6. The feedback seed: a brand-new account is born with the project's feedback
+// contact when the configured handle resolves. A throwaway account stands in
+// for the real feedback account; a fresh device is pointed at its handle.
+const fb = await connect("feedback");
+const fbAcct = await loginAs(fb, "feedback-mcp@example.com", "cli-chat feedback");
+const newbie = await connect("newbie", { MESSENGER_FEEDBACK_HANDLE: fbAcct.handle });
+const newbieAcct = await loginAs(newbie, "newbie-mcp@example.com", "Newbie");
+assert.ok(
+  newbieAcct.note.includes("feedback"),
+  `created note should mention the feedback contact: ${newbieAcct.note}`,
+);
+const newbieBook = await call(newbie, "contacts");
+const seeded = [...(newbieBook.active ?? []), ...(newbieBook.contacts ?? [])].find(
+  (c: { name: string }) => c.name === "cli-chat feedback",
+);
+assert.ok(seeded, `new account should be born with the feedback contact: ${JSON.stringify(newbieBook)}`);
+assert.equal(seeded.handle, fbAcct.handle, "seeded contact should carry the feedback handle");
+console.log(`6. Newbie → born with "${seeded.name}" (${seeded.handle}) in the book`);
+
+// Sam and Niels were created with seeding disabled — their books must be clean.
+const samBook = await call(sam, "contacts");
+assert.ok(
+  ![...(samBook.active ?? []), ...(samBook.contacts ?? [])].some((c: { name: string }) => c.name === "cli-chat feedback"),
+  "seeding disabled → no feedback contact",
+);
+
+// 7. Existing-account backfill: restart Sam's server (same home) pointed at the
+// feedback handle — boot seeds his pre-existing book. The seed is fire-and-forget
+// at boot, so poll briefly.
 await sam.close();
+const samAgain = await connect("sam-again", { MESSENGER_FEEDBACK_HANDLE: fbAcct.handle }, homes[0]);
+let backfilled;
+for (let i = 0; i < 20 && !backfilled; i++) {
+  const b = await call(samAgain, "contacts");
+  backfilled = [...(b.active ?? []), ...(b.contacts ?? [])].find(
+    (c: { name: string }) => c.name === "cli-chat feedback",
+  );
+  if (!backfilled) await new Promise((r) => setTimeout(r, 250));
+}
+assert.ok(backfilled, "existing account should get the feedback contact on boot");
+console.log(`7. Sam (existing account) → backfilled with "cli-chat feedback" on restart`);
+
+await samAgain.close();
 await niels.close();
+await fb.close();
+await newbie.close();
 for (const h of homes) rmSync(h, { recursive: true, force: true });
 console.log("\nLive MCP round-trip complete — ALL CHECKS PASSED ✓");

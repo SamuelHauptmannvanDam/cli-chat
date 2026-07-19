@@ -139,7 +139,7 @@ h2 { font-family: var(--display); font-size: clamp(19px, 2.6vw, 27px); font-weig
   margin-top: 24px; max-width: 720px;
 }
 .codeblock pre {
-  padding: 20px 22px; overflow-x: auto; font-size: 12.5px; line-height: 1.85;
+  padding: 20px 84px 20px 22px; overflow-x: auto; font-size: 12.5px; line-height: 1.85;
   color: var(--ink); font-family: var(--mono);
 }
 .codeblock .cb-title {
@@ -152,12 +152,13 @@ h2 { font-family: var(--display); font-size: clamp(19px, 2.6vw, 27px); font-weig
 .codeblock .d { color: var(--dim); }
 .codeblock .cy { color: var(--cyan); }
 .copy {
-  position: absolute; top: 8px; right: 8px;
-  font-family: var(--mono); font-size: 11px; padding: 5px 12px; background: var(--bg);
-  border: 1px solid var(--faint); color: var(--dim); cursor: pointer; transition: all .15s;
+  position: absolute; top: 9px; right: 9px;
+  font-family: var(--mono); font-size: 11px; padding: 5px 12px; background: var(--bg-raised);
+  box-shadow: 0 0 0 8px var(--bg-raised);
+  border: 1px solid var(--faint); color: var(--dim); cursor: pointer; transition: color .15s, border-color .15s;
 }
 .copy:hover { border-color: var(--amber); color: var(--amber); }
-.codeblock.titled .copy { top: 42px; }
+.codeblock.titled .copy { top: 43px; }
 
 /* door states */
 .doors { border: 1px solid var(--line); margin-top: 36px; background: var(--line); display: grid; gap: 1px; max-width: 720px; }

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>cli-chat — your coding agent is your messenger</title>
-<meta name="description" content="End-to-end encrypted messaging for coding-agent CLIs. Tell your agent 'write Sam: …' — it encrypts, delivers, and reads replies back. Claude Code, Gemini CLI, Copilot, Codex, any MCP CLI.">
+<meta name="description" content="End-to-end encrypted messaging for coding-agent CLIs. Tell your agent 'write Sam: …' — it encrypts, delivers, and reads replies back. Claude Code, Codex, Copilot, Gemini CLI, any MCP CLI.">
 <meta property="og:title" content="cli-chat — your coding agent is your messenger">
 <meta property="og:description" content="End-to-end encrypted messaging for coding-agent CLIs. One npx away.">
 <meta property="og:url" content="https://cli-chat.dev">
@@ -79,7 +79,10 @@ body::after {
   width: 900px; height: 600px; pointer-events: none;
   background: radial-gradient(ellipse at center, rgba(245,167,66,.07), transparent 65%);
 }
-.kicker { color: var(--dim); font-size: 12px; letter-spacing: .12em; margin-bottom: 28px; }
+.kicker {
+  color: var(--dim); font-size: 12px; letter-spacing: .12em; margin-bottom: 28px;
+  display: flex; justify-content: space-between; align-items: baseline; gap: 16px; flex-wrap: wrap;
+}
 .kicker b { color: var(--green); font-weight: 400; }
 h1 {
   font-family: var(--display);
@@ -107,8 +110,8 @@ h1 .arg { color: var(--amber); }
 
 .install-note { font-size: 11.5px; color: var(--faint); margin-top: 14px; }
 .install-note em { color: var(--dim); font-style: normal; }
-.installs { font-size: 11.5px; color: var(--dim); margin-top: 6px; }
-.installs b { color: var(--green); font-weight: 600; font-variant-numeric: tabular-nums; }
+.installs { font-size: 11px; color: var(--faint); letter-spacing: .06em; }
+.installs b { color: var(--green); font-weight: 400; font-variant-numeric: tabular-nums; }
 
 /* ---- terminal demo ---- */
 .term {
@@ -171,6 +174,18 @@ h2 { font-family: var(--display); font-size: clamp(20px, 3vw, 30px); font-weight
 a.cell { display: block; color: inherit; border-bottom: none; }
 a.cell .go { display: inline-block; font-family: var(--mono); font-size: 11px; color: var(--faint); margin-top: 12px; transition: color .15s; }
 a.cell:hover .go { color: var(--amber); }
+.grid.two { grid-template-columns: repeat(2, 1fr); }
+
+/* field-idea sketches (collapsed) */
+.sketches { margin-top: 22px; border: 1px solid var(--line); background: var(--bg-raised); }
+.sketches summary { cursor: pointer; padding: 13px 18px; font-size: 12px; color: var(--dim); letter-spacing: .06em; list-style: none; transition: color .15s; }
+.sketches summary::-webkit-details-marker { display: none; }
+.sketches summary:hover { color: var(--amber); }
+.sketches[open] summary { border-bottom: 1px solid var(--line); color: var(--amber); }
+.sketches .sk { padding: 18px 20px 20px; display: flex; flex-direction: column; gap: 12px; }
+.sketches .sk p { font-family: var(--serif); font-size: 14.5px; color: var(--dim); line-height: 1.6; max-width: 760px; }
+.sketches .sk b { color: var(--ink); font-weight: 600; }
+.sketches .sk-cta { color: var(--faint); font-size: 12.5px; }
 
 /* modes */
 .modes { display: flex; flex-direction: column; gap: 32px; margin-top: 36px; }
@@ -240,7 +255,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
 .statusbar .live::before { content: "●"; margin-right: 6px; animation: blink 2.2s steps(1) infinite; }
 
 @media (max-width: 800px) {
-  .steps, .grid, .modes { grid-template-columns: 1fr; }
+  .steps, .grid, .grid.two, .modes { grid-template-columns: 1fr; }
   .mode { grid-template-columns: 1fr; }
   .hero { padding-top: 64px; }
   section.wrap { min-height: auto; margin-top: 10vh; padding: 120px 24px 70px; }
@@ -264,14 +279,14 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
 </nav>
 
 <header class="hero wrap" id="top">
-  <p class="kicker">// cli-chat <b>·</b> end-to-end encrypted <b>·</b> lives in your coding CLI</p>
+  <p class="kicker"><span>// cli-chat <b>·</b> end-to-end encrypted <b>·</b> lives in your coding CLI</span><span class="installs" id="installs" hidden><b id="installsN"></b> installs</span></p>
   <h1><span class="prompt">❯ </span><span class="cmd" data-scramble>write sam:</span> <span class="arg" data-scramble>the deploy landed</span></h1>
   <p class="sub">Your coding agent is now your messenger. <em>Never leave your terminal.</em></p>
   <div class="tabs" id="tabs">
     <button class="tab active" data-cmd="claude mcp add cli-chat --scope user -- npx -y cli-chat-mcp@latest">Claude Code</button>
-    <button class="tab" data-cmd="gemini mcp add -s user cli-chat npx -y cli-chat-mcp@latest">Gemini CLI</button>
-    <button class="tab" data-cmd="copilot mcp add cli-chat -- npx -y cli-chat-mcp@latest">Copilot CLI</button>
     <button class="tab" data-cmd="codex mcp add cli-chat -- npx -y cli-chat-mcp@latest">Codex CLI</button>
+    <button class="tab" data-cmd="copilot mcp add cli-chat -- npx -y cli-chat-mcp@latest">Copilot CLI</button>
+    <button class="tab" data-cmd="gemini mcp add -s user cli-chat npx -y cli-chat-mcp@latest">Gemini CLI</button>
     <button class="tab" data-cmd="npx -y cli-chat-mcp@latest">Other MCP CLI</button>
   </div>
   <div class="cmdbox">
@@ -279,7 +294,6 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
     <button class="copy" id="copyBtn">copy</button>
   </div>
   <p class="install-note">Then restart your CLI, allow the new <em>cli-chat</em> server when it asks, and say <em>"what's my handle?"</em> — that's the whole setup. Needs Node 22+.</p>
-  <p class="installs" id="installs" hidden>▸ <b id="installsN"></b> installs · last 30 days</p>
 
   <div class="term">
     <div class="term-bar"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span>samuel@laptop — claude — 80×24</span></div>
@@ -356,11 +370,22 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
   <p class="sec-label"><b>##</b> 02 · run it as</p>
   <h2 data-scramble>The front desk for your team.</h2>
   <p class="lede">No framework, no webhook, no deploy. Open auto chat in a repo and <em>it answers from that directory</em> — the code, the docs, the git history.</p>
-  <div class="grid">
-    <a class="cell" href="/team-bot"><p class="ico">🤝</p><h3>Team bot</h3><p>Teammates ask your assistant — "which branch is the fix on?" — while you stay heads-down.</p><span class="go">→ the runbook</span></a>
-    <a class="cell" href="/customer-desk"><p class="ico">🎧</p><h3>Customer desk</h3><p>Point it at your docs. Customers get grounded answers; the rest lands with you. Invite-only, so no spam.</p><span class="go">→ the runbook</span></a>
+  <div class="grid two">
+    <a class="cell" href="/team-bot"><p class="ico">🤝</p><h3>Team bot</h3><p>Teammates ask your assistant — "which branch is the fix on?" — while you stay heads-down. And when their side runs one too, the assistants sort it out between them, marked, while you both skim.</p><span class="go">→ the runbook</span></a>
+    <a class="cell" href="/customer-desk"><p class="ico">🎧</p><h3>Customer desk</h3><p>Point it at your docs. Customers get grounded answers; the rest lands with you — one clarifying question away from a ticket that files itself. Invite-only, so no spam.</p><span class="go">→ the runbook</span></a>
     <a class="cell" href="/headless"><p class="ico">⚙️</p><h3>Scripts &amp; CI</h3><p>Pipelines message you headlessly — <code style="font-family:var(--mono);font-size:11.5px;color:var(--green)">npx cli-chat-mcp send ops "deploy landed"</code></p><span class="go">→ the runbook</span></a>
+    <div class="cell"><p class="ico">🚨</p><h3>On-call triage desk</h3><p>Headless, in reverse: CI, cron and monitors message you — auto chat closes the noise, answers the routine ("rerun"), and wakes you only when it matters. A pager that reads the logs first.</p><span class="go">runbook coming</span></div>
   </div>
+  <details class="sketches">
+    <summary>▸ more field ideas — same primitives, new problems</summary>
+    <div class="sk">
+      <p><b>🖥️ Fleet chat-ops</b> — an account is just a directory, so every box you own can have one. "write buildbox: status?" — your contact book becomes your infrastructure.</p>
+      <p><b>📋 Standup, minus the meeting</b> — a cron bot messages everyone tagged <em>work</em> at 9:00; each side's assistant answers or asks its human; one digest lands with the lead.</p>
+      <p><b>📦 Ship a contact with your tool</b> — our installer seeds a feedback contact, yours can too. "write yourtool: it crashed on M1" becomes your support channel — no GitHub account, no Discord.</p>
+      <p><b>🔗 A job queue you can read</b> — agents on different machines coordinate over messages, and the whole thread stays readable by the humans who own them.</p>
+      <p class="sk-cta">Sketches, not features — everything here runs on what's already shipped. Built one? <a href="#contact">write feedback: …</a></p>
+    </div>
+  </details>
 </section>
 
 <section class="wrap" id="handles">
@@ -389,6 +414,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
 <section class="wrap" id="context">
   <p class="sec-label"><b>##</b> 04 · what you get</p>
   <h2 data-scramble>A messenger that already knows your context.</h2>
+  <p class="lede">Encrypted, portable, cross-CLI — and it sits <em>where the answers already live</em>.</p>
   <div class="grid">
     <div class="cell"><p class="ico">🔐</p><h3>Sealed in transit</h3><p>End-to-end encrypted. The mailbox only ever sees ciphertext.</p></div>
     <div class="cell"><p class="ico">🪪</p><h3>6-char handles</h3><p>One short handle. Rotate or disable it any time.</p></div>
@@ -502,23 +528,33 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
     })();
   }
 
-  /* ---- npm installs ticker (real count on load, gentle extrapolation) ---- */
-  fetch('https://api.npmjs.org/downloads/point/last-month/cli-chat-mcp')
-    .then(function (r) { return r.json(); })
-    .then(function (d) {
-      if (!d || !d.downloads) return;
-      var n = d.downloads;
-      var wrap = document.getElementById('installs'), num = document.getElementById('installsN');
+  /* ---- npm installs ticker (real count on load, resumes from localStorage) ---- */
+  (function () {
+    var KEY = 'cc_installs';
+    var wrap = document.getElementById('installs'), num = document.getElementById('installsN');
+    function start(n) {
       function render() { num.textContent = n.toLocaleString('en-US'); }
       render(); wrap.hidden = false;
+      var first = true;
       (function tick() {
         setTimeout(function () {
-          n += 1 + Math.floor(Math.random() * 3);
+          n += first ? 1 : (Math.random() < .25 ? 2 : 1);
+          first = false;
+          try { localStorage.setItem(KEY, n); } catch (e) {}
           render(); tick();
-        }, 20000 + Math.random() * 55000);
+        }, first ? 1000 : 4000 + Math.random() * 6000);
       })();
-    })
-    .catch(function () {});
+    }
+    var stored = 0;
+    try { stored = parseInt(localStorage.getItem(KEY), 10) || 0; } catch (e) {}
+    fetch('https://api.npmjs.org/downloads/point/last-month/cli-chat-mcp')
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        var live = (d && d.downloads) || 0;
+        if (live || stored) start(Math.max(live, stored));
+      })
+      .catch(function () { if (stored) start(stored); });
+  })();
 
   /* ---- agenda scroll-spy ---- */
   (function () {

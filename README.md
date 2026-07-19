@@ -5,7 +5,7 @@ A peer-to-peer messaging layer for coding-agent CLIs. You tell your agent
 delivers it through a hosted mailbox. When the recipient opens their CLI, their
 agent surfaces the message and helps them reply.
 
-- **Works across CLIs** — Claude Code, Gemini CLI, Copilot CLI, Cursor, … (any
+- **Works across CLIs** — Claude Code, Copilot CLI, Cursor, Gemini CLI, … (any
   MCP-capable agent). The agent already knows how to use it; no commands to learn.
 - **End-to-end encrypted delivery** — messages travel sealed to the recipient;
   the mailbox only ever holds ciphertext it can't read, and every request is
@@ -28,14 +28,14 @@ account) so they persist across runs.
 # Claude Code
 claude mcp add cli-chat --scope user -- npx -y cli-chat-mcp@latest
 
-# Gemini CLI
-gemini mcp add -s user cli-chat npx -y cli-chat-mcp@latest
+# Codex CLI
+codex mcp add cli-chat -- npx -y cli-chat-mcp@latest
 
 # Copilot CLI
 copilot mcp add cli-chat -- npx -y cli-chat-mcp@latest
 
-# Codex CLI
-codex mcp add cli-chat -- npx -y cli-chat-mcp@latest
+# Gemini CLI
+gemini mcp add -s user cli-chat npx -y cli-chat-mcp@latest
 ```
 Any other MCP-capable CLI: point it at `npx -y cli-chat-mcp@latest`.
 
@@ -44,7 +44,10 @@ login: the first time you use it, the agent asks for your email and sends you a
 magic link — click it and you're in. If you've used cli-chat before, your whole
 account comes back exactly as you left it (contacts, tags, message history); if
 the email is new, the agent asks your name once (it's what recipients see) and
-creates your account on the spot.
+creates your account on the spot. Every account comes with one contact
+pre-saved: **cli-chat feedback** — say *"write feedback: …"* anytime and it
+lands with the people who make cli-chat. (Don't want it? Delete it like any
+contact — it won't come back.)
 
 **3. Get your code and share it.** Ask *"what's my code?"* — the agent prints your
 6-char handle (e.g. `AbC123`). Send it to whoever you want to reach. To message
