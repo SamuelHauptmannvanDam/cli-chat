@@ -242,7 +242,7 @@ export interface Contact {
   auto?: boolean; // saved automatically from a received self-introduction, NOT a
   // user-chosen nick. While true, `name` is just what they call themselves, so we
   // show "name (handle)"; renaming them (a real nick) clears this and shows the nick.
-  gated?: "pending" | "dismissed"; // the NEW-HANDLE GATE (0.17): a first-time sender
+  gated?: "pending" | "dismissed"; // the NEW-HANDLE GATE (0.18): a first-time sender
   // is held here instead of flowing into the inbox. Their messages stay out of the
   // model's context (bodies are shown to the USER directly by the system) until the
   // user accepts ("pending" → cleared) — or stays quiet forever once "dismissed".

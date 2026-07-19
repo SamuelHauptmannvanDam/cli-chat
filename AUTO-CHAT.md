@@ -267,7 +267,11 @@ as behaviour (CLAUDE.md + instructions + resultNotes) plus one code-level check:
 
 - **Contacts only.** The mediator answers mail from saved contacts, period;
   a stranger's message (someone who got the handle out-of-band) is never
-  auto-answered — it surfaces as normal mail for the human. The friend layer
+  auto-answered. Since 0.18 it doesn't even reach the model: a first-time
+  sender is held behind the **new-handle gate** — the human sees the body as a
+  system notice, the agent sees only a name+handle summary, and only the
+  human's "add" (or a **public** session: `public:true` on any chat tool,
+  auto-accepting new handles for that terminal) lets them in. The friend layer
   (FRIENDS.md) is the outer consent wall.
 - **Grounded or silent.** An answer must trace to the stack above. No
   general-knowledge improv on the user's behalf, no guessing. Near-miss →

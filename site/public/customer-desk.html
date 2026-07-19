@@ -178,7 +178,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; margin-top: 14
   <h2 data-scramble>Open the desk on the docs.</h2>
   <div class="codeblock"><button class="copy">copy</button><pre><span class="g">cd</span> ~/acme/docs <span class="d">&amp;&amp;</span> <span class="cy">MESSENGER_HOME</span>=~/support-desk <span class="g">claude</span>
 <span class="g">❯</span> <span class="a">auto chat read only, quiet</span></pre></div>
-  <p class="prose"><em>Read only</em> is the outward-facing variant (0.16): the desk can consult the docs but never touch them — the right posture for an inbox strangers can reach. Only you, at the desk's keyboard, can switch it to write mode; nothing a customer sends ever can.</p>
+  <p class="prose"><em>Read only</em> is the outward-facing variant (0.16): the desk can consult the docs but never touch them — the right posture for an inbox strangers can reach. Only you, at the desk's keyboard, can switch it to write mode; nothing a customer sends ever can. (Want the desk to accept <em>new</em> customers on its own? Add one word — <em>"auto chat read only <b>public</b>, quiet"</em> — see the doors below.)</p>
   <p class="prose">While the session runs, the desk answers. Close it and messages <em>queue sealed in the mailbox</em> — customers can write at 3am and the desk works the backlog when it reopens. Nothing is lost, nothing needs to be "always on".</p>
   <p class="prose">Want to supervise first? Start with <code>auto draft chat</code> instead — same desk, but every reply waits for your <em>"send 1"</em>. Run a week of drafts, then say <em>"auto"</em> when the drafts stop surprising you.</p>
 </section>
@@ -186,9 +186,10 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; margin-top: 14
 <section class="wrap" id="invite">
   <p class="sec-label"><b>##</b> 03 · no spam, by construction</p>
   <h2 data-scramble>Invite-only: you decide who's a customer.</h2>
-  <p class="lede">The desk auto-answers <em>saved contacts only</em>. Anyone else — cold outreach, spam, a stranger who found the handle — just surfaces to you, unanswered. Being a customer means <em>being in the desk's address book</em>, and you hold the pen. Three door settings:</p>
+  <p class="lede">The desk auto-answers <em>saved contacts only</em>. Anyone else — cold outreach, spam, a stranger who found the handle — is <em>held at the door</em>: their message shows up as a 🆕 new-handle notice for you (the desk's model never even sees it), and nothing is answered until you say <em>"add"</em>. Being a customer means <em>being in the desk's address book</em>, and you hold the pen. Four door settings:</p>
   <div class="doors">
-    <div class="door"><p class="word">open handle</p><div><h3>Share the code</h3><p>Put <em>Ac5upP</em> in your onboarding email. A customer's first message names it — <em>"write acme support at Ac5upP: the export API is 500ing"</em> — and after that the name alone reaches you. Save them and from then on they're answered automatically.</p></div></div>
+    <div class="door"><p class="word">open handle</p><div><h3>Share the code</h3><p>Put <em>Ac5upP</em> in your onboarding email. A customer's first message names it — <em>"write acme support at Ac5upP: the export API is 500ing"</em> — and arrives as a held 🆕 notice. Say <em>"add"</em> and from then on they're answered automatically.</p></div></div>
+    <div class="door"><p class="word">public</p><div><h3>Doors wide open</h3><p>When anyone may become a customer, add one word: <em>"auto chat read only public, quiet"</em>. Every new handle is accepted into the desk automatically — first message answered, saved as a customer. Only you at the desk's keyboard can open or close this; a message never can.</p></div></div>
     <div class="door"><p class="word">requests-only</p><div><h3>Handle off, requests on</h3><p>Say <em>"kill my handle"</em> in the desk session: the code stops resolving, and new people can only reach the desk through a <em>connect request you approve</em>. Existing customers are unaffected.</p></div></div>
     <div class="door"><p class="word">rotate</p><div><h3>Fresh code</h3><p>Handle leaked somewhere spammy? <em>"Give me a new code"</em> mints a fresh one and retires the old. Every saved customer keeps working — they key on identity, not the code.</p></div></div>
   </div>

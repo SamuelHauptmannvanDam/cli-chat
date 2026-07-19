@@ -10,6 +10,7 @@ import {
   sendMessage,
   messagesAvailable,
   readMessage,
+  respondHandle,
   addContact,
   sync,
 } from "../../src/core-net.ts";
@@ -121,9 +122,14 @@ describe("onboarding by code", () => {
     // Saved for next time: a bare "write Bob" now resolves.
     assert.equal(alice.book.contacts.find((c) => c.name === "Bob")?.signPub, bobId.signPub);
 
+    // Bob never consented to Alice, so on HIS side the first message is held
+    // behind the new-handle gate (0.18): a summary only, until he accepts.
     const avail = await messagesAvailable(bob);
-    assert.equal(avail.count, 1);
-    assert.equal(avail.messages[0]?.preview, "hi via code");
+    assert.equal(avail.count, 0);
+    assert.equal(avail.new_handles?.[0]?.count, 1);
+    const accepted = respondHandle(bob, { name: avail.new_handles![0]!.name, action: "accept" });
+    assert.ok(accepted.ok && accepted.action === "accept");
+    assert.equal(accepted.ok && accepted.action === "accept" ? accepted.messages[0]?.body : "", "hi via code");
   });
 
   test("addContact resolves a registered handle to keys", async () => {
@@ -246,12 +252,19 @@ describe("sender identity", () => {
     alice.book.contacts.push({ name: "Bob", signPub: bobId.signPub, boxPub: bobId.boxPub });
 
     await sendMessage(alice, { to: "Bob", body: "hi, new here" });
+    // Held behind the gate first: the summary carries her self-name + handle.
     const avail = await messagesAvailable(bob);
-    assert.equal(avail.count, 1);
-    assert.equal(avail.messages[0]?.from, "Alice (alice1)");
-    // Auto-saved, so a bare "write Alice" works next.
+    assert.equal(avail.count, 0);
+    assert.equal(avail.new_handles?.[0]?.name, "Alice");
+    assert.equal(avail.new_handles?.[0]?.handle, "alice1");
+    // Auto-saved (gated), so a bare "write Alice" works — and counts as accepting.
     const sent = await sendMessage(bob, { to: "Alice", body: "welcome" });
     assert.ok(sent.ok && sent.to.name === "Alice");
+    assert.equal(sent.ok && "acceptedHandle" in sent ? sent.acceptedHandle : undefined, true);
+    // Accepted now: her held message flows, labelled "Name (handle)".
+    const after = await messagesAvailable(bob);
+    assert.equal(after.count, 1);
+    assert.equal(after.messages[0]?.from, "Alice (alice1)");
   });
 
   test("your own nickname wins over the sender's self-name", async () => {

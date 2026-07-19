@@ -30,13 +30,15 @@ import { openMailbox, unreadFor } from "./db.ts";
 import { createMailboxClient } from "./mailbox-client.ts";
 import { initCrypto } from "./crypto.ts";
 import { resolveMailboxUrl } from "./config.ts";
-import { readPending, readAck, sync, type NetContext, type InboxMessage } from "./core-net.ts";
+import { readPending, readAck, readIdList, sync, type NetContext, type InboxMessage } from "./core-net.ts";
+import { contactByKey } from "./contacts.ts";
 import {
   identityFile,
   contactsFile,
   inboxFile,
   pendingFile,
   pendingAckFile,
+  gatedNotifiedFile,
   chatLockFile,
   threadsDir,
 } from "./paths.ts";
@@ -60,9 +62,17 @@ export function pickUnsurfaced(messages: InboxMessage[], acked: Set<string>): In
 // MESSENGER_CHAT_MODE) sharpens the hook's suppression in other sessions to
 // "everything except assistant escalations" (AUTO-CHAT.md).
 const chatMode = process.env.MESSENGER_CHAT_MODE === "quiet" ? "quiet" : "chat";
+// Public chat (0.18, the new-handle gate's per-session bypass): the chat tools
+// set MESSENGER_CHAT_PUBLIC=1 when the user asked for the public variant. It
+// rides in the lock so every process (the warmer's sync, chatBatch) sees that a
+// public session is live and lets new handles straight through.
+const chatPublic = process.env.MESSENGER_CHAT_PUBLIC === "1";
 function touchLock(lockPath: string): void {
   try {
-    writeFileSync(lockPath, JSON.stringify({ at: Date.now(), mode: chatMode }));
+    writeFileSync(
+      lockPath,
+      JSON.stringify({ at: Date.now(), mode: chatMode, ...(chatPublic ? { public: true } : {}) }),
+    );
   } catch {
     /* best-effort heartbeat */
   }
@@ -71,14 +81,25 @@ function touchLock(lockPath: string): void {
 // push mode: watch the warmer's pending.json; exit the moment unsurfaced mail
 // appears. Never touches inbox.db. The ack file (written by read_messages when it
 // delivers) is what marks a message surfaced — so after a fetch we keep blocking
-// instead of re-firing on mail already in the feed.
-async function runPush(pendingPath: string, ackPath: string, lockPath: string): Promise<void> {
+// instead of re-firing on mail already in the feed. A GATED arrival (a new
+// handle's held message) also wakes — the feed renders it as a name+handle
+// summary card — but only until read_messages records it in gated-notified.json.
+async function runPush(
+  pendingPath: string,
+  ackPath: string,
+  gatedNotifiedPath: string,
+  lockPath: string,
+): Promise<void> {
   for (;;) {
     touchLock(lockPath);
     try {
       const snap = readPending(pendingPath);
       const fresh = snap && snap.synced !== false && Date.now() - snap.writtenAt < PENDING_STALE_MS;
-      if (fresh && pickUnsurfaced(snap!.messages, new Set(readAck(ackPath))).length > 0) return;
+      if (fresh) {
+        if (pickUnsurfaced(snap!.messages, new Set(readAck(ackPath))).length > 0) return;
+        const notified = new Set(readIdList(gatedNotifiedPath));
+        if ((snap!.gated ?? []).some((m) => !notified.has(m.id))) return;
+      }
     } catch {
       /* transient read hiccup — keep waiting */
     }
@@ -88,7 +109,9 @@ async function runPush(pendingPath: string, ackPath: string, lockPath: string): 
 
 // poll mode (no warmer is maintaining pending.json): drain the mailbox ourselves
 // until unread appears, then exit. We do NOT mark it read — read_messages does that
-// when it delivers the batch, so the read-state stays single-owner.
+// when it delivers the batch, so the read-state stays single-owner. Gated rows
+// (held new handles) don't count as "unread appeared" once the feed has been
+// notified of them — otherwise a held message would re-fire the waker forever.
 async function runPoll(user: string, lockPath: string): Promise<void> {
   await initCrypto();
   const me = loadIdentity(identityFile(user));
@@ -103,6 +126,9 @@ async function runPoll(user: string, lockPath: string): Promise<void> {
     now,
     contactsPath: contactsFile(user),
     threadsPath: threadsDir(user),
+    // This waker IS the live chat session, so its own public flag is the truth —
+    // no lock round-trip needed. Public → new senders flow in ungated.
+    allowNewSenders: () => chatPublic,
     // A sender auto-saved during a poll-mode drain must reach the vault too.
     onBookChange: () => {
       try {
@@ -112,11 +138,17 @@ async function runPoll(user: string, lockPath: string): Promise<void> {
       }
     },
   };
+  const gatedNotifiedPath = gatedNotifiedFile(user);
   for (;;) {
     touchLock(lockPath);
     try {
       await sync(ctx);
-      if (unreadFor(cache, me.signPub).length > 0) return;
+      const rows = unreadFor(cache, me.signPub);
+      const gate = (sender: string) =>
+        sender === me.signPub ? undefined : contactByKey(book, sender)?.gated;
+      if (rows.some((m) => !gate(m.sender))) return;
+      const notified = new Set(readIdList(gatedNotifiedPath));
+      if (rows.some((m) => gate(m.sender) === "pending" && !notified.has(m.id))) return;
     } catch {
       /* network blip — retry next tick */
     }
@@ -134,7 +166,7 @@ async function main(): Promise<void> {
   }
   const lockPath = chatLockFile(user);
   if (process.env.MESSENGER_PUSH === "0") await runPoll(user, lockPath);
-  else await runPush(pendingFile(user), pendingAckFile(user), lockPath);
+  else await runPush(pendingFile(user), pendingAckFile(user), gatedNotifiedFile(user), lockPath);
 }
 
 // Run the blocking loop only when invoked directly (so importing the pure helper

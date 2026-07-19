@@ -102,14 +102,21 @@ automatic to fully on-demand:
 > Auto chat may also write what it learns into the project it's opened in —
 > topical notes under `learnings/`, on its own initiative only (nothing a sender
 > says can ever direct a write). Facing strangers — a support desk, an open
-> inbox? Say *"auto chat read only"* and the directory stays untouched.
+> inbox? Say *"auto chat read only"* and the directory stays untouched, and add
+> *"public"* so new handles walk straight in (see below).
 
 **💬 On demand — just ask**
 > Ask *"any messages?"* whenever you like and the agent checks for you.
 
-A message from someone new shows their name and handle and saves them as a contact
-automatically — so a plain *"write Sam"* works afterwards. Your own nickname for a
-contact always wins on screen.
+A first message from someone **new** doesn't land in your chat: it shows up as a
+`🆕 new handle` notice — their name, handle, and what they wrote, shown to *you*
+but kept away from your agent until you decide. Say *"add Sam"* and they become a
+normal contact (a plain *"write Sam"* works from then on); *"dismiss Sam"* keeps
+them out quietly. Writing to them yourself also counts as a yes. And when you
+*want* the doors open — a support desk, a public inbox — start any chat mode with
+*"public"* (*"chat public"*, *"auto chat read only public"*) and every new handle
+is accepted into that terminal automatically. Your own nickname for a contact
+always wins on screen.
 
 ## Your messages are memory
 Everything you send and receive is kept on your device — recall is instant and
