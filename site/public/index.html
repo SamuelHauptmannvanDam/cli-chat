@@ -179,8 +179,9 @@ a.cell:hover .go { color: var(--amber); }
   border: 1px solid var(--line); background: rgba(18, 16, 12, .92); padding: 28px 26px;
   position: relative; transition: border-color .2s;
 }
-.mode:hover { border-color: var(--faint); }
+.mode:hover { border-color: var(--faint); background: var(--bg-card); }
 .mode.featured { border-color: rgba(245,167,66,.35); box-shadow: 0 0 40px rgba(245,167,66,.04); }
+.mode.featured:hover { border-color: rgba(245,167,66,.65); background: var(--bg-card); box-shadow: 0 0 50px rgba(245,167,66,.08); }
 .mode .tag { position: absolute; top: -9px; left: 20px; background: var(--bg); padding: 0 8px; font-size: 11px; color: var(--amber); letter-spacing: .06em; }
 .mode h3 { font-size: 15px; font-weight: 600; margin: 6px 0 10px; }
 .mode-info > p { font-family: var(--serif); font-size: 15.5px; color: var(--dim); line-height: 1.55; }
@@ -206,6 +207,7 @@ a.cell:hover .go { color: var(--amber); }
   white-space: nowrap; transition: color .15s, background .15s;
 }
 .tab:last-child { border-right: none; }
+.tab:hover { background: var(--bg-card); color: var(--ink); }
 .tab.active { background: var(--bg-card); color: var(--amber); }
 .cmdbox {
   border: 1px solid var(--line); background: var(--bg-raised); padding: 22px;
