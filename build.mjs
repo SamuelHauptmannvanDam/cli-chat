@@ -18,7 +18,6 @@ rmSync("dist", { recursive: true, force: true });
 
 const entries = [
   "server-net", // the MCP server (the `cli-chat` bin)
-  "check-inbox", // SessionStart / UserPromptSubmit hook
   "await-mail", // A1 live-inbox listener (backgrounded on "listen")
   "install", // wires the server into each detected CLI
 ];
