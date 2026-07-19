@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cli-chat — headless send: the runbook</title>
+<meta name="description" content="Make pipelines, cron jobs and build servers message you on cli-chat with one command — npx cli-chat-mcp send. No agent, no MCP session, no daemon. The full setup runbook.">
+<meta property="og:title" content="cli-chat — headless send: the runbook">
+<meta property="og:description" content="Pipelines message you headlessly. One command, exit 0. The full setup guide.">
+<meta property="og:url" content="https://cli-chat.dev/headless">
+<meta property="og:type" content="article">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230b0a08'/%3E%3Ctext x='32' y='44' font-family='monospace' font-size='36' font-weight='bold' fill='%23f5a742' text-anchor='middle'%3E%E2%9D%AF%3C/text%3E%3C/svg%3E">
+<style>
+:root {
+  --bg: #000000;
+  --bg-raised: #12100c;
+  --bg-card: #14120d;
+  --ink: #e8e1d1;
+  --dim: #8a8272;
+  --faint: #4d473b;
+  --line: #262218;
+  --amber: #f5a742;
+  --green: #8fd460;
+  --cyan: #6cc7d1;
+  --red: #e2695e;
+  --mono: ui-monospace, 'SF Mono', Menlo, Monaco, 'Cascadia Mono', Consolas, monospace;
+  --serif: var(--mono);
+  --display: var(--mono);
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 14px;
+  line-height: 1.7;
+  overflow-x: hidden;
+  cursor: crosshair;
+}
+::selection { background: var(--amber); color: var(--bg); }
+a { color: var(--cyan); text-decoration: none; border-bottom: 1px solid transparent; transition: border-color .15s; }
+a:hover { border-bottom-color: var(--cyan); }
+
+/* grain overlay */
+body::after {
+  content: ""; position: fixed; inset: 0; z-index: 50; pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
+}
+
+.wrap { max-width: 880px; margin: 0 auto; padding: 0 24px; }
+
+/* agenda — fixed section directory, current section lit */
+.agenda {
+  position: fixed; left: 28px; top: 50%; transform: translateY(-50%);
+  z-index: 40; display: none; flex-direction: column; gap: 15px;
+  font-size: 11.5px; letter-spacing: .05em;
+}
+@media (min-width: 1280px) { .agenda { display: flex; } }
+.agenda a { color: var(--ink); opacity: .28; border-bottom: none; transition: opacity .25s, color .25s; }
+.agenda a:hover { opacity: .7; }
+.agenda a.active { opacity: 1; color: var(--amber); }
+.agenda a .idx { color: var(--faint); margin-right: 9px; }
+.agenda a.active .idx { color: var(--amber); }
+
+/* ---- hero ---- */
+.hero {
+  min-height: 86vh;
+  display: flex; flex-direction: column; justify-content: center;
+  padding: 70px 24px 40px; position: relative;
+}
+.hero::before {
+  content: ""; position: absolute; top: -200px; left: 50%; transform: translateX(-50%);
+  width: 900px; height: 600px; pointer-events: none;
+  background: radial-gradient(ellipse at center, rgba(143,212,96,.06), transparent 65%);
+}
+.kicker { color: var(--dim); font-size: 12px; letter-spacing: .12em; margin-bottom: 28px; }
+.kicker b { color: var(--green); font-weight: 400; }
+.kicker a { color: var(--dim); }
+.kicker a:hover { color: var(--cyan); }
+h1 {
+  font-family: var(--display);
+  font-size: clamp(20px, 3.6vw, 34px);
+  font-weight: 700; line-height: 1.3; letter-spacing: -.01em; margin-bottom: 28px;
+}
+h1 .prompt { color: var(--green); }
+h1 .cmd { color: var(--ink); }
+h1 .arg { color: var(--amber); }
+.sub {
+  font-family: var(--serif); font-size: 19px; font-weight: 400; line-height: 1.55;
+  color: var(--dim); max-width: 640px; margin-bottom: 12px;
+}
+.sub em { color: var(--ink); font-style: italic; }
+.hero-note { font-size: 12px; color: var(--faint); max-width: 640px; }
+.hero-note em { color: var(--dim); font-style: normal; }
+
+/* ---- sections ---- */
+section.wrap {
+  border-top: 1px solid var(--line);
+  margin-top: 14vh;
+  padding: 90px 24px 30px;
+}
+section.wrap:last-of-type { padding-bottom: 90px; }
+.sec-label { color: var(--faint); font-size: 12px; letter-spacing: .1em; margin-bottom: 26px; }
+.sec-label b { color: var(--amber); font-weight: 400; }
+h2 { font-family: var(--display); font-size: clamp(19px, 2.6vw, 27px); font-weight: 700; line-height: 1.35; margin-bottom: 26px; }
+.lede { font-family: var(--serif); font-size: 17px; color: var(--dim); max-width: 640px; line-height: 1.6; }
+.lede em { color: var(--ink); }
+.lede code, .prose code { font-family: var(--mono); font-size: .85em; color: var(--green); background: var(--bg-raised); padding: 2px 6px; }
+.prose { font-family: var(--serif); font-size: 15.5px; color: var(--dim); max-width: 640px; line-height: 1.65; margin-top: 18px; }
+.prose em { color: var(--ink); }
+.prose + .prose { margin-top: 14px; }
+
+/* three-things model cards */
+.grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); margin-top: 36px; }
+.cell { background: var(--bg); padding: 26px 22px; transition: background .2s; }
+.cell:hover { background: var(--bg-card); }
+.cell .ico { font-size: 17px; margin-bottom: 14px; }
+.cell h3 { font-size: 13.5px; font-weight: 600; margin-bottom: 8px; }
+.cell h3 code { color: var(--green); font-size: 12px; background: var(--bg-raised); padding: 1px 5px; }
+.cell p { font-family: var(--serif); font-size: 14.5px; color: var(--dim); line-height: 1.55; }
+.cell p em { color: var(--ink); }
+
+/* code blocks */
+.codeblock {
+  position: relative; border: 1px solid var(--line); background: var(--bg-raised);
+  margin-top: 24px; max-width: 720px;
+}
+.codeblock pre {
+  padding: 20px 22px; overflow-x: auto; font-size: 12.5px; line-height: 1.85;
+  color: var(--ink); font-family: var(--mono);
+}
+.codeblock .cb-title {
+  display: block; border-bottom: 1px solid var(--line); padding: 8px 14px;
+  font-size: 11px; color: var(--faint); letter-spacing: .06em;
+}
+.codeblock .c { color: var(--faint); }        /* comment */
+.codeblock .g { color: var(--green); }        /* command / success */
+.codeblock .a { color: var(--amber); }        /* highlight arg */
+.codeblock .d { color: var(--dim); }          /* secondary */
+.codeblock .cy { color: var(--cyan); }        /* key / value */
+.codeblock .r { color: var(--red); }          /* failure */
+.copy {
+  position: absolute; top: 8px; right: 8px;
+  font-family: var(--mono); font-size: 11px; padding: 5px 12px; background: var(--bg);
+  border: 1px solid var(--faint); color: var(--dim); cursor: pointer; transition: all .15s;
+}
+.copy:hover { border-color: var(--amber); color: var(--amber); }
+.codeblock.titled .copy { top: 42px; }
+
+/* recipe tabs */
+.tabs { display: flex; gap: 0; margin-top: 30px; border: 1px solid var(--line); border-bottom: none; width: fit-content; max-width: 100%; overflow-x: auto; }
+.tab {
+  font-family: var(--mono); font-size: 12px; padding: 11px 20px; background: var(--bg);
+  color: var(--dim); border: none; border-right: 1px solid var(--line); cursor: pointer;
+  white-space: nowrap; transition: color .15s, background .15s;
+}
+.tab:last-child { border-right: none; }
+.tab.active { background: var(--bg-card); color: var(--amber); }
+.recipe { display: none; }
+.recipe.active { display: block; }
+.recipe .codeblock { margin-top: 0; max-width: 100%; }
+.recipe-note { font-family: var(--serif); font-size: 14px; color: var(--faint); margin-top: 14px; max-width: 640px; }
+.recipe-note em { color: var(--dim); font-style: normal; }
+
+/* anatomy — the stage rail */
+.stages { border: 1px solid var(--line); margin-top: 36px; background: var(--line); display: grid; gap: 1px; max-width: 720px; }
+.stage { background: var(--bg); padding: 18px 22px; display: grid; grid-template-columns: 64px 1fr; gap: 18px; transition: background .2s; }
+.stage:hover { background: var(--bg-card); }
+.stage .n { color: var(--amber); font-size: 12px; padding-top: 2px; }
+.stage h3 { font-size: 13.5px; font-weight: 600; margin-bottom: 4px; }
+.stage p { font-family: var(--serif); font-size: 14px; color: var(--dim); line-height: 1.55; }
+.stage p code { font-family: var(--mono); font-size: 11.5px; color: var(--green); background: var(--bg-raised); padding: 1px 5px; }
+.stage .fail { color: var(--faint); font-size: 11.5px; margin-top: 5px; }
+.stage .fail b { color: var(--red); font-weight: 400; }
+
+/* field notes table */
+.notes { border: 1px solid var(--line); margin-top: 36px; background: var(--line); display: grid; gap: 1px; max-width: 720px; }
+.note { background: var(--bg); padding: 16px 22px; display: grid; grid-template-columns: 220px 1fr; gap: 18px; transition: background .2s; }
+.note:hover { background: var(--bg-card); }
+.note code, .note .k { font-family: var(--mono); font-size: 12px; color: var(--red); word-break: break-all; align-self: start; }
+.note .k.env { color: var(--cyan); }
+.note p { font-family: var(--serif); font-size: 14px; color: var(--dim); line-height: 1.55; }
+.note p em { color: var(--ink); }
+@media (max-width: 700px) { .note { grid-template-columns: 1fr; gap: 6px; } }
+
+/* footer */
+footer { border-top: 1px solid var(--line); padding: 56px 0 96px; margin-top: 14vh; }
+.foot { display: flex; justify-content: space-between; gap: 24px; flex-wrap: wrap; color: var(--faint); font-size: 12px; line-height: 2.1; }
+.foot b { color: var(--dim); font-weight: 400; }
+
+/* tmux status bar */
+.statusbar {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 60;
+  display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  background: var(--bg-raised); border-top: 1px solid var(--line);
+  font-size: 11px; color: var(--dim); padding: 6px 14px;
+}
+.statusbar .seg-l { color: var(--green); }
+.statusbar .seg-l b { color: var(--bg); background: var(--green); font-weight: 400; padding: 1px 7px; margin-right: 8px; }
+.statusbar .seg-r { display: flex; gap: 16px; }
+.statusbar .live { color: var(--amber); }
+.statusbar .live::before { content: "●"; margin-right: 6px; animation: blink 2.2s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+
+@media (max-width: 800px) {
+  .grid3 { grid-template-columns: 1fr; }
+  .hero { padding-top: 64px; min-height: auto; }
+  section.wrap { margin-top: 8vh; padding: 70px 24px 20px; }
+  .statusbar .seg-r span:first-child { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .statusbar .live::before { animation: none; }
+  * { transition: none !important; }
+}
+</style>
+</head>
+<body>
+<nav class="agenda" id="agenda">
+  <a href="#top" class="active"><span class="idx">00</span>the model</a>
+  <a href="#self"><span class="idx">01</span>message yourself</a>
+  <a href="#bot"><span class="idx">02</span>mint the bot</a>
+  <a href="#first"><span class="idx">03</span>first contact</a>
+  <a href="#wire"><span class="idx">04</span>wire it in</a>
+  <a href="#anatomy"><span class="idx">05</span>anatomy</a>
+  <a href="#notes"><span class="idx">06</span>field notes</a>
+</nav>
+
+<header class="hero wrap" id="top">
+  <p class="kicker"><a href="/">← cli-chat.dev</a> <b>·</b> runbook <b>·</b> headless send</p>
+  <h1><span class="prompt">❯ </span><span class="cmd" data-scramble>npx cli-chat-mcp send ops</span> <span class="arg" data-scramble>"deploy landed"</span></h1>
+  <p class="sub">Pipelines, cron jobs and build servers message you like a person would. <em>No agent, no MCP session, no daemon</em> — one process, one sealed message, exit 0.</p>
+  <p class="hero-note">This is the full setup, end to end. Fifteen minutes once, then it's one line in any script forever. Needs <em>Node 22+</em>, nothing else.</p>
+</header>
+
+<section class="wrap" id="model">
+  <p class="sec-label"><b>##</b> 00 · the model</p>
+  <h2 data-scramble>Three things. Only one is always on.</h2>
+  <p class="lede">The trick to headless send is that <em>“logged in” isn’t a session — it’s files on disk.</em> Once you see the three parts, the rest of this page is obvious.</p>
+  <div class="grid3">
+    <div class="cell"><p class="ico">📁</p><h3>The account = a directory</h3><p>A keypair, a contact book, a local history cache — files under <em>~/.cli-chat</em>. Any process that can read them can send. That directory <em>is</em> the login.</p></div>
+    <div class="cell"><p class="ico">📮</p><h3>The mailbox = one HTTPS API</h3><p>The only always-on part. It stores sealed ciphertext until the recipient's device fetches it. Senders don't wait for anyone to be online.</p></div>
+    <div class="cell"><p class="ico">🚪</p><h3>MCP = one of two doors</h3><p>Your coding agent talks to the same files through MCP. <code>send</code> is the other door: same codebase, no agent attached. Neither door runs when you're not using it.</p></div>
+  </div>
+  <p class="prose">So the question "is the MCP connected to my terminal?" dissolves: nothing is resident. A pipeline sends by being a process with (a) the state directory and (b) a network route to the mailbox. That's the whole theory — now the practice.</p>
+</section>
+
+<section class="wrap" id="self">
+  <p class="sec-label"><b>##</b> 01 · zero setup</p>
+  <h2 data-scramble>Rung one: your own machine messages you.</h2>
+  <p class="lede">Already using cli-chat on this machine? Then it's already provisioned. <em>Any script can message you right now.</em></p>
+  <div class="codeblock"><button class="copy">copy</button><pre><span class="c"># from cron, a Makefile, a git hook, an && chain — anything:</span>
+<span class="g">npx</span> cli-chat-mcp send me <span class="a">"nightly backup finished — 42 GB"</span></pre></div>
+  <p class="prose"><code>me</code> is the built-in note-to-self address. The message lands in your own inbox and surfaces in your next agent session like any other. A long build that pings you when it's done is one <code>&amp;&amp;</code> away:</p>
+  <div class="codeblock"><button class="copy">copy</button><pre><span class="g">./deploy.sh</span> <span class="d">&amp;&amp;</span> <span class="g">npx</span> cli-chat-mcp send me <span class="a">"deploy done ✅"</span> <span class="d">||</span> <span class="g">npx</span> cli-chat-mcp send me <span class="a">"deploy FAILED 🔴"</span></pre></div>
+  <p class="prose">That's the whole feature on a machine that already has your account. The rest of this runbook is for machines that <em>don't</em> — CI runners, build servers, that Raspberry Pi in the closet.</p>
+</section>
+
+<section class="wrap" id="bot">
+  <p class="sec-label"><b>##</b> 02 · one-time, interactive</p>
+  <h2 data-scramble>Mint the bot its own account.</h2>
+  <p class="lede">A bot is not special — it's <em>just another account</em>: its own email, its own keypair, its own 6-char handle. You create it once, interactively, on any machine you like (your laptop is fine).</p>
+  <p class="prose">The only step that can't be headless is this one — login is a magic link, and someone has to click it. Park the bot's state in its own directory with <code>MESSENGER_HOME</code> so it never collides with your personal account:</p>
+  <div class="codeblock titled"><span class="cb-title">your laptop · once</span><button class="copy">copy</button><pre><span class="c"># open your coding CLI with the bot's own state dir</span>
+<span class="cy">MESSENGER_HOME</span>=~/deploy-bot <span class="g">claude</span>
+
+<span class="c"># then, in the session:</span>
+<span class="g">❯</span> log in as ci@yourteam.dev — name it "Deploy Bot"
+<span class="c"># click the magic link that lands in that inbox — done.</span>
+<span class="c"># ~/deploy-bot now holds the bot's keypair, contacts and handle.</span></pre></div>
+  <p class="recipe-note">Any address you can read works — a plus-address like <em>you+ci@…</em> is fine. The bot's display name ("Deploy Bot") is what recipients see on every message, so pick a good one.</p>
+</section>
+
+<section class="wrap" id="first">
+  <p class="sec-label"><b>##</b> 03 · by handle, once</p>
+  <h2 data-scramble>First contact: send to a handle.</h2>
+  <p class="lede">The bot's contact book is empty. The first message targets your <em>6-char handle</em> — ask your own agent <em>"what's my handle?"</em> if you've forgotten it.</p>
+  <div class="codeblock"><button class="copy">copy</button><pre><span class="c"># --key resolves the handle, sends, AND saves the contact</span>
+<span class="cy">MESSENGER_HOME</span>=~/deploy-bot <span class="g">npx</span> cli-chat-mcp send ops <span class="d">--key</span> <span class="a">qL7f2A</span> <span class="a">"deploy bot reporting in"</span>
+<span class="g">sent</span> 71a84de1… to ops</pre></div>
+  <p class="prose">That one send did two things: it delivered, and it wrote "ops" into the bot's <code>contacts.json</code>. From now on the name alone is enough — <em>the handle never appears in your pipeline config:</em></p>
+  <div class="codeblock"><button class="copy">copy</button><pre><span class="cy">MESSENGER_HOME</span>=~/deploy-bot <span class="g">npx</span> cli-chat-mcp send ops <span class="a">"works by name now"</span></pre></div>
+  <p class="prose">Add the whole team the same way, one <code>--key</code> send each. And save the bot in <em>your</em> book too — say <em>"add deploy-bot, code is &lt;its handle&gt;"</em> to your agent — so its messages arrive with a name you chose.</p>
+</section>
+
+<section class="wrap" id="wire">
+  <p class="sec-label"><b>##</b> 04 · ship the directory</p>
+  <h2 data-scramble>Wire it into the pipeline.</h2>
+  <p class="lede">The state directory <em>is</em> the account, so “deploying the bot” means getting that directory where the pipeline runs. Persistent box: copy it once. Ephemeral runner: pack it into a secret.</p>
+
+  <div class="tabs" id="recipeTabs">
+    <button class="tab active" data-r="r-box">persistent box</button>
+    <button class="tab" data-r="r-gha">GitHub Actions</button>
+    <button class="tab" data-r="r-gl">GitLab CI</button>
+    <button class="tab" data-r="r-cron">server cron</button>
+  </div>
+
+  <div class="recipe active" id="r-box">
+    <div class="codeblock titled"><span class="cb-title">build server, office mac, raspberry pi — anything with a disk</span><button class="copy">copy</button><pre><span class="c"># copy the state dir over once…</span>
+<span class="g">scp</span> -r ~/deploy-bot buildbox:~/deploy-bot
+
+<span class="c"># …then any script on that box is one line:</span>
+<span class="cy">MESSENGER_HOME</span>=~/deploy-bot <span class="g">npx</span> cli-chat-mcp send ops <span class="a">"deploy landed ✅"</span></pre></div>
+    <p class="recipe-note">Nothing to keep running, nothing to restart. The directory sits there; each send is a fresh process that reads it and exits.</p>
+  </div>
+
+  <div class="recipe" id="r-gha">
+    <div class="codeblock titled"><span class="cb-title">pack the state into a secret · once, on your laptop</span><button class="copy">copy</button><pre><span class="g">tar</span> -czf - -C ~/deploy-bot . | <span class="g">base64</span> | <span class="g">gh</span> secret set <span class="cy">CLI_CHAT_BOT_STATE</span></pre></div>
+    <div class="codeblock titled"><span class="cb-title">.github/workflows/deploy.yml</span><button class="copy">copy</button><pre><span class="d">- name:</span> Notify ops
+  <span class="d">if:</span> always()   <span class="c"># message on failure too</span>
+  <span class="d">env:</span>
+    <span class="cy">MESSENGER_HOME</span>: ${{ runner.temp }}/cli-chat
+    <span class="cy">STATE</span>: ${{ secrets.CLI_CHAT_BOT_STATE }}
+  <span class="d">run:</span> |
+    mkdir -p "$MESSENGER_HOME"
+    echo "$STATE" | base64 -d | tar -xzf - -C "$MESSENGER_HOME"
+    npx -y cli-chat-mcp send ops <span class="a">"deploy of ${{ github.sha }}: ${{ job.status }}"</span></pre></div>
+    <p class="recipe-note">The runner is born, restores the account from the secret, sends, and dies. <em>Exit 1 on any failure</em> — drop the <em>if: always()</em> guard if you'd rather a failed notify fail the job.</p>
+  </div>
+
+  <div class="recipe" id="r-gl">
+    <div class="codeblock titled"><span class="cb-title">.gitlab-ci.yml · CLI_CHAT_BOT_STATE as a masked CI variable</span><button class="copy">copy</button><pre><span class="d">notify:</span>
+  <span class="d">stage:</span> .post
+  <span class="d">when:</span> always
+  <span class="d">script:</span>
+    - export <span class="cy">MESSENGER_HOME</span>="$CI_BUILDS_DIR/cli-chat"
+    - mkdir -p "$MESSENGER_HOME"
+    - echo "$CLI_CHAT_BOT_STATE" | base64 -d | tar -xzf - -C "$MESSENGER_HOME"
+    - npx -y cli-chat-mcp send ops <span class="a">"pipeline $CI_PIPELINE_ID on $CI_COMMIT_REF_NAME finished"</span></pre></div>
+    <p class="recipe-note">Same shape as the Actions recipe: restore, send, done. Set the variable with <em>tar -czf - -C ~/deploy-bot . | base64</em> pasted into a masked CI/CD variable.</p>
+  </div>
+
+  <div class="recipe" id="r-cron">
+    <div class="codeblock titled"><span class="cb-title">crontab -e · the server checks in every morning</span><button class="copy">copy</button><pre><span class="c"># 07:30 daily — disk check that messages instead of emailing root</span>
+30 7 * * *  <span class="cy">MESSENGER_HOME</span>=/home/svc/deploy-bot <span class="g">npx</span> -y cli-chat-mcp send ops <span class="a">"$(df -h / | tail -1 | awk '{print "disk: " $5 " used"}')"</span></pre></div>
+    <p class="recipe-note">Anything that can produce a string can be a message body — command substitution, log tails, <em>jq</em> over a status endpoint.</p>
+  </div>
+</section>
+
+<section class="wrap" id="anatomy">
+  <p class="sec-label"><b>##</b> 05 · under the hood</p>
+  <h2 data-scramble>Anatomy of one send.</h2>
+  <p class="lede">What actually happens in the ~2 seconds between the shell prompt and <em>exit 0</em>. No step waits on the recipient being online.</p>
+  <div class="stages">
+    <div class="stage"><p class="n">[1/6]</p><div><h3>Dispatch</h3><p>The <code>send</code> argument short-circuits before any MCP server starts — this is a one-shot process, not a service.</p></div></div>
+    <div class="stage"><p class="n">[2/6]</p><div><h3>Resolve the sender</h3><p>Which account? <code>$MESSENGER_USER</code> if set, else the state dir's default, else the only account present.</p><p class="fail">fails → <b>no account on this device</b> · exit 1</p></div></div>
+    <div class="stage"><p class="n">[3/6]</p><div><h3>Load the identity</h3><p>The bot's keypair comes off disk — this is what signs and seals the message as "Deploy Bot".</p></div></div>
+    <div class="stage"><p class="n">[4/6]</p><div><h3>Resolve the recipient</h3><p>Name → the bot's own contact book (partial match, like <code>write niels</code>). With <code>--key</code>, the handle resolves online and the contact is saved for next time.</p><p class="fail">fails → <b>no_contact</b> / <b>ambiguous</b> (candidates listed) · exit 1</p></div></div>
+    <div class="stage"><p class="n">[5/6]</p><div><h3>Seal &amp; deliver</h3><p>Body encrypted to the recipient's keys, posted to the mailbox. The server stores ciphertext only.</p><p class="fail">fails → reason on stderr · exit 1</p></div></div>
+    <div class="stage"><p class="n">[6/6]</p><div><h3>Report &amp; exit</h3><p>Prints <code>sent &lt;id&gt; to &lt;name&gt;</code>, queues the message for the bot's own encrypted history, exit 0.</p></div></div>
+  </div>
+  <p class="prose">On your side it's just a message: it surfaces in your next session, streams into live chat, and your assistant can even answer the bot in auto chat — a pipeline that asks <em>"tests red on main — rerun or page Sam?"</em> is having a conversation, not writing a log line.</p>
+</section>
+
+<section class="wrap" id="notes">
+  <p class="sec-label"><b>##</b> 06 · field notes</p>
+  <h2 data-scramble>When it fails, it says so.</h2>
+  <p class="lede">Never a prompt, never a hang: <em>exit 0 with a message id, or exit 1 with a reason</em> on stderr. The ones you'll actually meet:</p>
+  <div class="notes">
+    <div class="note"><span class="k">no account on this device</span><p>The state dir wasn't found — <code>$MESSENGER_HOME</code> unset, secret not restored, or restored to the wrong path.</p></div>
+    <div class="note"><span class="k">send failed: no_contact</span><p>The name isn't in the <em>bot's</em> book (yours doesn't count). Do the one-time <code>--key</code> send from § 03.</p></div>
+    <div class="note"><span class="k">send failed: ambiguous</span><p>Two saved contacts match the name; candidates are listed. Use more of the name in the script.</p></div>
+    <div class="note"><span class="k">send failed: not_found</span><p>The handle in <code>--key</code> doesn't resolve — typo, rotated, or the owner switched their handle off (requests-only). Already-saved contacts keep working either way.</p></div>
+  </div>
+  <div class="notes" style="margin-top: 22px;">
+    <div class="note"><span class="k env">MESSENGER_HOME</span><p>Where the state lives (the dir <em>containing</em> <code>users/</code>). Default: <code>~/.cli-chat</code>. Set it everywhere in CI; never rely on the runner's home.</p></div>
+    <div class="note"><span class="k env">MESSENGER_USER</span><p>Pick the account when one state dir holds several — by handle or name. With one account, leave it unset.</p></div>
+    <div class="note"><span class="k env">--as-assistant</span><p>Marks the send as coming from an assistant rather than the account's human. Good manners for bots that share an account with a person.</p></div>
+  </div>
+  <p class="prose" style="margin-top: 28px;"><em>Treat the state directory like a deploy key.</em> Whoever holds those files can send as the bot — keep the tarball in a masked secret, not in the repo. And give the bot its own account rather than shipping your personal one into CI: contacts scope what it can reach, and you can retire it without touching your own identity.</p>
+</section>
+
+<footer>
+  <div class="wrap foot">
+    <div>
+      <p><b>cli-chat</b> · a messenger for the agent age</p>
+      <p><a href="/">← back to cli-chat.dev</a> · <a href="https://www.npmjs.com/package/cli-chat-mcp">npm: cli-chat-mcp</a></p>
+    </div>
+    <div>
+      <p>Stuck on the setup?</p>
+      <p><b>"write feedback: …"</b> from any session reaches the makers.</p>
+    </div>
+  </div>
+</footer>
+
+<div class="statusbar">
+  <span class="seg-l"><b>cli-chat</b>1:headless-runbook*</span>
+  <span class="seg-r"><span>exit 0 · sealed</span><span class="live">one-shot</span></span>
+</div>
+
+<script>
+(function () {
+  var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var CIPHER = '!<>-_\\/[]{}=+*^?#▒▓░@$%&';
+  function rc() { return CIPHER[Math.floor(Math.random() * CIPHER.length)]; }
+
+  /* ---- scramble-decrypt headings ---- */
+  function scramble(el) {
+    if (reduced || el.dataset.busy) return;
+    el.dataset.busy = '1';
+    var final = el.dataset.text || el.textContent;
+    el.dataset.text = final;
+    var frame = 0, total = Math.max(14, final.length * 1.6);
+    (function step() {
+      var reveal = Math.floor((frame / total) * final.length), out = '';
+      for (var i = 0; i < final.length; i++) {
+        out += i < reveal ? final[i] : (final[i] === ' ' ? ' ' : rc());
+      }
+      el.textContent = out;
+      if (frame++ < total) requestAnimationFrame(step);
+      else { el.textContent = final; delete el.dataset.busy; }
+    })();
+  }
+  var els = document.querySelectorAll('[data-scramble]');
+  if ('IntersectionObserver' in window && !reduced) {
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        if (en.isIntersecting) { scramble(en.target); io.unobserve(en.target); }
+      });
+    }, { threshold: .4 });
+    els.forEach(function (el) { io.observe(el); el.addEventListener('mouseenter', function () { scramble(el); }); });
+  }
+
+  /* ---- agenda scroll-spy ---- */
+  (function () {
+    var links = document.querySelectorAll('.agenda a');
+    var byId = {};
+    links.forEach(function (a) { byId[a.getAttribute('href').slice(1)] = a; });
+    /* #top maps to the hero; the rest to their sections */
+    var spy = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        var id = en.target.id === 'model' ? 'top' : en.target.id;
+        if (en.isIntersecting && byId[id]) {
+          links.forEach(function (a) { a.classList.remove('active'); });
+          byId[id].classList.add('active');
+        }
+      });
+    }, { rootMargin: '-40% 0px -55% 0px' });
+    ['model','self','bot','first','wire','anatomy','notes'].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) spy.observe(el);
+    });
+  })();
+
+  /* ---- recipe tabs ---- */
+  document.querySelectorAll('#recipeTabs .tab').forEach(function (t) {
+    t.addEventListener('click', function () {
+      document.querySelectorAll('#recipeTabs .tab').forEach(function (x) { x.classList.remove('active'); });
+      document.querySelectorAll('.recipe').forEach(function (r) { r.classList.remove('active'); });
+      t.classList.add('active');
+      document.getElementById(t.dataset.r).classList.add('active');
+    });
+  });
+
+  /* ---- per-block copy (strips comment lines) ---- */
+  document.querySelectorAll('.codeblock').forEach(function (cb) {
+    var btn = cb.querySelector('.copy');
+    if (!btn) return;
+    btn.addEventListener('click', function () {
+      var text = cb.querySelector('pre').innerText
+        .split('\n')
+        .filter(function (l) { return !/^\s*#/.test(l); })
+        .join('\n')
+        .replace(/\n{2,}/g, '\n')
+        .trim();
+      navigator.clipboard.writeText(text).then(function () {
+        btn.textContent = 'copied ✓';
+        setTimeout(function () { btn.textContent = 'copy'; }, 1600);
+      });
+    });
+  });
+})();
+</script>
+</body>
+</html>

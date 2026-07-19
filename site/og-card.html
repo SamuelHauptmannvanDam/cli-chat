@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  width: 1200px; height: 630px;
+  background: #000;
+  font-family: ui-monospace, 'SF Mono', Menlo, Monaco, monospace;
+  color: #e8e1d1;
+  display: flex; flex-direction: column;
+  padding: 64px 72px 0;
+  position: relative;
+  overflow: hidden;
+}
+body::before {
+  content: ""; position: absolute; inset: 0;
+  background: radial-gradient(ellipse 900px 500px at 30% 0%, rgba(245,167,66,.08), transparent 65%);
+}
+.kicker { font-size: 22px; color: #8a8272; letter-spacing: .1em; margin-bottom: 54px; }
+.kicker b { color: #8fd460; font-weight: 400; }
+.card {
+  border: 2px solid #262218; background: rgba(18,16,12,.92);
+  padding: 44px 52px; line-height: 1.75;
+  box-shadow: 0 30px 80px rgba(0,0,0,.5);
+}
+.sender { font-size: 34px; font-weight: 700; margin-bottom: 10px; }
+.sender .env { color: #f5a742; }
+.quote {
+  font-size: 34px; color: #e8e1d1;
+  border-left: 5px solid #f5a742; padding-left: 28px; margin: 10px 0 26px 4px;
+}
+.sent { font-size: 34px; color: #8fd460; }
+.bar {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  display: flex; justify-content: space-between; align-items: center;
+  background: #0c0b09; border-top: 2px solid #262218;
+  font-size: 24px; color: #8a8272; padding: 18px 40px;
+}
+.bar .l b { color: #000; background: #8fd460; font-weight: 400; padding: 3px 14px; margin-right: 16px; }
+.bar .l { color: #8fd460; }
+.bar .r i { color: #f5a742; font-style: normal; }
+.domain { font-size: 30px; color: #e8e1d1; margin-top: 44px; }
+.domain span { color: #f5a742; }
+</style>
+</head>
+<body>
+  <p class="kicker">// cli-chat <b>·</b> end-to-end encrypted <b>·</b> lives in your coding CLI</p>
+  <div class="card">
+    <p class="sender"><span class="env">📨</span> Niels · #1</p>
+    <p class="quote">did the deploy go out this morning?</p>
+    <p class="sent">↳ 📤 Sent to Niels — "Yes, went out at 9."</p>
+  </div>
+  <p class="domain">your coding agent is now your messenger → <span>cli-chat.dev</span></p>
+  <div class="bar">
+    <span class="l"><b>cli-chat</b>0:inbox*</span>
+    <span class="r">E2E sealed · v0.15.0 · <i>● listening</i></span>
+  </div>
+</body>
+</html>
