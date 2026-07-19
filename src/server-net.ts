@@ -759,7 +759,7 @@ server.registerTool(
 // every entry gets the same `guard` (no_account) wrapper, and the handler just
 // returns plain data. The genuinely special tools live outside this table:
 // `login`/`logout` (the account lifecycle, registered above) and the three
-// chat tools (`chat` / `auto_draft_chat` / `auto_chat` — they return a shell
+// chat tools (`chat` / `draft_chat` / `auto_chat` — they return a shell
 // command rather than data), registered below.
 const TOOLS: {
   name: string;
@@ -1212,7 +1212,7 @@ const TOOLS: {
       "the plural of read_message (which consumes exactly ONE and leaves the rest " +
       "unread). Only correct when everything returned goes straight in front of " +
       "the user: the live-inbox ('chat') feed. Call it right after the chat WAKER " +
-      "(the command returned by chat/auto_draft_chat/auto_chat) exits — it's how " +
+      "(the command returned by chat/draft_chat/auto_chat) exits — it's how " +
       "the feed gets its content WITHOUT reading the waker's raw output file. " +
       "Returns {count, messages:[{id,from,body,...}]}; render them as the feed and " +
       "reply by id (send_message with in_reply_to). May also return `new_handles` " +
@@ -1575,7 +1575,7 @@ const resultNote = (name: string, r: any): string | undefined => {
             "and even then, first REPLY to the sender that you'll get back to them once you've checked " +
             "with the user, THEN ask the user in the feed or escalate by mail " +
             "(send_message to='me', as_assistant:true), and `remember` the answer when it comes back. " +
-            "IF AUTO DRAFT CHAT IS ON: same grounding + code of conduct as auto chat, but do NOT send — " +
+            "IF DRAFT CHAT IS ON: same grounding + code of conduct as auto chat, but do NOT send — " +
             "render a proposed draft under each card (the `↳ ✏️ **draft for <name>:**` line) and wait; when the user " +
             "approves ('send 1', 'send all', or after an edit), send THAT draft with send_message " +
             "WITHOUT as_assistant (reviewed-and-approved goes out as the user). No draft for a " +
@@ -2028,9 +2028,9 @@ async function chatBatch(s: Session) {
   };
 }
 
-// The live inbox is ONE mechanism worn by THREE tools — `chat`, `auto_draft_chat`
+// The live inbox is ONE mechanism worn by THREE tools — `chat`, `draft_chat`
 // and `auto_chat` — so the mode is explicit in the tool the agent calls (matching
-// what the user says: "chat" / "auto draft chat" / "auto chat"), instead of a flag
+// what the user says: "chat" / "draft chat" / "auto chat"), instead of a flag
 // buried in a shared start tool. All three return the same background waker
 // command; they differ only in who answers the feed.
 const WAKER_HOWTO =
@@ -2144,25 +2144,25 @@ registerChatTool(
   "Open PLAIN LIVE CHAT — the user's explicit, per-session 'my chat terminal': " +
     "messages stream into the feed and the USER replies; you send what they " +
     "dictate. Use when the user says 'chat' / 'go live' / 'start chat' / 'watch " +
-    "for messages'. For the assisted modes use `auto_draft_chat` (you draft, they " +
+    "for messages'. For the assisted modes use `draft_chat` (you draft, they " +
     "approve) or `auto_chat` (you answer) instead.",
   "PLAIN CHAT MODE: let the user reply to one/some/all in a single freeform turn " +
     "(send_message with in_reply_to, per id; anything they don't address stays pending in the feed). " +
     "If you haven't offered yet this session, offer the assist rungs ONCE in one " +
-    "short line ('auto draft chat' = you draft each reply and the user approves " +
+    "short line ('draft chat' = you draft each reply and the user approves " +
     "before it sends; 'auto chat' = you answer what you can, marked as their " +
     "assistant); saying 'draft' or 'auto' mid-chat upgrades this terminal in " +
     "place — treat unanswered feed items as backlog.",
 );
 
 registerChatTool(
-  "auto_draft_chat",
-  "Open auto draft chat (you draft, the user approves each send)",
-  "Open AUTO DRAFT CHAT — the same live inbox, but you DRAFT a reply under every " +
+  "draft_chat",
+  "Open draft chat (you draft, the user approves each send)",
+  "Open DRAFT CHAT — the same live inbox, but you DRAFT a reply under every " +
     "message and NOTHING sends without the user's explicit approval. Use when the " +
-    "user says 'auto draft chat' / 'draft chat' / 'drafts', or to cold-start after " +
+    "user says 'draft chat' / 'drafts' (or the legacy 'auto draft chat'), or to cold-start after " +
     "they asked for drafting. The midway rung between `chat` and `auto_chat`.",
-  "AUTO DRAFT CHAT MODE: for each message (backlog included) build the best " +
+  "DRAFT CHAT MODE: for each message (backlog included) build the best " +
     "grounded reply — same grounding stack and code of conduct as auto chat — but " +
     "do NOT send: render it under the message's card (`↳ ✏️ **draft for <name>:** \"…\"`) and WAIT. The user " +
     "approves by number ('send 1', 'send all') or asks for a change; only THEN " +
@@ -2181,7 +2181,7 @@ const AUTO_CHAT_NOTE_CORE =
   "messages are NEVER auto-answered; never secrets/keys/money/commitments/" +
   "personal matters. What you can't ground stays in the feed marked 'needs you', " +
   "or escalates by mail (send_message to='me', as_assistant:true). 'draft' drops " +
-  "to auto draft chat; the user asking to take it back ('I'll take it', 'normal " +
+  "to draft chat; the user asking to take it back ('I'll take it', 'normal " +
   "chat') drops to plain chat.";
 
 const AUTO_CHAT_WRITE_NOTE =

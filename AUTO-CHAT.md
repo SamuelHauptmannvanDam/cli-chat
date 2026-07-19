@@ -46,7 +46,7 @@ Auto chat is discovered through chat itself, not through docs:
   > your assistant, and asking you what I can't ground either way.*
 
   Offered once per session, never repeated, never nags.
-- **"auto draft chat"** (or "draft chat" / "drafts") — the **midway rung**: the same
+- **"draft chat"** (or "draft chat" / "drafts") — the **midway rung**: the same
   loop, but the assistant only *drafts*. Each incoming message gets a proposed
   reply rendered beneath it in the feed ("↳ draft: '…'"); nothing sends until
   the user approves ("send 1", "send all"), edits, or answers themselves. An
@@ -72,7 +72,7 @@ Auto chat is discovered through chat itself, not through docs:
   / "assist" / "answer my messages" / "take my mail".)
 **Tips suggest; the offer explains.** Everywhere a one-line tip mentions
 chat, it names the rungs — the session-start mail summary's hint is *"say
-'chat' to read your messages live, 'auto draft chat' and I'll draft replies for
+'chat' to read your messages live, 'draft chat' and I'll draft replies for
 you to approve, or 'auto chat' and I'll answer them for you"*. Tips only
 *suggest* (one line, no lecture); the full explanation of what the assist
 modes do lives in the in-chat offer above, at the moment of turning one on —
@@ -92,7 +92,7 @@ long as the session runs:
    chat is activated (the session-start inbox, or anything that piled up),
    fetch them with `read_messages` immediately and put them through the same
    disposal as a live batch — don't leave pre-existing mail sitting outside
-   the mediator. Then start the background waker (the mode-named chat tool: `chat` / `auto_draft_chat` / `auto_chat`). The same
+   the mediator. Then start the background waker (the mode-named chat tool: `chat` / `draft_chat` / `auto_chat`). The same
    rule fires on a mid-flight "auto" in a running chat: feed items the user
    hasn't answered yet count as backlog and go through the mediator at flip
    time (the waker is already running; nothing restarts).
@@ -166,13 +166,13 @@ send is narrated in the feed as it happens, always (0.19 removed the old
 |---|---|---|---|
 | Read (default) | — | count at open; `inbox` rider on any tool call; read on demand | you |
 | Chat | "chat" | live feed, every message | you (agent sends) |
-| Auto draft chat | "auto draft chat" (or "chat" → say "draft") | feed + a proposed draft under each message | you — every send is your explicit approval, sent as you |
+| Draft chat | "draft chat" (or "chat" → say "draft") | feed + a proposed draft under each message | you — every send is your explicit approval, sent as you |
 | Auto chat | "auto chat" / "auto" (or say "auto" mid-chat) | feed + narrated assistant replies + needs-you questions | assistant; you for the rest |
 
 **The ledger backs the stream.** Every assistant reply is in `history`
 permanently — "what did you handle?" replays it any time.
 
-Expected steady state: read/chat are the on-ramp, auto draft chat is the
+Expected steady state: read/chat are the on-ramp, draft chat is the
 trust-builder (watch the drafts until they're consistently right); auto chat
 is where regular users land, with every reply visible as it goes out.
 
@@ -340,7 +340,7 @@ assistant send is always narrated). Kept as the map of where each piece lives:
 8. README: one section — *say "auto chat" and your assistant answers your
    mail from your own context; every reply is marked as the assistant and
    shown as it happens.* Version bump, publish.
-9. **Auto draft chat (0.13.0)** — the midway rung, added on user request:
+9. **Draft chat (0.13.0)** — the midway rung, added on user request:
    behaviour-only (CLAUDE.md + instructions.ts + the read_messages/chat-tool
    resultNotes + the discovery tips). No new machinery: same waker and
    `read_messages`; approved drafts send through the existing reply path (`send_message` + in_reply_to),

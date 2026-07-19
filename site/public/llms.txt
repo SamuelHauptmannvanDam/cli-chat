@@ -25,7 +25,7 @@ account). Requires Node 22+.
 - "write Sam at AbC123: hey" — first message by handle (saves the contact)
 - "write Sam: hey" — message a saved contact by name
 - "chat" — live inbox streaming into the session
-- "auto draft chat" — the assistant drafts replies, the user approves each send
+- "draft chat" — the assistant drafts replies, the user approves each send
 - "auto chat" — the assistant answers what it can ground in the current
   directory, message history, and its notes; replies are marked as assistant
 - "write feedback: ..." — reaches the makers (handle FeedBk, pre-saved)

@@ -78,7 +78,7 @@ automatic to fully on-demand:
 > one, some, or all whenever you like. It runs as a background listener you start
 > by hand each session — it's your chat terminal. Say *"stop"* to close it.
 
-**✍️ Auto draft chat — say *"auto draft chat"* (your assistant drafts, you send)**
+**✍️ Draft chat — say *"draft chat"* (your assistant drafts, you send)**
 > The midway point: the same live inbox, but your assistant writes a suggested
 > reply under each incoming message — grounded in your project, your message
 > history, and its notes — and **nothing is sent until you say so**. Approve
@@ -130,7 +130,7 @@ saves a fact your messenger can use anywhere — it's what auto chat answers fro
 - *"what's my code?"* — show your handle to share
 - *"write Sam at AbC123: …"* / *"write Sam: …"* — send a message
 - *"chat"* (or *"watch"*) — open your live inbox (messages stream in; reply to all when you like)
-- *"auto draft chat"* — same inbox; the assistant drafts each reply, you approve before it sends
+- *"draft chat"* — same inbox; the assistant drafts each reply, you approve before it sends
 - *"auto chat"* — same inbox, but your assistant answers what it can, marked as itself (and keeps its learnings in the project)
 - *"auto chat read only"* — the outward-facing desk: same, but the directory stays untouched
 - *"what did Sam say about …?"* — recall any past message, from any session

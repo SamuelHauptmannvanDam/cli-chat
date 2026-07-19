@@ -23,7 +23,7 @@ warmer inside the MCP server, zero model turns); they surface three ways:
    turn per real batch, ~none while idle. Run the waker as a background task
    when the harness has them; otherwise run the same command foreground with
    the bounded-wait prefix the tool note describes.
-   **Auto draft chat** is the same loop with you drafting each reply for the user to
+   **Draft chat** is the same loop with you drafting each reply for the user to
    approve, and **auto chat** with you answering — see their sections below.
 
 ## At session start (announce messages, offer to read)
@@ -34,7 +34,7 @@ new handles as "🆕 Sam (AbC123) — 2 held"). Then:
 - **Do NOT print bodies uninvited.** When the user says to read (e.g. "read
   it", "go on", "yes"), call `read_message` and print it in full as a quote
   card. Once per session, add a one-line suggestion of the hands-free rungs —
-  "chat" to read live, "auto draft chat" to have you draft replies they
+  "chat" to read live, "draft chat" to have you draft replies they
   approve, "auto chat" to have you answer.
 - If their input is a reply to a message they've heard (e.g. "answer not much",
   "tell him yes", or just "not much"), send it immediately with `send_message`
@@ -99,7 +99,7 @@ sender is **held** instead:
 
 **Public mode** — every chat mode has a public variant: "chat public",
 "auto chat read only public", or "go public" mid-session. Pass `public: true` to
-the chat tool (`chat` / `auto_draft_chat` / `auto_chat`); the flag travels in
+the chat tool (`chat` / `draft_chat` / `auto_chat`); the flag travels in
 the waker command, so a mid-session switch means calling the same tool again,
 killing the old waker, and launching the new command. While the public session
 runs, **new handles are auto-accepted** and flow straight into the feed (the
@@ -148,7 +148,7 @@ When the user says **"chat"** (or "go live" / "start chat", and also "watch" /
 "watch for messages" / "keep an eye out"), open the live inbox:
 call the **`chat`** tool to get a shell `command` and run it as a **background
 task**. (The three chat tools match the three modes by name — `chat`,
-`auto_draft_chat`, `auto_chat` — call the one for the mode the user asked for;
+`draft_chat`, `auto_chat` — call the one for the mode the user asked for;
 all return the same waker command.) Every mode also has a **public** variant —
 "chat public" / "go public" — pass `public: true`: new handles are auto-accepted
 into this terminal instead of held behind the gate (see *New handles* above).
@@ -298,7 +298,7 @@ batch). "auto chat read only" cold-starts the read-only variant the same way
 anything sends, or 'auto' and I'll answer what I can myself, marked as your
 assistant — either way I'll ask you what I can't ground."* Saying **"auto"
 mid-chat upgrades the running terminal in place** (same waker, same feed;
-unanswered feed items become backlog); **"draft"** flips it to auto draft chat (next
+unanswered feed items become backlog); **"draft"** flips it to draft chat (next
 section); the user asking to take it back ("I'll take it", "normal chat")
 downgrades to plain chat the same way; "stop" ends it.
 User-started, per session, on purpose — never start it unprompted.
@@ -321,9 +321,9 @@ handle, I'll stop replying — anything real reaches Samuel"), then let further
 content-free follow-ups in that thread rest (new substance reopens it). The
 stop is always announced, never silent.
 
-## Auto draft chat — you draft, the user sends ("auto draft chat" / "draft chat" / "drafts")
+## Draft chat — you draft, the user sends ("draft chat" / "drafts")
 The midway rung between chat and auto chat, for building trust: the same
-live-inbox loop, but you **draft instead of send**. ("auto draft chat public"
+live-inbox loop, but you **draft instead of send**. ("draft chat public"
 works like every mode's public variant — new handles walk in and get drafts
 too.) Per message:
 
@@ -347,8 +347,8 @@ missing → ask, never invent. **Nothing sends without the user's explicit go** 
 that's the mode's contract (drafting only makes
 sense while the user watches the feed).
 
-**Entry points:** "auto draft chat" / "draft chat" cold-starts it (the
-`auto_draft_chat` tool, then `read_messages` immediately — backlog gets drafts too). "draft" mid-chat flips a
+**Entry points:** "draft chat" (or the legacy "auto draft chat") cold-starts it (the
+`draft_chat` tool, then `read_messages` immediately — backlog gets drafts too). "draft" mid-chat flips a
 running chat or auto chat in place (same waker, same feed; unanswered items get
 drafts); "auto" upgrades draft → full auto; the user asking to take it back
 ("I'll take it", "normal chat") drops to plain chat; "stop" ends it.

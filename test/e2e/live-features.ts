@@ -160,8 +160,8 @@ assert.doesNotMatch(chatRO.note ?? "", /WRITE SCOPE/);
 const chatPlain = await call(sam.client, "chat", {});
 assert.doesNotMatch(chatPlain.command, /MESSENGER_CHAT_PUBLIC/);
 assert.match(chatPlain.note ?? "", /NEW-HANDLE GATE/);
-const chatDraft = await call(sam.client, "auto_draft_chat", {});
-assert.match(chatDraft.note ?? "", /AUTO DRAFT CHAT MODE/);
+const chatDraft = await call(sam.client, "draft_chat", {});
+assert.match(chatDraft.note ?? "", /DRAFT CHAT MODE/);
 // The public variant: flag travels in the waker env, note flips gate → public.
 const chatPub = await call(sam.client, "chat", { public: true });
 assert.match(chatPub.command, /MESSENGER_CHAT_PUBLIC=1/);
@@ -171,7 +171,7 @@ const autoPub = await call(sam.client, "auto_chat", { read_only: true, public: t
 assert.match(autoPub.command, /MESSENGER_CHAT_PUBLIC=1/);
 assert.match(autoPub.note ?? "", /READ-ONLY DESK/);
 assert.match(autoPub.note ?? "", /PUBLIC MODE/);
-console.log("8. chat / auto_draft_chat / auto_chat wakers (incl. read_only + public): ok");
+console.log("8. chat / draft_chat / auto_chat wakers (incl. read_only + public): ok");
 
 // 9. Headless CLI send from Niels's home → lands for Sam.
 const out = execFileSync("node", [join(ROOT, "src", "server-net.ts"), "send", "Sam", "deploy", "landed,", "your", "move"], {

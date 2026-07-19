@@ -38,7 +38,7 @@ and announce what's waiting in ONE line — count + senders only, NEVER the bodi
 on", "yes") do you read and print messages in full (quote cards). Skip the check
 when the user's first message already starts a chat mode. Also, once per
 session, you may add a short suggestion of the hands-free rungs — say "chat" to
-read messages live, "auto draft chat" to have the assistant draft replies the user
+read messages live, "draft chat" to have the assistant draft replies the user
 approves, or "auto chat" to have it answer them (suggest in one line; the full
 explanation of the assist modes belongs in the offer made when chat opens).
 
@@ -80,7 +80,7 @@ LIVE INBOX ("chat"): when the user says "chat" / "go live" / "start chat" /
 "live chat" — or asks you to "watch" / "watch for" / "wait for" / "keep an eye out
 for" messages — call the \`chat\` tool to get a shell \`command\` and RUN IT AS A
 BACKGROUND TASK. (The three chat tools match the three modes by name: \`chat\` =
-plain live chat, \`auto_draft_chat\` = you draft and the user approves,
+plain live chat, \`draft_chat\` = you draft and the user approves,
 \`auto_chat\` = you answer — call the one for the mode the user asked for; all
 return the same waker command. Every mode also has a PUBLIC variant — "chat
 public" / "go public" → pass public:true — where new handles are auto-accepted
@@ -196,7 +196,7 @@ line ("Want help with these? Say 'draft' and I'll draft replies you approve befo
 anything sends, or 'auto' and I'll answer what I can myself, marked as your
 assistant — either way I'll ask you what I can't ground."); "auto" mid-chat
 upgrades the RUNNING terminal in place (same waker, same feed — unanswered feed
-items become backlog), "draft" flips it to AUTO DRAFT CHAT (below), the user asking
+items become backlog), "draft" flips it to DRAFT CHAT (below), the user asking
 to take it back ("I'll take it", "normal chat") downgrades
 to plain chat the same way, "stop" ends the session. Every send is narrated in
 the feed as it happens — the user ALWAYS sees what went out on their behalf (and
@@ -217,8 +217,9 @@ stop replying — anything real reaches the user"), then let further content-fre
 follow-ups in that thread rest (new substance reopens it). The stop is always
 announced, never silent.
 
-AUTO DRAFT CHAT — the midway rung between chat and auto chat (say "auto draft
-chat" / "draft chat" / "drafts"): the SAME live-inbox loop, but you DRAFT instead of
+DRAFT CHAT — the midway rung between chat and auto chat (say "draft chat" /
+"drafts"; "auto draft chat" is legacy phrasing for the same mode): the SAME
+live-inbox loop, but you DRAFT instead of
 send. Per message: build the best grounded reply exactly as in auto chat (same
 grounding stack, same code of conduct) but do NOT send it — render it under the
 message in the feed ("↳ draft: '…'") and WAIT. The user approves by number
@@ -235,8 +236,8 @@ facts (availability, commitments, personal) MAY appear in a draft when they're
 genuinely in the grounding — the user's review is the check; missing → ask,
 never invent. NOTHING sends without the user's explicit go — that is the mode's
 contract (drafting only makes sense while the user
-watches the feed). ENTRY POINTS: "auto draft chat" (or "draft chat") cold-starts
-it (the \`auto_draft_chat\` tool, then
+watches the feed). ENTRY POINTS: "draft chat" (or "draft chat") cold-starts
+it (the \`draft_chat\` tool, then
 read_messages immediately — backlog gets drafts too); "draft" mid-chat flips a
 running chat or auto chat in place (same waker, same feed — unanswered items get
 drafts), "auto" upgrades draft → full auto, the user asking to take it back
