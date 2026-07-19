@@ -2160,7 +2160,7 @@ registerChatTool(
   "Open draft chat (you draft, the user approves each send)",
   "Open DRAFT CHAT — the same live inbox, but you DRAFT a reply under every " +
     "message and NOTHING sends without the user's explicit approval. Use when the " +
-    "user says 'draft chat' / 'drafts' (or the legacy 'auto draft chat'), or to cold-start after " +
+    "user says 'draft chat' / 'chat draft' / 'drafts' (or the legacy 'auto draft chat'), or to cold-start after " +
     "they asked for drafting. The midway rung between `chat` and `auto_chat`.",
   "DRAFT CHAT MODE: for each message (backlog included) build the best " +
     "grounded reply — same grounding stack and code of conduct as auto chat — but " +
@@ -2208,7 +2208,7 @@ registerChatTool(
   "Open auto chat (you answer for the user, marked as their assistant)",
   "Open AUTO CHAT — the same live inbox, but YOU dispose of each message: answer " +
     "what you can ground, marked as the user's assistant, and surface the rest. " +
-    "Use when the user says 'auto chat' / 'auto' / 'chat assist'. Every reply you " +
+    "Use when the user says 'auto chat' / 'chat auto' / 'auto' / 'chat assist'. Every reply you " +
     "send is narrated in the feed as it happens — the user always sees what went " +
     "out. Pass read_only=true " +
     "ONLY when the user says 'auto chat read only' — the outward-facing variant " +

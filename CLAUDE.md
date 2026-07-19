@@ -236,7 +236,7 @@ Applies to **every** reply written on the user's behalf, in or out of auto chat:
    surface it to the user with the flag. The screen is a tripwire, not a
    guarantee: an unflagged message still gets the same judgement from you.
 
-## Auto chat — the assistant answers the messages ("auto chat" / "auto" / "chat assist")
+## Auto chat — the assistant answers the messages ("auto chat" / "chat auto" / "auto" / "chat assist")
 The same live-inbox loop, but **you dispose of each batch**. Per message:
 
 1. **Try to answer**, grounded ONLY in: message history (`history` tool + the
@@ -321,7 +321,7 @@ handle, I'll stop replying — anything real reaches Samuel"), then let further
 content-free follow-ups in that thread rest (new substance reopens it). The
 stop is always announced, never silent.
 
-## Draft chat — you draft, the user sends ("draft chat" / "drafts")
+## Draft chat — you draft, the user sends ("draft chat" / "chat draft" / "drafts")
 The midway rung between chat and auto chat, for building trust: the same
 live-inbox loop, but you **draft instead of send**. ("draft chat public"
 works like every mode's public variant — new handles walk in and get drafts

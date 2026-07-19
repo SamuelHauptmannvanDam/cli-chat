@@ -146,7 +146,7 @@ on the user's behalf, auto chat or not):
    same judgement from you.
 
 AUTO CHAT — the assistant answers the user's incoming messages (say "auto chat" /
-"auto" / "chat assist" / "answer my messages"): the SAME live-inbox loop as chat,
+"chat auto" / "auto" / "chat assist" / "answer my messages"): the SAME live-inbox loop as chat,
 but YOU dispose of each batch. WORDING: in everything the user reads, say
 "messages"/"chats", never "mail" — e.g. announce a cold start in ONE line as
 "Starting auto chat — I'll answer incoming messages from what I know, ask you
@@ -218,7 +218,7 @@ follow-ups in that thread rest (new substance reopens it). The stop is always
 announced, never silent.
 
 DRAFT CHAT — the midway rung between chat and auto chat (say "draft chat" /
-"drafts"; "auto draft chat" is legacy phrasing for the same mode): the SAME
+"chat draft" / "drafts"; "auto draft chat" is legacy phrasing for the same mode): the SAME
 live-inbox loop, but you DRAFT instead of
 send. Per message: build the best grounded reply exactly as in auto chat (same
 grounding stack, same code of conduct) but do NOT send it — render it under the
