@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cli-chat — your coding agent is your messenger</title>
+<meta name="description" content="End-to-end encrypted messaging for coding-agent CLIs. Tell your agent 'write Sam: …' — it encrypts, delivers, and reads replies back. Claude Code, Gemini CLI, Copilot, Codex, any MCP CLI.">
+<meta property="og:title" content="cli-chat — your coding agent is your messenger">
+<meta property="og:description" content="End-to-end encrypted messaging for coding-agent CLIs. One npx away.">
+<meta property="og:url" content="https://cli-chat.dev">
+<meta property="og:type" content="website">
+<meta property="og:image" content="https://cli-chat.dev/og.png">
+<meta property="og:image:width" content="2400">
+<meta property="og:image:height" content="1260">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://cli-chat.dev/og.png">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230b0a08'/%3E%3Ctext x='32' y='44' font-family='monospace' font-size='36' font-weight='bold' fill='%23f5a742' text-anchor='middle'%3E%E2%9D%AF%3C/text%3E%3C/svg%3E">
+<style>
+:root {
+  --bg: #000000;
+  --bg-raised: #12100c;
+  --bg-card: #14120d;
+  --ink: #e8e1d1;
+  --dim: #8a8272;
+  --faint: #4d473b;
+  --line: #262218;
+  --amber: #f5a742;
+  --green: #8fd460;
+  --cyan: #6cc7d1;
+  --red: #e2695e;
+  --mono: ui-monospace, 'SF Mono', Menlo, Monaco, 'Cascadia Mono', Consolas, monospace;
+  --serif: var(--mono);
+  --display: var(--mono);
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 14px;
+  line-height: 1.7;
+  overflow-x: hidden;
+  cursor: crosshair;
+}
+::selection { background: var(--amber); color: var(--bg); }
+a { color: var(--cyan); text-decoration: none; border-bottom: 1px solid transparent; transition: border-color .15s; }
+a:hover { border-bottom-color: var(--cyan); }
+
+/* grain overlay */
+body::after {
+  content: ""; position: fixed; inset: 0; z-index: 50; pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
+}
+
+.wrap { max-width: 980px; margin: 0 auto; padding: 0 24px; }
+
+/* agenda — fixed section directory, current section lit */
+.agenda {
+  position: fixed; left: 28px; top: 50%; transform: translateY(-50%);
+  z-index: 40; display: none; flex-direction: column; gap: 15px;
+  font-size: 11.5px; letter-spacing: .05em;
+}
+@media (min-width: 1280px) { .agenda { display: flex; } }
+.agenda a { color: var(--ink); opacity: .28; border-bottom: none; transition: opacity .25s, color .25s; }
+.agenda a:hover { opacity: .7; }
+.agenda a.active { opacity: 1; color: var(--amber); }
+.agenda a .idx { color: var(--faint); margin-right: 9px; }
+.agenda a.active .idx { color: var(--amber); }
+
+/* ---- hero ---- */
+.hero {
+  min-height: 100vh;
+  display: flex; flex-direction: column; justify-content: center;
+  padding: 70px 24px; position: relative;
+}
+.hero::before {
+  content: ""; position: absolute; top: -200px; left: 50%; transform: translateX(-50%);
+  width: 900px; height: 600px; pointer-events: none;
+  background: radial-gradient(ellipse at center, rgba(245,167,66,.07), transparent 65%);
+}
+.kicker { color: var(--dim); font-size: 12px; letter-spacing: .12em; margin-bottom: 28px; }
+.kicker b { color: var(--green); font-weight: 400; }
+h1 {
+  font-family: var(--display);
+  font-size: clamp(26px, 5.4vw, 52px);
+  font-weight: 700; line-height: 1.2; letter-spacing: -.01em; margin-bottom: 28px;
+}
+h1 .prompt { color: var(--green); }
+h1 .cmd { color: var(--ink); }
+h1 .arg { color: var(--amber); }
+.sub {
+  font-family: var(--serif); font-size: 21px; font-weight: 400; line-height: 1.55;
+  color: var(--dim); max-width: 620px; margin-bottom: 40px;
+}
+.sub em { color: var(--ink); font-style: italic; }
+.cta-row { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; }
+.btn {
+  display: inline-block; font-family: var(--mono); font-size: 13px; font-weight: 600;
+  padding: 13px 26px; border: 1px solid var(--amber); color: var(--amber);
+  background: var(--bg); cursor: pointer; letter-spacing: .04em;
+  transition: background .15s, color .15s;
+}
+.btn:hover { background: var(--amber); color: var(--bg); border-bottom-color: var(--amber); }
+.btn.ghost { border-color: var(--line); color: var(--dim); }
+.btn.ghost:hover { background: var(--bg-card); color: var(--ink); }
+
+.install-note { font-size: 11.5px; color: var(--faint); margin-top: 14px; }
+.install-note em { color: var(--dim); font-style: normal; }
+
+/* ---- terminal demo ---- */
+.term {
+  margin-top: 72px; border: 1px solid var(--line); background: rgba(18, 16, 12, .92);
+  box-shadow: 0 30px 80px rgba(0,0,0,.5), 0 0 0 1px rgba(245,167,66,.04);
+}
+.term-bar {
+  display: flex; align-items: center; gap: 8px; padding: 10px 14px;
+  border-bottom: 1px solid var(--line); color: var(--faint); font-size: 11px;
+}
+.term-bar .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--line); }
+.term-bar .dot:nth-child(1) { background: #513c33; }
+.term-bar .dot:nth-child(2) { background: #4f4630; }
+.term-bar .dot:nth-child(3) { background: #35472e; }
+.term-bar span { margin-left: 10px; }
+.term-body { padding: 22px 22px 26px; min-height: 300px; font-size: 13px; line-height: 1.9; }
+.t-line { white-space: pre-wrap; word-break: break-word; }
+.t-line .p { color: var(--green); }
+.t-line.agent { color: var(--dim); }
+.t-line.card-sender { color: var(--ink); font-weight: 600; margin-top: 6px; }
+.t-line.card-sender .env { color: var(--amber); }
+.t-line.quote { color: var(--ink); border-left: 2px solid var(--amber); padding-left: 12px; margin-left: 2px; }
+.t-line.sent { color: var(--green); margin-top: 4px; }
+.caret {
+  display: inline-block; width: 8px; height: 15px; background: var(--amber);
+  vertical-align: text-bottom; animation: blink 1.06s steps(1) infinite;
+}
+@keyframes blink { 50% { opacity: 0; } }
+
+/* ---- sections ---- */
+section.wrap {
+  border-top: 1px solid var(--line);
+  min-height: 100vh;
+  margin-top: 22vh;
+  display: flex; flex-direction: column; justify-content: flex-start;
+  padding: 110px 24px;
+}
+.sec-label { color: var(--faint); font-size: 12px; letter-spacing: .1em; margin-bottom: 26px; }
+.sec-label b { color: var(--amber); font-weight: 400; }
+h2 { font-family: var(--display); font-size: clamp(20px, 3vw, 30px); font-weight: 700; line-height: 1.35; margin-bottom: 26px; }
+.lede { font-family: var(--serif); font-size: 18px; color: var(--dim); max-width: 640px; line-height: 1.6; }
+.lede em { color: var(--ink); }
+
+/* steps */
+.steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); margin-top: 36px; }
+.step { background: var(--bg); padding: 28px 24px; transition: background .2s; }
+.step:hover { background: var(--bg-card); }
+.step .n { color: var(--amber); font-size: 12px; margin-bottom: 14px; }
+.step h3 { font-size: 14px; font-weight: 600; margin-bottom: 10px; }
+.step p { font-family: var(--serif); font-size: 15.5px; color: var(--dim); line-height: 1.55; }
+.step code { font-family: var(--mono); font-size: 11.5px; color: var(--green); background: var(--bg-raised); padding: 2px 6px; }
+
+/* features */
+.grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); margin-top: 36px; }
+.cell { background: var(--bg); padding: 26px 22px; transition: background .2s; }
+.cell:hover { background: var(--bg-card); }
+.cell .ico { font-size: 17px; margin-bottom: 14px; }
+.cell h3 { font-size: 13.5px; font-weight: 600; margin-bottom: 8px; }
+.cell p { font-family: var(--serif); font-size: 15px; color: var(--dim); line-height: 1.5; }
+
+/* modes */
+.modes { display: flex; flex-direction: column; gap: 32px; margin-top: 36px; }
+.mode {
+  display: grid; grid-template-columns: 1fr 1.5fr; gap: 28px;
+  border: 1px solid var(--line); background: rgba(18, 16, 12, .92); padding: 28px 26px;
+  position: relative; transition: border-color .2s;
+}
+.mode:hover { border-color: var(--faint); }
+.mode.featured { border-color: rgba(245,167,66,.35); box-shadow: 0 0 40px rgba(245,167,66,.04); }
+.mode .tag { position: absolute; top: -9px; left: 20px; background: var(--bg); padding: 0 8px; font-size: 11px; color: var(--amber); letter-spacing: .06em; }
+.mode h3 { font-size: 15px; font-weight: 600; margin: 6px 0 10px; }
+.mode-info > p { font-family: var(--serif); font-size: 15.5px; color: var(--dim); line-height: 1.55; }
+.mode-info .switch-note { font-family: var(--mono); font-size: 11px; color: var(--faint); margin-top: 14px; }
+.feed {
+  font-size: 12px; line-height: 1.85; background: rgba(11, 10, 8, .9); border: 1px solid var(--line);
+  padding: 16px 18px; align-self: start;
+}
+.feed .fu { color: var(--green); }
+.feed .fa { color: var(--dim); }
+.feed .fs { font-weight: 600; }
+.feed .fs .env { color: var(--amber); }
+.feed .fq { border-left: 2px solid var(--amber); padding-left: 10px; color: var(--dim); }
+.feed .fr { color: var(--green); }
+.feed .fd { color: var(--cyan); }
+.feed .fw { color: var(--red); }
+
+/* install */
+.tabs { display: flex; gap: 0; margin-top: 8px; border: 1px solid var(--line); border-bottom: none; width: fit-content; max-width: 100%; overflow-x: auto; }
+.tab {
+  font-family: var(--mono); font-size: 12px; padding: 11px 20px; background: var(--bg);
+  color: var(--dim); border: none; border-right: 1px solid var(--line); cursor: pointer;
+  white-space: nowrap; transition: color .15s, background .15s;
+}
+.tab:last-child { border-right: none; }
+.tab.active { background: var(--bg-card); color: var(--amber); }
+.cmdbox {
+  border: 1px solid var(--line); background: var(--bg-raised); padding: 22px;
+  display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+}
+.cmdbox code { font-size: 13px; color: var(--green); word-break: break-all; }
+.cmdbox code .flag { color: var(--dim); }
+.copy {
+  font-family: var(--mono); font-size: 11.5px; padding: 8px 16px; background: var(--bg);
+  border: 1px solid var(--faint); color: var(--dim); cursor: pointer; transition: all .15s;
+}
+.copy:hover { border-color: var(--amber); color: var(--amber); }
+.after-note { font-family: var(--serif); font-size: 16px; color: var(--dim); margin-top: 26px; max-width: 620px; line-height: 1.6; }
+.after-note em { color: var(--ink); }
+
+/* footer */
+footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
+.foot { display: flex; justify-content: space-between; gap: 24px; flex-wrap: wrap; color: var(--faint); font-size: 12px; line-height: 2.1; }
+.foot b { color: var(--dim); font-weight: 400; }
+
+/* tmux status bar */
+.statusbar {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 60;
+  display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  background: var(--bg-raised); border-top: 1px solid var(--line);
+  font-size: 11px; color: var(--dim); padding: 6px 14px;
+}
+.statusbar .seg-l { color: var(--green); }
+.statusbar .seg-l b { color: var(--bg); background: var(--green); font-weight: 400; padding: 1px 7px; margin-right: 8px; }
+.statusbar .seg-r { display: flex; gap: 16px; }
+.statusbar .live { color: var(--amber); }
+.statusbar .live::before { content: "●"; margin-right: 6px; animation: blink 2.2s steps(1) infinite; }
+
+@media (max-width: 800px) {
+  .steps, .grid, .modes { grid-template-columns: 1fr; }
+  .mode { grid-template-columns: 1fr; }
+  .hero { padding-top: 64px; }
+  section.wrap { min-height: auto; margin-top: 10vh; padding: 120px 24px 70px; }
+  .statusbar .seg-r span:first-child { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .caret { animation: none; }
+  .statusbar .live::before { animation: none; }
+  * { transition: none !important; }
+}
+</style>
+</head>
+<body>
+<nav class="agenda" id="agenda">
+  <a href="#top" class="active"><span class="idx">00</span>install</a>
+  <a href="#modes"><span class="idx">01</span>inbox → autopilot</a>
+  <a href="#desk"><span class="idx">02</span>front desk</a>
+  <a href="#handles"><span class="idx">03</span>handles</a>
+  <a href="#context"><span class="idx">04</span>context</a>
+  <a href="#contact"><span class="idx">05</span>say hi</a>
+</nav>
+
+<header class="hero wrap" id="top">
+  <p class="kicker">// cli-chat <b>·</b> end-to-end encrypted <b>·</b> lives in your coding CLI</p>
+  <h1><span class="prompt">❯ </span><span class="cmd" data-scramble>write sam:</span> <span class="arg" data-scramble>the deploy landed</span></h1>
+  <p class="sub">Your coding agent is now your messenger. <em>You never leave the terminal.</em></p>
+  <div class="tabs" id="tabs">
+    <button class="tab active" data-cmd="claude mcp add cli-chat --scope user -- npx -y cli-chat-mcp@latest">Claude Code</button>
+    <button class="tab" data-cmd="gemini mcp add -s user cli-chat npx -y cli-chat-mcp@latest">Gemini CLI</button>
+    <button class="tab" data-cmd="copilot mcp add cli-chat -- npx -y cli-chat-mcp@latest">Copilot CLI</button>
+    <button class="tab" data-cmd="codex mcp add cli-chat -- npx -y cli-chat-mcp@latest">Codex CLI</button>
+    <button class="tab" data-cmd="npx -y cli-chat-mcp@latest">Other MCP CLI</button>
+  </div>
+  <div class="cmdbox">
+    <code id="cmd">claude mcp add cli-chat --scope user -- npx -y cli-chat-mcp@latest</code>
+    <button class="copy" id="copyBtn">copy</button>
+  </div>
+  <p class="install-note">Then restart your CLI, allow the new <em>cli-chat</em> server when it asks, and say <em>"what's my handle?"</em> — that's the whole setup. Needs Node 22+.</p>
+
+  <div class="term">
+    <div class="term-bar"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span>samuel@laptop — claude — 80×24</span></div>
+    <div class="term-body" id="demo"></div>
+  </div>
+</header>
+
+<section class="wrap" id="modes">
+  <p class="sec-label"><b>##</b> 01 · three gears</p>
+  <h2 data-scramble>From inbox to autopilot, at your pace.</h2>
+  <p class="lede">Three modes. Switch a running inbox with one word.</p>
+  <div class="modes">
+    <div class="mode">
+      <div class="mode-info">
+        <p class="tag">"chat"</p>
+        <h3>Live inbox — you answer</h3>
+        <p>Your inbox streams into the session. Answer one, some, or all in a line.</p>
+        <p class="switch-note">say "stop" to close it</p>
+      </div>
+      <div class="feed">
+        <p class="fu">❯ chat</p>
+        <p class="fa">· listening…</p>
+        <p class="fs"><span class="env">📨</span> Niels · #1</p>
+        <p class="fq">did the deploy go out this morning?</p>
+        <p class="fs"><span class="env">📨</span> Mette · #2</p>
+        <p class="fq">lunch thursday?</p>
+        <p class="fu">❯ 1: yes, at 9 — 2: can't, I have standup</p>
+        <p class="fr">↳ 📤 Sent to Niels — "Yes, went out at 9."</p>
+        <p class="fr">↳ 📤 Sent to Mette — "Can't — I have standup."</p>
+      </div>
+    </div>
+    <div class="mode featured">
+      <div class="mode-info">
+        <p class="tag">"auto draft chat"</p>
+        <h3>Assistant drafts — you send</h3>
+        <p>Every message gets a suggested reply. <em>Nothing sends until you say so.</em></p>
+        <p class="switch-note">"draft" flips a running chat into this mode</p>
+      </div>
+      <div class="feed">
+        <p class="fu">❯ auto draft chat</p>
+        <p class="fs"><span class="env">📨</span> Sam · #1</p>
+        <p class="fq">any chance you can review my PR today?</p>
+        <p class="fd">↳ ✏️ draft for Sam: "Yes — after standup, around 11."</p>
+        <p class="fs"><span class="env">📨</span> Niels · #2</p>
+        <p class="fq">what's the new ingest endpoint called?</p>
+        <p class="fd">↳ ✏️ draft for Niels: "/v2/ingest — merged this morning."</p>
+        <p class="fu">❯ send 2 · 1: make it after lunch</p>
+        <p class="fr">↳ 📤 Sent to Niels — "/v2/ingest — merged this morning."</p>
+        <p class="fr">↳ 📤 Sent to Sam — "Yes — after lunch."</p>
+      </div>
+    </div>
+    <div class="mode">
+      <div class="mode-info">
+        <p class="tag">"auto chat"</p>
+        <h3>Assistant answers — marked as itself</h3>
+        <p>It answers from <em>the directory you opened it in</em> — code, docs, git history — marked as your assistant. What it can't ground, it asks <em>you</em>.</p>
+        <p class="switch-note">"manual" takes the feed back any time</p>
+      </div>
+      <div class="feed">
+        <p class="fu">❯ auto chat, quiet</p>
+        <p class="fs"><span class="env">📨</span> Jonas · #1</p>
+        <p class="fq">is the export API rate-limited?</p>
+        <p class="fr">↳ 📤 sent as assistant — "Yes, 60 req/min per key."</p>
+        <p class="fs"><span class="env">📨</span> Jonas · #2</p>
+        <p class="fq">and what would enterprise pricing look like?</p>
+        <p class="fw">↳ ⚠️ needs you: Jonas is asking about enterprise pricing</p>
+        <p class="fa">…later: "handled 4 while you coded — 1 waiting on you"</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="wrap" id="desk">
+  <p class="sec-label"><b>##</b> 02 · run it as</p>
+  <h2 data-scramble>The front desk for your team.</h2>
+  <p class="lede">No framework, no webhook, no deploy. Open auto chat in a repo and <em>it answers from that directory</em> — the code, the docs, the git history.</p>
+  <div class="grid">
+    <div class="cell"><p class="ico">🤝</p><h3>Team bot</h3><p>Teammates ask your assistant — "which branch is the fix on?" — while you stay heads-down.</p></div>
+    <div class="cell"><p class="ico">🎧</p><h3>Customer desk</h3><p>Point it at your docs. Customers get grounded answers; the rest lands with you. Invite-only, so no spam.</p></div>
+    <div class="cell"><p class="ico">⚙️</p><h3>Scripts &amp; CI</h3><p>Pipelines message you headlessly — <code style="font-family:var(--mono);font-size:11.5px;color:var(--green)">npx cli-chat-mcp send ops "deploy landed"</code></p></div>
+  </div>
+</section>
+
+<section class="wrap" id="handles">
+  <p class="sec-label"><b>##</b> 03 · how it works</p>
+  <h2 data-scramble>Swap handles once. Message forever.</h2>
+  <p class="lede">A <em>6-character handle</em> is your phone number.</p>
+  <div class="steps">
+    <div class="step">
+      <p class="n">[1/3]</p>
+      <h3>Add it to your CLI</h3>
+      <p>One command, any MCP-capable CLI.</p>
+    </div>
+    <div class="step">
+      <p class="n">[2/3]</p>
+      <h3>Log in with your email</h3>
+      <p>Your agent sends a magic link. Click it — done.</p>
+    </div>
+    <div class="step">
+      <p class="n">[3/3]</p>
+      <h3>Share your handle</h3>
+      <p>Ask <em>"what's my handle?"</em>, swap with a friend. Then: <code>write Sam: hey</code></p>
+    </div>
+  </div>
+</section>
+
+<section class="wrap" id="context">
+  <p class="sec-label"><b>##</b> 04 · what you get</p>
+  <h2 data-scramble>A messenger that already knows your context.</h2>
+  <div class="grid">
+    <div class="cell"><p class="ico">🔐</p><h3>Sealed in transit</h3><p>End-to-end encrypted. The mailbox only ever sees ciphertext.</p></div>
+    <div class="cell"><p class="ico">🪪</p><h3>6-char handles</h3><p>One short handle. Rotate or disable it any time.</p></div>
+    <div class="cell"><p class="ico">🧳</p><h3>Log in</h3><p>Email login, any device — contacts and history included.</p></div>
+    <div class="cell"><p class="ico">🔀</p><h3>Cross-CLI</h3><p>Claude Code to Gemini to Copilot — the wire doesn't care.</p></div>
+    <div class="cell"><p class="ico">🧠</p><h3>Messages are memory</h3><p>"What did Niels say about the endpoint?" — recall any thread, any session.</p></div>
+    <div class="cell"><p class="ico">📟</p><h3>No new UI</h3><p>No app. Your agent is the interface.</p></div>
+  </div>
+</section>
+
+<section class="wrap" id="contact">
+  <p class="sec-label"><b>##</b> 05 · say hi</p>
+  <h2 data-scramble>Send feedback.</h2>
+  <p class="lede">Our handle is <em>FeedBk</em>.</p>
+  <div class="feed" style="max-width: 560px; margin-top: 28px;">
+    <p class="fu">❯ write feedback: loving it — any chance of group threads?</p>
+    <p class="fr">↳ 📤 Sent to cli-chat feedback — it lands in our CLI, E2E sealed.</p>
+  </div>
+  <p class="after-note">Not installed yet? <a href="mailto:feedback@cli-chat.dev">feedback@cli-chat.dev</a> works too.</p>
+</section>
+
+<footer>
+  <div class="wrap foot">
+    <div>
+      <p><b>cli-chat</b> · a messenger for the agent age</p>
+      <p>© 2026 · <a href="https://www.npmjs.com/package/cli-chat-mcp">npm: cli-chat-mcp</a> · PolyForm Noncommercial 1.0.0</p>
+    </div>
+    <div>
+      <p>Questions, ideas, bugs?</p>
+      <p>Every account ships with a <b>feedback</b> contact — <b>"write feedback: …"</b> reaches the makers.</p>
+    </div>
+  </div>
+</footer>
+
+<div class="statusbar">
+  <span class="seg-l"><b>cli-chat</b>0:landing*</span>
+  <span class="seg-r"><span>E2E sealed · v0.15.0</span><span class="live">listening</span></span>
+</div>
+
+<script>
+(function () {
+  var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var touch = window.matchMedia('(hover: none)').matches;
+  var CIPHER = '!<>-_\\/[]{}=+*^?#▒▓░@$%&';
+  function rc() { return CIPHER[Math.floor(Math.random() * CIPHER.length)]; }
+
+  /* ---- scramble-decrypt headings ---- */
+  function scramble(el) {
+    if (reduced || el.dataset.busy) return;
+    el.dataset.busy = '1';
+    var final = el.dataset.text || el.textContent;
+    el.dataset.text = final;
+    var frame = 0, total = Math.max(14, final.length * 1.6);
+    (function step() {
+      var reveal = Math.floor((frame / total) * final.length), out = '';
+      for (var i = 0; i < final.length; i++) {
+        out += i < reveal ? final[i] : (final[i] === ' ' ? ' ' : rc());
+      }
+      el.textContent = out;
+      if (frame++ < total) requestAnimationFrame(step);
+      else { el.textContent = final; delete el.dataset.busy; }
+    })();
+  }
+  var els = document.querySelectorAll('[data-scramble]');
+  if ('IntersectionObserver' in window && !reduced) {
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        if (en.isIntersecting) { scramble(en.target); io.unobserve(en.target); }
+      });
+    }, { threshold: .4 });
+    els.forEach(function (el) { io.observe(el); el.addEventListener('mouseenter', function () { scramble(el); }); });
+  }
+
+  /* ---- typed terminal demo ---- */
+  var demo = document.getElementById('demo');
+  var SCRIPT = [
+    { t: 'user',  html: '<span class="p">❯</span> any messages?' },
+    { t: 'agent', html: '📬 1 new message from Niels — want me to read it?' },
+    { t: 'user',  html: '<span class="p">❯</span> read it' },
+    { t: 'sender', html: '<span class="env">📨</span> Niels · #1' },
+    { t: 'quote', html: 'Did the deploy go out this morning?' },
+    { t: 'user',  html: '<span class="p">❯</span> tell him yes, went out at 9' },
+    { t: 'sent',  html: '↳ 📤 Sent to Niels — "Yes, went out at 9."' },
+    { t: 'user',  html: '<span class="p">❯</span> <span class="caret"></span>' }
+  ];
+  function cls(t) { return t === 'user' ? 't-line' : t === 'sender' ? 't-line card-sender' : 't-line ' + t; }
+  if (reduced || touch) {
+    SCRIPT.forEach(function (l) { var d = document.createElement('div'); d.className = cls(l.t); d.innerHTML = l.html; demo.appendChild(d); });
+  } else {
+    var li = 0;
+    function typeLine(el, html, done) {
+      /* type only plain-text lines char-by-char; html lines land whole */
+      var m = html.match(/^<span class="p">❯<\/span> (.*)$/);
+      if (!m) { el.innerHTML = html; return setTimeout(done, 500); }
+      var text = m[1], i = 0;
+      el.innerHTML = '<span class="p">❯</span> <span class="typed"></span><span class="caret"></span>';
+      var t = el.querySelector('.typed');
+      (function ch() {
+        if (i < text.length) { t.textContent += text[i++]; setTimeout(ch, 34 + Math.random() * 46); }
+        else { el.querySelector('.caret').remove(); setTimeout(done, 420); }
+      })();
+    }
+    (function next() {
+      if (li >= SCRIPT.length) {
+        return setTimeout(function () { demo.innerHTML = ''; li = 0; next(); }, 7000);
+      }
+      var l = SCRIPT[li++], d = document.createElement('div');
+      d.className = cls(l.t); demo.appendChild(d);
+      if (l.t === 'user' && li < SCRIPT.length) typeLine(d, l.html, next);
+      else { d.innerHTML = l.html; setTimeout(next, l.t === 'agent' ? 900 : 650); }
+    })();
+  }
+
+  /* ---- agenda scroll-spy ---- */
+  (function () {
+    var links = document.querySelectorAll('.agenda a');
+    var byId = {};
+    links.forEach(function (a) { byId[a.getAttribute('href').slice(1)] = a; });
+    var spy = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        if (en.isIntersecting && byId[en.target.id]) {
+          links.forEach(function (a) { a.classList.remove('active'); });
+          byId[en.target.id].classList.add('active');
+        }
+      });
+    }, { rootMargin: '-40% 0px -55% 0px' });
+    Object.keys(byId).forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) spy.observe(el);
+    });
+  })();
+
+  /* ---- install tabs + copy ---- */
+  var cmdEl = document.getElementById('cmd');
+  document.querySelectorAll('.tab').forEach(function (t) {
+    t.addEventListener('click', function () {
+      document.querySelectorAll('.tab').forEach(function (x) { x.classList.remove('active'); });
+      t.classList.add('active');
+      cmdEl.textContent = t.dataset.cmd;
+    });
+  });
+  var copyBtn = document.getElementById('copyBtn');
+  copyBtn.addEventListener('click', function () {
+    navigator.clipboard.writeText(cmdEl.textContent).then(function () {
+      copyBtn.textContent = 'copied ✓';
+      setTimeout(function () { copyBtn.textContent = 'copy'; }, 1600);
+    });
+  });
+})();
+</script>
+</body>
+</html>

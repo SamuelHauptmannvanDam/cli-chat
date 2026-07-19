@@ -1,0 +1,12 @@
+# Cloudflare Workers deploy for the cli-chat.dev landing site (static assets only).
+# Live on the apex custom domain; workers.dev URL stays on as a preview alias.
+name = "cli-chat-site"
+compatibility_date = "2026-01-01"
+workers_dev = true
+routes = [
+  { pattern = "cli-chat.dev", custom_domain = true },
+  { pattern = "www.cli-chat.dev", custom_domain = true },
+]
+
+[assets]
+directory = "./public"
