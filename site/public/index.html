@@ -173,6 +173,17 @@ a.card:hover .go { color: var(--amber); }
   padding: 16px 18px; align-self: start;
 }
 
+/* first-run demo: mimics the agent CLI's own transcript (typed live, no window chrome) */
+.cc { font-size: 12px; line-height: 1.85; padding: 12px 0 18px; background: rgba(11, 10, 8, .9); border: 1px solid var(--line); align-self: start; }
+.cc p { padding: 0 18px 0 34px; text-indent: -16px; }
+.cc .in { color: var(--ink); padding: 0 18px; margin-top: 10px; text-indent: 0; }
+.cc .in .p { color: var(--faint); margin-right: 6px; }
+.cc .dim { color: var(--faint); }
+.cc .ind { padding-left: 34px; text-indent: 0; }
+.cc .g { margin-top: 10px; }
+.cc .h { color: #96a3f2; }
+.cc .sent { color: var(--green); }
+
 /* install */
 .tabs { display: flex; gap: 0; margin-top: 8px; border: 1px solid var(--line); border-bottom: none; width: fit-content; max-width: 100%; overflow-x: auto; }
 .installbox { margin-top: 0; max-width: none; }
@@ -216,8 +227,8 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
   <a href="#top" class="active"><span class="idx">00</span>install</a>
   <a href="#modes"><span class="idx">01</span>inbox → autopilot</a>
   <a href="#desk"><span class="idx">02</span>front desk</a>
-  <a href="#handles"><span class="idx">03</span>handles</a>
-  <a href="#context"><span class="idx">04</span>context</a>
+  <a href="#handles"><span class="idx">03</span>first run</a>
+  <a href="#context"><span class="idx">04</span>what you get</a>
   <a href="#contact"><span class="idx">05</span>say hi</a>
 </nav>
 
@@ -262,17 +273,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
         <p>Your inbox streams into the session. Answer one, some, or all in a line.</p>
         <p class="switch-note">say "stop" to close it</p>
       </div>
-      <div class="feed">
-        <p class="fu">❯ chat</p>
-        <p class="fa">· listening…</p>
-        <p class="fs"><span class="env">📨</span> Niels · #1</p>
-        <p class="fq">did the deploy go out this morning?</p>
-        <p class="fs"><span class="env">📨</span> Mette · #2</p>
-        <p class="fq">lunch thursday?</p>
-        <p class="fu">❯ 1: yes, at 9 — 2: can't, I have standup</p>
-        <p class="fr">↳ 📤 Sent to Niels — "Yes, went out at 9."</p>
-        <p class="fr">↳ 📤 Sent to Mette — "Can't — I have standup."</p>
-      </div>
+      <div class="feed" id="feedChat" style="min-height: 232px;"></div>
     </div>
     <div class="card mode featured">
       <div class="mode-info">
@@ -281,18 +282,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
         <p>Every message gets a suggested reply. <em>Nothing sends until you say so.</em></p>
         <p class="switch-note">"draft" flips a running chat into this mode</p>
       </div>
-      <div class="feed">
-        <p class="fu">❯ draft chat</p>
-        <p class="fs"><span class="env">📨</span> Sam · #1</p>
-        <p class="fq">any chance you can review my PR today?</p>
-        <p class="fd">↳ ✏️ draft for Sam: "Yes — after standup, around 11."</p>
-        <p class="fs"><span class="env">📨</span> Niels · #2</p>
-        <p class="fq">what's the new ingest endpoint called?</p>
-        <p class="fd">↳ ✏️ draft for Niels: "/v2/ingest — merged this morning."</p>
-        <p class="fu">❯ send 2 · 1: make it after lunch</p>
-        <p class="fr">↳ 📤 Sent to Niels — "/v2/ingest — merged this morning."</p>
-        <p class="fr">↳ 📤 Sent to Sam — "Yes — after lunch."</p>
-      </div>
+      <div class="feed" id="feedDraft" style="min-height: 254px;"></div>
     </div>
     <div class="card mode">
       <div class="mode-info">
@@ -301,16 +291,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
         <p>It answers from <em>the directory you opened it in</em> — code, docs, git history — marked as your assistant, and writes what it learns back into that directory. What it can't ground, it asks <em>you</em>.</p>
         <p class="switch-note">"auto chat read only" keeps the directory untouched · "stop" closes it any time</p>
       </div>
-      <div class="feed">
-        <p class="fu">❯ auto chat</p>
-        <p class="fs"><span class="env">📨</span> Jonas · #1</p>
-        <p class="fq">is the export API rate-limited?</p>
-        <p class="fr">↳ 📤 sent as assistant — "Yes, 60 req/min per key."</p>
-        <p class="fs"><span class="env">📨</span> Jonas · #2</p>
-        <p class="fq">and what would enterprise pricing look like?</p>
-        <p class="fw">↳ ⚠️ needs you: Jonas is asking about enterprise pricing</p>
-        <p class="fa">every reply shown as it goes out · "what did you handle?" replays the ledger</p>
-      </div>
+      <div class="feed" id="feedAuto" style="min-height: 210px;"></div>
     </div>
   </div>
 </section>
@@ -347,19 +328,28 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
       <p>Ask <em>"what's my handle?"</em>, swap with a friend. First message names it — <code>write Sam at qL7f2A: hey</code> — and that saves him. On his side you knock first: a 🆕 notice he accepts with <em>"add"</em>. From then on <code>write Sam: hey</code> is enough.</p>
     </div>
   </div>
+  <div class="card mode" style="margin-top: 36px;">
+    <div class="mode-info">
+      <p class="tag">first run</p>
+      <h3>Login and your handle</h3>
+      <p>One email, one click, one name — your agent mints your <em>6-char handle</em> and the message that started it all goes out. From then on the contact book answers <em>"who are my contacts?"</em> — your own entry, handle included, always on top.</p>
+      <p class="switch-note">the queued send fires the moment login lands</p>
+    </div>
+    <div class="cc" id="firstrun" style="min-height: 470px;"></div>
+  </div>
 </section>
 
 <section class="wrap" id="context">
   <p class="sec-label"><b>##</b> 04 · what you get</p>
-  <h2 data-scramble>A messenger that already knows your context.</h2>
-  <p class="lede">Portable, cross-CLI — and it sits <em>where the answers already live</em>.</p>
+  <h2 data-scramble>Messaging on steroids.</h2>
+  <p class="lede">An inbox that <em>answers itself</em>, <em>total recall</em> of everything ever written, and an assistant you can <em>send to go ask</em>. Chat built <em>AI-first</em>: when both ends run an assistant, your network starts to think together. The loadout:</p>
   <div class="grid">
-    <div class="card cell"><p class="lbl">[local-first]</p><h3>Never waits on the network</h3><p>History, contacts and recall are served from your device; sync catches up in the background.</p></div>
-    <div class="card cell"><p class="lbl">[qL7f2A]</p><h3>6-char handles</h3><p>One short handle. New senders knock first — held until you say <em>add</em>. Rotate or disable it any time.</p></div>
-    <div class="card cell"><p class="lbl">[magic-link]</p><h3>Log in</h3><p>Email login, any device — contacts and history included.</p></div>
-    <div class="card cell"><p class="lbl">[mcp]</p><h3>Cross-CLI</h3><p>Claude Code to Gemini to Copilot — the wire doesn't care.</p></div>
+    <div class="card cell"><p class="lbl">[autopilot]</p><h3>Answers itself</h3><p>Auto chat replies to what it can ground — marked as your assistant — and hands you the rest. <em>No message left hanging.</em></p></div>
     <div class="card cell"><p class="lbl">[history]</p><h3>Messages are memory</h3><p>"What did Niels say about the endpoint?" — recall any thread, any session.</p></div>
+    <div class="card cell"><p class="lbl">[go ask]</p><h3>An assistant on errands</h3><p>"Ask Niels for the staging URL" — it writes, waits, and comes back with the answer. Often from <em>Niels's assistant</em>, before Niels even looks.</p></div>
+    <div class="card cell"><p class="lbl">[mcp]</p><h3>Cross-CLI</h3><p>Claude Code to Gemini to Copilot — the wire doesn't care.</p></div>
     <div class="card cell"><p class="lbl">[tty]</p><h3>No new UI</h3><p>No app. Your agent is the interface.</p></div>
+    <div class="card cell"><p class="lbl">[sealed]</p><h3>Encrypted before it leaves</h3><p>Every message is sealed to the recipient's keys on your machine; verify anyone with a 60-digit safety number.</p></div>
   </div>
 </section>
 
@@ -488,6 +478,93 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
       else { d.innerHTML = l.html; setTimeout(next, l.t === 'agent' ? 1600 : 1000); }
     })();
   }
+
+  /* ---- live feeds: mode cards + first-run demo, typed like the hero ----
+     Generic player: `t` lines type char-by-char behind their prompt `pre`;
+     `h` lines land whole after `d` ms. Starts when scrolled into view,
+     loops with a long hold on the finished state. Static render for
+     reduced-motion / touch. */
+  function livefeed(id, L) {
+    var box = document.getElementById(id);
+    if (!box) return;
+    function put(c, h) { var p = document.createElement('p'); if (c) p.className = c; p.innerHTML = h; box.appendChild(p); return p; }
+    if (reduced || touch) {
+      L.forEach(function (l) { put(l.c, l.t != null ? (l.pre || '') + l.t : l.h); });
+      return;
+    }
+    var li = 0;
+    function next() {
+      if (li >= L.length) { return setTimeout(function () { box.innerHTML = ''; li = 0; next(); }, 12000); }
+      var l = L[li++];
+      if (l.t != null) {
+        var p = put(l.c, (l.pre || '') + '<span class="typed"></span><span class="caret"></span>');
+        var tt = p.querySelector('.typed'), i = 0;
+        (function ch() {
+          if (i < l.t.length) { tt.textContent += l.t[i++]; setTimeout(ch, 45 + Math.random() * 55); }
+          else { p.querySelector('.caret').remove(); setTimeout(next, 750); }
+        })();
+      } else { put(l.c, l.h); setTimeout(next, l.d || 1000); }
+    }
+    var started = false;
+    if ('IntersectionObserver' in window) {
+      var io = new IntersectionObserver(function (es) {
+        es.forEach(function (e) { if (e.isIntersecting && !started) { started = true; next(); io.disconnect(); } });
+      }, { threshold: .25 });
+      io.observe(box);
+    } else next();
+  }
+  livefeed('feedChat', [
+    { c: 'fu', pre: '❯ ', t: 'chat' },
+    { c: 'fa', h: '· listening…', d: 1400 },
+    { c: 'fs', h: '<span class="env">📨</span> Niels · #1', d: 700 },
+    { c: 'fq', h: 'did the deploy go out this morning?', d: 1300 },
+    { c: 'fs', h: '<span class="env">📨</span> Mette · #2', d: 700 },
+    { c: 'fq', h: 'lunch thursday?', d: 1300 },
+    { c: 'fu', pre: '❯ ', t: '1: yes, at 9 — 2: can\'t, I have standup' },
+    { c: 'fr', h: '↳ 📤 Sent to Niels — "Yes, went out at 9."', d: 900 },
+    { c: 'fr', h: '↳ 📤 Sent to Mette — "Can\'t — I have standup."', d: 900 }
+  ]);
+  livefeed('feedDraft', [
+    { c: 'fu', pre: '❯ ', t: 'draft chat' },
+    { c: 'fs', h: '<span class="env">📨</span> Sam · #1', d: 700 },
+    { c: 'fq', h: 'any chance you can review my PR today?', d: 1100 },
+    { c: 'fd', h: '↳ ✏️ draft for Sam: "Yes — after standup, around 11."', d: 1500 },
+    { c: 'fs', h: '<span class="env">📨</span> Niels · #2', d: 700 },
+    { c: 'fq', h: 'what\'s the new ingest endpoint called?', d: 1100 },
+    { c: 'fd', h: '↳ ✏️ draft for Niels: "/v2/ingest — merged this morning."', d: 1500 },
+    { c: 'fu', pre: '❯ ', t: 'send 2 · 1: make it after lunch' },
+    { c: 'fr', h: '↳ 📤 Sent to Niels — "/v2/ingest — merged this morning."', d: 900 },
+    { c: 'fr', h: '↳ 📤 Sent to Sam — "Yes — after lunch."', d: 900 }
+  ]);
+  livefeed('feedAuto', [
+    { c: 'fu', pre: '❯ ', t: 'auto chat' },
+    { c: 'fs', h: '<span class="env">📨</span> Jonas · #1', d: 700 },
+    { c: 'fq', h: 'is the export API rate-limited?', d: 1200 },
+    { c: 'fr', h: '↳ 📤 sent as assistant — "Yes, 60 req/min per key."', d: 1500 },
+    { c: 'fs', h: '<span class="env">📨</span> Jonas · #2', d: 700 },
+    { c: 'fq', h: 'and what would enterprise pricing look like?', d: 1200 },
+    { c: 'fw', h: '↳ ⚠️ needs you: Jonas is asking about enterprise pricing', d: 1500 },
+    { c: 'fa', h: 'every reply shown as it goes out · "what did you handle?" replays the ledger', d: 1000 }
+  ]);
+  livefeed('firstrun', [
+    { c: 'in', pre: '<span class="p">❯</span>', t: 'write Sam at qL7f2A: hey, I\'m on cli-chat' },
+    { c: '', h: '● Quick setup first — what\'s your email?', d: 1400 },
+    { c: 'in', pre: '<span class="p">❯</span>', t: 'mette@holm.dk' },
+    { c: '', h: '● Login link sent — click it and I\'ll finish up… done. Your full name?', d: 1600 },
+    { c: 'in', pre: '<span class="p">❯</span>', t: 'Mette Holm' },
+    { c: 'dim ind', h: 'Called cli-chat <b>2</b> times', d: 900 },
+    { c: 'g', h: '● You\'re set up as Mette Holm — your handle is <span class="h">Xk4Pq2</span>. Share it and anyone can write you.', d: 1400 },
+    { c: 'ind sent', h: '↳ 📤 Sent to Sam — "hey, I\'m on cli-chat"', d: 1200 },
+    { c: 'in', pre: '<span class="p">❯</span>', t: 'who are my contacts?' },
+    { c: '', h: '● I\'ll pull up your address book.', d: 900 },
+    { c: 'dim ind g', h: 'Called cli-chat <b>1</b> time', d: 900 },
+    { c: 'g', h: '● <b>You:</b> Mette Holm · <span class="h">Xk4Pq2</span>', d: 900 },
+    { c: 'ind g', h: '<b>Recent:</b>', d: 600 },
+    { c: 'ind', h: '— Sam · <span class="h">qL7f2A</span>', d: 600 },
+    { c: 'ind', h: '— feedback · <span class="h">FeedBk</span>', d: 800 },
+    { c: 'ind g', h: 'No new messages waiting. Say "chat" anytime to read them live.', d: 1000 },
+    { c: 'dim g', h: '✳ Cogitated for 4s', d: 1000 }
+  ]);
 
   /* ---- npm installs ticker (real count on load, resumes from localStorage) ---- */
   (function () {
