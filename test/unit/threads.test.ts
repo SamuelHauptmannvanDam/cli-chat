@@ -153,6 +153,40 @@ test("rememberNote appends dated facts per topic; recallNotes reads them back", 
   assert.equal(recallNotes(dir, "nothing-matches").length, 0);
 });
 
+test("audience: stored inline, filtered in code for a contact's tags (default-closed)", () => {
+  const adir = dir + "-aud";
+  rememberNote(adir, { text: "release is on the 15th", audience: "anyone" }, NOW);
+  rememberNote(adir, { text: "staging URL is https://s.example", topic: "project", audience: "Work" }, NOW);
+  rememberNote(adir, { text: "my phone number is 555", topic: "project" }, NOW); // private default
+  rememberNote(adir, { text: "cabin key under the mat", topic: "family-stuff", audience: "family" }, NOW);
+
+  // Unfiltered (the user's own assistant): everything is visible.
+  const all = recallNotes(adir);
+  assert.equal(all.length, 3);
+  assert.match(all.find((n) => n.topic === "general")!.content, /@anyone.*release/);
+  assert.match(all.find((n) => n.topic === "project")!.content, /@work.*staging/); // audience normalised
+
+  // Filtered for a work contact: 'anyone' + '@work' pass; private and family are withheld.
+  const work = recallNotes(adir, undefined, ["work"]);
+  assert.deepEqual(work.map((n) => n.topic).sort(), ["general", "project"]);
+  const proj = work.find((n) => n.topic === "project")!;
+  assert.match(proj.content, /staging URL/);
+  assert.doesNotMatch(proj.content, /phone number/);
+  assert.equal(work.some((n) => n.topic === "family-stuff"), false);
+
+  // Filtered for a tagless contact: only 'anyone' facts survive.
+  const stranger = recallNotes(adir, undefined, []);
+  assert.deepEqual(stranger.map((n) => n.topic), ["general"]);
+
+  // Legacy line without an audience token is withheld under any filter.
+  const legacy = recallNotes(adir, "phone", ["work"]);
+  assert.equal(legacy.length, 0);
+
+  // Bad audience input falls back to private (default-closed), never to a tag.
+  const r = rememberNote(adir, { text: "odd", audience: "NOT A TAG!!" }, NOW);
+  assert.equal(r.audience, "private");
+});
+
 test("cleanTopic slugs freeform topics and falls back to general", () => {
   assert.equal(cleanTopic("Niels Bohr"), "niels-bohr");
   assert.equal(cleanTopic("  Pending?!  "), "pending");

@@ -260,15 +260,25 @@ export function cleanTopic(raw: string | undefined | null): string {
   return TOPIC_RE.test(t) ? t : "general";
 }
 
+// A fact's audience: who may hear it when the assistant answers on the user's
+// behalf. "private" (the default — user-only, never relayed), "anyone", or a
+// tag name from the contact book ("work", "family"). Stored inline in the md
+// line as `@<audience>` so hand-editing a note's reach is one word.
+const AUD_RE = /^[a-z0-9][a-z0-9-]{0,24}$/;
+export function cleanAudience(raw?: string): string {
+  const a = (raw ?? "").toLowerCase().trim().replace(/^@/, "");
+  return AUD_RE.test(a) ? a : "private";
+}
+
 // Append one dated fact to a topic file (created on first use). `source` is
 // where the fact came from ("user", a contact name, an escalation id) so a later
 // read can weigh it. One fact per line keeps the files greppable and lets the
 // agent delete stale lines surgically.
 export function rememberNote(
   dir: string,
-  args: { text: string; topic?: string; source?: string },
+  args: { text: string; topic?: string; source?: string; audience?: string },
   now: number,
-): { topic: string; file: string } {
+): { topic: string; file: string; audience: string } {
   secureDir(dir);
   const topic = cleanTopic(args.topic);
   const path = topicFile(dir, topic);
@@ -278,17 +288,28 @@ export function rememberNote(
   } catch {
     prev = `# ${topic}\n\n`;
   }
+  const audience = cleanAudience(args.audience);
+  const aud = audience === "private" ? "" : ` @${audience}`;
   const src = args.source ? ` (${args.source.replace(/[()\n]/g, " ").trim()})` : "";
-  const line = `- ${new Date(now).toISOString().slice(0, 10)}${src}: ${args.text.replace(/\s*\n\s*/g, " ").trim()}\n`;
+  const line = `- ${new Date(now).toISOString().slice(0, 10)}${aud}${src}: ${args.text.replace(/\s*\n\s*/g, " ").trim()}\n`;
   writeSecretAtomic(path, prev.endsWith("\n") || prev === "" ? prev + line : prev + "\n" + line);
-  return { topic, file: path };
+  return { topic, file: path, audience };
 }
 
 // Read the notes back — every topic, or ones matching a substring filter (topic
 // name OR content). Small by construction; the caller renders/uses as needed.
+//
+// `forTags`: the audience gate (answer-once, 0.20). When set — recall is
+// grounding an answer TO a contact — every fact line is filtered IN CODE before
+// the model sees it: `@anyone` passes, `@<tag>` passes iff the contact has that
+// tag, and everything else (including legacy untagged lines) is withheld —
+// default-closed. Topics with no surviving fact stay out entirely. Same shape
+// as the new-handle gate: withhold the data, don't ask the model to.
+const FACT_RE = /^- \d{4}-\d{2}-\d{2}(?: @([a-z0-9-]+))?[ (:]/;
 export function recallNotes(
   dir: string,
   q?: string,
+  forTags?: string[] | null,
 ): { topic: string; content: string }[] {
   let files: string[] = [];
   try {
@@ -297,11 +318,22 @@ export function recallNotes(
     return [];
   }
   const needle = q?.trim().toLowerCase();
+  const allowed = forTags ? new Set(forTags.map((t) => t.toLowerCase())) : null;
   const out: { topic: string; content: string }[] = [];
   for (const f of files.sort()) {
     try {
-      const content = readFileSync(join(dir, f), "utf8");
+      let content = readFileSync(join(dir, f), "utf8");
       const topic = basename(f, ".md");
+      if (allowed) {
+        const kept = content.split("\n").filter((ln) => {
+          if (!ln.startsWith("- ")) return true; // headers / prose stay
+          const m = ln.match(FACT_RE);
+          const aud = m?.[1];
+          return aud === "anyone" || (!!aud && allowed.has(aud));
+        });
+        if (!kept.some((ln) => ln.startsWith("- "))) continue; // nothing they may hear
+        content = kept.join("\n");
+      }
       if (!needle || topic.includes(needle) || content.toLowerCase().includes(needle))
         out.push({ topic, content });
     } catch {
