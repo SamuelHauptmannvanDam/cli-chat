@@ -402,8 +402,8 @@ export async function sync(ctx: NetContext): Promise<number> {
     // A genuinely new sender: save the keys they introduced themselves with, so a
     // reply can be sealed — but GATED ("pending", the new-handle gate) unless a
     // public chat session is live (allowNewSenders). While gated their messages
-    // stay out of the model's paths (takeUnread/refreshPending filter them; the
-    // hook shows the bodies to the USER only) until the user accepts. NEVER
+    // stay out of the model's paths (takeUnread/refreshPending filter them)
+    // until the user accepts. NEVER
     // clobber someone you already know — your nick for them wins.
     const known = b.sender && !fromSelf ? contactByKey(ctx.book, b.sender) : undefined;
     if (env.boxPub && b.sender && !fromSelf && !known) {
@@ -659,7 +659,7 @@ export interface InboxMessage {
   at: number;
   in_reply_to: string | null;
   // Self-mail marker (escalate-by-mail / note to self): from the user's OWN
-  // identity. Never auto-tagged; the quiet-assist hook lets ONLY these through.
+  // identity. Never auto-tagged or auto-answered.
   self?: boolean;
   // "assistant" when the sender's agent wrote it (renders as "<name>'s assistant").
   answered_by?: string;
@@ -686,8 +686,8 @@ function toInboxMessage(ctx: NetContext, m: MessageRow): InboxMessage {
 // The new-handle gate state of a row's sender ("pending" / "dismissed") —
 // undefined for self-mail and for every accepted or manually-saved contact.
 // This is THE filter every model-facing read path applies (0.18): a gated
-// sender's bodies reach only the USER (via the hook's system notice), never
-// the model's context, until the user accepts them.
+// sender's bodies stay out of the model's context entirely until the user
+// accepts them (respond_handle returns the held batch).
 function gateOf(ctx: NetContext, sender: string): "pending" | "dismissed" | undefined {
   if (sender === ctx.me.signPub) return undefined;
   return contactByKey(ctx.book, sender)?.gated;
@@ -732,21 +732,21 @@ export function takeUnread(ctx: NetContext): InboxMessage[] {
     });
 }
 
-// ---- pending snapshot: the warmer→hook channel (PUSH.md / db.ts cross-process) ----
-// The session hook can't safely open inbox.db while the warmer holds it (the wasm
+// ---- pending snapshot: the warmer→waker channel (PUSH.md / db.ts cross-process) ----
+// The waker can't safely open inbox.db while the warmer holds it (the wasm
 // driver's cross-process lock — the old "mail never surfaced" bug). So the warmer
-// (sole writer) mirrors current unread mail here, already decrypted, and the hook
-// just reads it. Read-state stays in SQLite; a message is marked read ONLY once the
-// hook acks it (writePendingAck → refreshPending), never at queue time — so
-// read_messages and messages_available aren't starved, and nothing is lost if the
-// hook never runs.
+// (sole writer) mirrors current unread mail here, already decrypted, and the waker
+// just watches it. Read-state stays in SQLite; a message is marked read ONLY once a
+// consumer acks it (writePendingAck → refreshPending), never at queue time — so
+// read_messages and messages_available aren't starved, and nothing is lost if no
+// consumer ever runs.
 
 export interface PendingSnapshot {
   writtenAt: number;
   messages: InboxMessage[];
   // Unread messages from GATED ("pending") new handles, kept OUT of `messages` so
-  // no model-facing consumer ever returns their bodies: the hook shows these to
-  // the USER directly (a system notice), and read_messages reports only a
+  // no model-facing consumer ever returns their bodies: the waker wakes on them
+  // once (so the feed can show the 🆕 summary), and read_messages reports only a
   // name+handle+count summary. Never acked/marked read from here — they stay
   // held until the user accepts (respond_handle) or goes public. Dismissed
   // handles' messages appear in NEITHER list (silent by design).
@@ -764,7 +764,7 @@ function writeJsonAtomic(path: string, value: unknown): void {
   writeSecretAtomic(path, JSON.stringify(value, null, 2) + "\n");
 }
 
-// Hook side: the ids it has already surfaced (so it doesn't re-announce them in the
+// Consumer side: the ids already surfaced (so they aren't re-announced in the
 // window before the warmer applies the ack). Missing/corrupt file → none.
 export function readAck(ackPath: string): string[] {
   try {
@@ -775,8 +775,8 @@ export function readAck(ackPath: string): string[] {
   }
 }
 
-// Hook side: read the warmer's snapshot (null when absent/corrupt → fall back to a
-// direct drain, which is safe precisely because no warmer is holding the file).
+// Consumer side: read the warmer's snapshot (null when absent/corrupt → fall back
+// to a direct drain, which is safe precisely because no warmer is holding the file).
 export function readPending(pendingPath: string): PendingSnapshot | null {
   try {
     const snap = JSON.parse(readFileSync(pendingPath, "utf8")) as PendingSnapshot;
@@ -787,42 +787,39 @@ export function readPending(pendingPath: string): PendingSnapshot | null {
   return null;
 }
 
-// Hook side: record the ids surfaced this run (overwrite — always the current
+// Consumer side: record the ids surfaced this run (overwrite — always the current
 // pending set, so it never grows unbounded). The warmer applies it on its next tick.
 export function writePendingAck(ackPath: string, ids: string[]): void {
   writeJsonAtomic(ackPath, ids);
 }
 
-// ---- chat.lock: the live-chat heartbeat + its mode flags ----
+// ---- chat.lock: the live-chat heartbeat + its mode flag ----
 // Written by the waker (await-mail.ts touchLock) every tick; read here so every
-// process agrees on "is a chat session live, and in which mode". `public` is the
-// new-handle gate's per-session bypass (0.18): while a public chat session
-// heartbeats the lock, sync() auto-saves new senders ungated.
+// process agrees on "is a chat session live, and is it public". While the lock
+// is fresh the inbox rider stays silent (the feed owns surfacing), and `public`
+// — the new-handle gate's per-session bypass (0.18) — makes sync() auto-save
+// new senders ungated.
 
 export const CHAT_ACTIVE_MS = 15_000; // > the waker's tick cadence, covers relaunch gap
 
 export interface ChatLockInfo {
   active: boolean;
-  quiet: boolean;
   public: boolean;
 }
 
 export function readChatLock(lockPath: string, nowMs: number): ChatLockInfo {
   try {
     if (nowMs - statSync(lockPath).mtimeMs >= CHAT_ACTIVE_MS)
-      return { active: false, quiet: false, public: false };
-    let quiet = false;
+      return { active: false, public: false };
     let pub = false;
     try {
-      const j = JSON.parse(readFileSync(lockPath, "utf8")) as { mode?: string; public?: boolean };
-      quiet = j?.mode === "quiet";
-      pub = j?.public === true;
+      pub = (JSON.parse(readFileSync(lockPath, "utf8")) as { public?: boolean })?.public === true;
     } catch {
-      /* pre-0.12 lock content (a bare timestamp) → plain chat */
+      /* older lock content (a bare timestamp) → plain chat */
     }
-    return { active: true, quiet, public: pub };
+    return { active: true, public: pub };
   } catch {
-    return { active: false, quiet: false, public: false }; // no lock → chat isn't running
+    return { active: false, public: false }; // no lock → chat isn't running
   }
 }
 
@@ -842,7 +839,7 @@ export function writeIdList(path: string, ids: string[]): void {
   writeJsonAtomic(path, ids);
 }
 
-// Warmer side: apply any ids the hook acked (mark them read so they drop out), then
+// Warmer side: apply any acked ids (mark them read so they drop out), then
 // mirror the remaining unread set to pendingPath. The ONLY writer of pendingPath.
 export function refreshPending(
   ctx: NetContext,

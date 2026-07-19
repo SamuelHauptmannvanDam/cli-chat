@@ -14,43 +14,5 @@
       "mcp__cli-chat__list_contacts",
       "mcp__cli-chat__my_key"
     ]
-  },
-  "hooks": {
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/src/check-inbox.ts\"",
-            "timeout": 20,
-            "statusMessage": "Checking messenger inbox..."
-          }
-        ]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/src/check-inbox.ts\"",
-            "timeout": 12,
-            "statusMessage": "Checking messenger inbox..."
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/src/check-inbox.ts\"",
-            "timeout": 12,
-            "statusMessage": "Checking messenger inbox..."
-          }
-        ]
-      }
-    ]
   }
 }

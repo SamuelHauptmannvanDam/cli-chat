@@ -196,15 +196,14 @@ describe("readChatLock (the public flag's carrier)", () => {
     const dir = mkdtempSync(join(tmpdir(), "clim-lock-"));
     try {
       const lockPath = join(dir, "chat.lock");
-      writeFileSync(lockPath, JSON.stringify({ at: Date.now(), mode: "chat", public: true }));
+      writeFileSync(lockPath, JSON.stringify({ at: Date.now(), public: true }));
       const live = readChatLock(lockPath, Date.now());
-      assert.deepEqual(live, { active: true, quiet: false, public: true });
+      assert.deepEqual(live, { active: true, public: true });
       // The same lock read 20s later (mtime stale) counts as no chat running.
       const stale = readChatLock(lockPath, Date.now() + 20_000);
-      assert.deepEqual(stale, { active: false, quiet: false, public: false });
+      assert.deepEqual(stale, { active: false, public: false });
       assert.deepEqual(readChatLock(join(dir, "nope.lock"), Date.now()), {
         active: false,
-        quiet: false,
         public: false,
       });
     } finally {

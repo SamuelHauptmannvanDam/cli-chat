@@ -55,7 +55,7 @@ Auto chat is discovered through chat itself, not through docs:
   autonomous sends). Same grounding stack and code of conduct as auto; a
   flagged message never gets a draft; secrets/keys never appear in one;
   ungroundable items show "needs you" + the assistant's question instead (no
-  escalation-by-mail — the user is at the feed). No quiet variant: drafting
+  escalation-by-mail — the user is at the feed). Drafting
   presumes the user is watching. It's the trust-builder rung — run it until
   the drafts are consistently right, then say "auto".
 - **Upgrading a running chat is a first-class path, not a restart.** Saying
@@ -70,9 +70,6 @@ Auto chat is discovered through chat itself, not through docs:
   what they want: opens the live inbox with the assistant already answering,
   no question asked. Both forms work identically. (Also accept "chat assist"
   / "assist" / "answer my messages" / "take my mail".)
-- **"auto chat, quiet"** — straight into the quiet variant (see ladder
-  below).
-
 **Tips suggest; the offer explains.** Everywhere a one-line tip mentions
 chat, it names the rungs — the session-start mail summary's hint is *"say
 'chat' to read your messages live, 'auto draft chat' and I'll draft replies for
@@ -106,9 +103,8 @@ Per message in each batch:
    inside the rails → `send_message` (in_reply_to) and send, marked as the assistant.
 2. **Narrate every send in the terminal as it happens** — "↩ Niels: 'REDIS_URL
    and API_KEY, see .env.example.'" The session is live and visible; the user
-   watches their assistant work. (In the quiet variant the narration is
-   replaced by an auditable record + digest — see the surfacing ladder below.
-   Either way: no unaccounted-for activity, ever.)
+   watches their assistant work — no unaccounted-for activity, ever (and
+   `history` keeps the permanent ledger: "what did you handle?" replays it).
 3. **Can't answer / shouldn't answer → ask the human, then answer.** The
    mediator doesn't just drop the message in the feed and move on — it asks
    its own human the *one missing fact* and passes the answer on once it has
@@ -117,8 +113,8 @@ Per message in each batch:
      assistant's specific question attached ("Sam asks when you're free —
      Sat or Sun?"). You answer in the terminal; it replies to Sam.
    - **Escalate by mail** (the richer path): the assistant writes its own
-     human a message. The human becomes aware wherever they next type, in
-     ANY session, through the existing inbox hooks — they don't have to be
+     human a message. The human becomes aware in ANY session — at open or via
+     the inbox rider on their next tool call — they don't have to be
      watching the auto-chat terminal. Their reply threads back
      (`in_reply_to`), the assistant picks it up on the next batch and passes
      the answer on. The human is just another addressable endpoint.
@@ -159,36 +155,26 @@ never needs to sit at the auto-chat terminal. It can be a dedicated session
 left running — a secretary desk — while the human is reached wherever they
 happen to be working.
 
-## The surfacing ladder (incl. the quiet variant)
+## The surfacing ladder
 
-Five levels, one engine. Each is just a different answer to "who sees what":
+Four levels, one engine. Each is just a different answer to "who sees what".
+There is deliberately NO variant that hides the assistant's replies — every
+send is narrated in the feed as it happens, always (0.19 removed the old
+"quiet" variant for exactly this reason):
 
 | Level | Trigger | You see | Who answers |
 |---|---|---|---|
-| Read (default) | — | count on open/keystroke; read on demand | you |
+| Read (default) | — | count at open; `inbox` rider on any tool call; read on demand | you |
 | Chat | "chat" | live feed, every message | you (agent sends) |
 | Auto draft chat | "auto draft chat" (or "chat" → say "draft") | feed + a proposed draft under each message | you — every send is your explicit approval, sent as you |
 | Auto chat | "auto chat" / "auto" (or say "auto" mid-chat) | feed + narrated assistant replies + needs-you questions | assistant; you for the rest |
-| **Quiet auto** | "auto chat, quiet" | **escalations only** — handled mail never surfaces | assistant; you're mailed when needed |
 
-**Quiet is a surfacing variant, not a new mode.** It reuses the `chat.lock`
-suppression that already keeps live chat from being double-announced, with
-sharper semantics: while a quiet auto-chat session holds the lock, the
-on-keystroke hook in the user's OTHER sessions suppresses ordinary mail
-notices entirely; the only interrupt that gets through is the assistant's own
-**escalation self-mail**, which the hook labels distinctly ("your assistant
-needs you: …") — recognizable because it's from the user's own identity.
-
-**The visibility rail moves from stream to ledger.** Live narration is the
-watched-mode guarantee; in quiet mode the guarantee is the record: every
-assistant reply is in `history` permanently, and the assistant recaps on
-demand ("what did you handle?") and in one line when the user next engages
-("handled 4 while you coded — 1 waiting on you"). Same honesty, batched.
+**The ledger backs the stream.** Every assistant reply is in `history`
+permanently — "what did you handle?" replays it any time.
 
 Expected steady state: read/chat are the on-ramp, auto draft chat is the
-trust-builder (watch the drafts until they're consistently right); quiet
-auto is where regular users land — most messages never cost attention at
-all. That is the pitch.
+trust-builder (watch the drafts until they're consistently right); auto chat
+is where regular users land, with every reply visible as it goes out.
 
 ## The grounding stack (what an answer may be built from)
 
@@ -257,8 +243,8 @@ as behaviour (CLAUDE.md + instructions + resultNotes) plus one code-level check:
    `screen.ts` — cheap heuristics that flag `override` (instruction hijack),
    `secrets`, `contacts` (address-book fishing), `third-party` (other people's
    mail), and `action` (make the agent do things). Flags ride the message as
-   `warnings` everywhere it surfaces (feed, read_message, the inbox hook's
-   private block); a flagged message is **never auto-answered** and never acted
+   `warnings` everywhere it surfaces (feed, read_message,
+   messages_available); a flagged message is **never auto-answered** and never acted
    on — it's surfaced to the user with the flag. Stated honestly: a tripwire,
    not a sandbox — the behavioural rules remain the actual defence; the screen
    makes the obvious cases mechanical.
@@ -319,9 +305,10 @@ narrating.
 
 ## Build map — shipped in 0.12.0 (together with HISTORY.md)
 
-Everything below is BUILT (the machinery: tools, marker, self-send, quiet
+Everything below is BUILT (the machinery: tools, marker, self-send, chat
 lock, CLI send; the behaviour rides in CLAUDE.md + instructions + resultNotes
-as planned). Kept as the map of where each piece lives:
+as planned — the 0.12 "quiet" variant was later REMOVED in 0.19: every
+assistant send is always narrated). Kept as the map of where each piece lives:
 
 1. **HISTORY.md ships first** — the grounding depends on it.
 2. `cli-chat-context/`: paths + read/write helpers; "remember X" behaviour;
@@ -344,10 +331,6 @@ as planned). Kept as the map of where each piece lives:
    fan-out asks — who's answered, who hasn't); **CLI send subcommand**
    (`npx cli-chat-mcp send`) for headless bots — each small and independently
    shippable.
-6b. **Quiet variant**: extend the `chat.lock` semantics (a mode marker in the
-   lock) so the hook suppresses ordinary mail notices while quiet auto chat
-   runs but passes escalation self-mail through with its own label; digest
-   behaviour ("what did you handle?" + one-line recap on next engagement).
 7. Tests: `answered_by` round-trip + back-compat; visible-mark presence on
    every auto-chat send; contacts-only gating; context read/write helpers;
    self-send surfacing. (The disposal rules are behavioural — verify with

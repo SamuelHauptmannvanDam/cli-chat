@@ -302,14 +302,14 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
         <p class="switch-note">"auto chat read only" keeps the directory untouched · "stop" closes it any time</p>
       </div>
       <div class="feed">
-        <p class="fu">❯ auto chat, quiet</p>
+        <p class="fu">❯ auto chat</p>
         <p class="fs"><span class="env">📨</span> Jonas · #1</p>
         <p class="fq">is the export API rate-limited?</p>
         <p class="fr">↳ 📤 sent as assistant — "Yes, 60 req/min per key."</p>
         <p class="fs"><span class="env">📨</span> Jonas · #2</p>
         <p class="fq">and what would enterprise pricing look like?</p>
         <p class="fw">↳ ⚠️ needs you: Jonas is asking about enterprise pricing</p>
-        <p class="fa">…later: "handled 4 while you coded — 1 waiting on you"</p>
+        <p class="fa">every reply shown as it goes out · "what did you handle?" replays the ledger</p>
       </div>
     </div>
   </div>
@@ -446,12 +446,14 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
   var SCRIPT = [
     { w: 'a', t: 'user',  html: '<span class="p">❯</span> write Niels: did the deploy go out this morning?' },
     { w: 'a', t: 'sent',  html: '↳ 📤 Sent to Niels — "Did the deploy go out this morning?"' },
+    { w: 'b', t: 'user',  html: '<span class="p">❯</span> any messages?' },
     { w: 'b', t: 'agent', html: '📬 1 new message from Sam — want me to read it?' },
     { w: 'b', t: 'user',  html: '<span class="p">❯</span> read it' },
     { w: 'b', t: 'sender', html: '<span class="env">📨</span> Sam · #1' },
     { w: 'b', t: 'quote', html: 'Did the deploy go out this morning?' },
     { w: 'b', t: 'user',  html: '<span class="p">❯</span> tell him yes, went out at 9' },
     { w: 'b', t: 'sent',  html: '↳ 📤 Sent to Sam — "Yes, went out at 9."' },
+    { w: 'a', t: 'user',  html: '<span class="p">❯</span> any messages?' },
     { w: 'a', t: 'agent', html: '📬 1 new message from Niels — want me to read it?' },
     { w: 'a', t: 'user',  html: '<span class="p">❯</span> read it' },
     { w: 'a', t: 'sender', html: '<span class="env">📨</span> Niels · #1' },

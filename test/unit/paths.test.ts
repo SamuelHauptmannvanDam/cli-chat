@@ -12,7 +12,7 @@ import {
   inboxFile,
   pendingFile,
   pendingAckFile,
-  chatHintFile,
+  gatedNotifiedFile,
 } from "../../src/paths.ts";
 
 // paths.ts reads MESSENGER_HOME fresh on every call, so each test can point it at
@@ -76,7 +76,7 @@ test("per-user file paths all sit inside that user's dir", () => {
   assert.equal(inboxFile(u), join(dir, "inbox.db"));
   assert.equal(pendingFile(u), join(dir, "pending.json"));
   assert.equal(pendingAckFile(u), join(dir, "pending-ack.json"));
-  assert.equal(chatHintFile(u), join(dir, "chat-hint.json"));
+  assert.equal(gatedNotifiedFile(u), join(dir, "gated-notified.json"));
 });
 
 test("identity and pending files are distinct names", () => {
@@ -87,7 +87,7 @@ test("identity and pending files are distinct names", () => {
     inboxFile(u),
     pendingFile(u),
     pendingAckFile(u),
-    chatHintFile(u),
+    gatedNotifiedFile(u),
   ]);
   assert.equal(names.size, 6);
 });

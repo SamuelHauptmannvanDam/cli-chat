@@ -149,20 +149,18 @@ assert.equal(selfRead.self, true);
 assert.match(selfRead.note ?? "", /SELF-MAIL/);
 console.log("7. self-send escalation: ok ('your assistant', self note)");
 
-// 8. The three chat tools return the waker command; auto_chat quiet stamps the mode.
-const chat = await call(sam.client, "auto_chat", { quiet: true });
-assert.match(chat.command, /MESSENGER_CHAT_MODE=quiet/);
+// 8. The three chat tools return the waker command + mode notes.
+const chat = await call(sam.client, "auto_chat", {});
+assert.doesNotMatch(chat.command, /MESSENGER_CHAT_MODE/);
 assert.match(chat.note ?? "", /WRITE SCOPE/);
 assert.doesNotMatch(chat.note ?? "", /READ-ONLY DESK/);
 const chatRO = await call(sam.client, "auto_chat", { read_only: true });
 assert.match(chatRO.note ?? "", /READ-ONLY DESK/);
 assert.doesNotMatch(chatRO.note ?? "", /WRITE SCOPE/);
 const chatPlain = await call(sam.client, "chat", {});
-assert.doesNotMatch(chatPlain.command, /MESSENGER_CHAT_MODE/);
 assert.doesNotMatch(chatPlain.command, /MESSENGER_CHAT_PUBLIC/);
 assert.match(chatPlain.note ?? "", /NEW-HANDLE GATE/);
 const chatDraft = await call(sam.client, "auto_draft_chat", {});
-assert.doesNotMatch(chatDraft.command, /MESSENGER_CHAT_MODE/);
 assert.match(chatDraft.note ?? "", /AUTO DRAFT CHAT MODE/);
 // The public variant: flag travels in the waker env, note flips gate → public.
 const chatPub = await call(sam.client, "chat", { public: true });

@@ -16,8 +16,9 @@
 //   - poll (MESSENGER_PUSH=0): no warmer, so we drain the mailbox until unread
 //     appears. We do NOT mark it read — read_messages marks it when it delivers.
 //
-// Heartbeats chat.lock every tick so the check-inbox hook stays silent while chat
-// is live (the feed is the sole surfacing path). See check-inbox.ts (reader).
+// Heartbeats chat.lock every tick so the rest of the system knows chat is live
+// (the inbox rider goes quiet — the feed is the sole surfacing path — and a
+// public session's gate bypass applies). See core-net readChatLock (reader).
 
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
@@ -43,7 +44,7 @@ import {
   threadsDir,
 } from "./paths.ts";
 
-const PENDING_STALE_MS = 120_000; // matches check-inbox: older snapshot → warmer dead
+const PENDING_STALE_MS = 120_000; // older snapshot → warmer dead
 const PUSH_POLL_MS = 1_000; // pending.json watch cadence (local stat — cheap)
 const DRAIN_POLL_MS = 3_000; // network drain cadence in poll mode (no warmer)
 
@@ -55,23 +56,24 @@ export function pickUnsurfaced(messages: InboxMessage[], acked: Set<string>): In
   return messages.filter((m) => !acked.has(m.id));
 }
 
-// Heartbeat the chat lock so the session hook knows chat is live and stays silent.
-// Bumped every tick; never removed — a clean "stop" or kill just lets it go stale,
-// and a relaunch refreshes it well within the hook's freshness window. The lock
-// carries the session's MODE: "quiet" (auto chat, quiet — auto_chat set
-// MESSENGER_CHAT_MODE) sharpens the hook's suppression in other sessions to
-// "everything except assistant escalations" (AUTO-CHAT.md).
-const chatMode = process.env.MESSENGER_CHAT_MODE === "quiet" ? "quiet" : "chat";
+// Heartbeat the chat lock so the rest of the system knows chat is live. Bumped
+// every tick; never removed — a clean "stop" or kill just lets it go stale, and
+// a relaunch refreshes it well within readChatLock's freshness window.
 // Public chat (0.18, the new-handle gate's per-session bypass): the chat tools
 // set MESSENGER_CHAT_PUBLIC=1 when the user asked for the public variant. It
 // rides in the lock so every process (the warmer's sync, chatBatch) sees that a
 // public session is live and lets new handles straight through.
 const chatPublic = process.env.MESSENGER_CHAT_PUBLIC === "1";
+// Foreground harnesses (no background-task support) prefix MESSENGER_WAIT_MAX=<s>
+// so the wait exits empty-handed before their tool timeout would kill it — the
+// agent just relaunches. Unset/0 = block until mail (the background default).
+const waitMaxMs = (Number(process.env.MESSENGER_WAIT_MAX) || 0) * 1000;
+const waitDeadline = waitMaxMs > 0 ? Date.now() + waitMaxMs : Infinity;
 function touchLock(lockPath: string): void {
   try {
     writeFileSync(
       lockPath,
-      JSON.stringify({ at: Date.now(), mode: chatMode, ...(chatPublic ? { public: true } : {}) }),
+      JSON.stringify({ at: Date.now(), ...(chatPublic ? { public: true } : {}) }),
     );
   } catch {
     /* best-effort heartbeat */
@@ -103,6 +105,7 @@ async function runPush(
     } catch {
       /* transient read hiccup — keep waiting */
     }
+    if (Date.now() >= waitDeadline) return; // bounded wait (foreground harnesses)
     await sleep(PUSH_POLL_MS);
   }
 }
@@ -152,6 +155,7 @@ async function runPoll(user: string, lockPath: string): Promise<void> {
     } catch {
       /* network blip — retry next tick */
     }
+    if (Date.now() >= waitDeadline) return; // bounded wait (foreground harnesses)
     await sleep(DRAIN_POLL_MS);
   }
 }

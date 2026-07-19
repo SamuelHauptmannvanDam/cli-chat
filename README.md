@@ -94,10 +94,9 @@ automatic to fully on-demand:
 > marked as your assistant, both to you and to the recipient. What it can't
 > answer, it asks *you* — in the feed, or by dropping a message in your own inbox so you see it
 > wherever you're next working — then passes your answer on (and remembers it).
-> Only saved contacts ever get auto-replies. Add *", quiet"* and your other
-> sessions stay silent except when your assistant needs you; ask *"what did you
-> handle?"* any time for the ledger. Say you'll take it back and the feed is
-> yours again; *"stop"* closes it.
+> Only saved contacts ever get auto-replies, and every reply is shown as it
+> goes out — ask *"what did you handle?"* any time for the ledger. Say you'll
+> take it back and the feed is yours again; *"stop"* closes it.
 >
 > Auto chat may also write what it learns into the project it's opened in —
 > topical notes under `learnings/`, on its own initiative only (nothing a sender

@@ -54,25 +54,17 @@ export function settingsFile(user: string): string {
   return join(userDir(user), "settings.json");
 }
 
-// The warmer mirrors current unread mail (decrypted) here so the session hook can
-// surface it WITHOUT opening inbox.db — the cross-process collision that used to
-// drop mail on the wasm driver. Warmer is the only writer; the hook only reads.
+// The warmer mirrors current unread mail (decrypted) here so the chat waker can
+// watch it WITHOUT opening inbox.db — the cross-process collision that used to
+// drop mail on the wasm driver. Warmer is the only writer; consumers only read.
 export function pendingFile(user: string): string {
   return join(userDir(user), "pending.json");
 }
 
-// The hook records which pending ids it has surfaced here; the warmer reads it and
-// marks those read in inbox.db. The hook is the only writer; the warmer only reads.
+// Consumers (read_messages) record which pending ids they surfaced here; the
+// warmer reads it and marks those read in inbox.db.
 export function pendingAckFile(user: string): string {
   return join(userDir(user), "pending-ack.json");
-}
-
-// Records the session id we last showed the "say chat" live-inbox tip for, so the
-// tip surfaces at most ONCE per session — on the first mail notice, whether that's
-// at session open or mid-session. Overwritten each time (never grows). See
-// check-inbox.ts.
-export function chatHintFile(user: string): string {
-  return join(userDir(user), "chat-hint.json");
 }
 
 // The messenger's own memory (HISTORY.md / AUTO-CHAT.md): a per-user directory of
@@ -119,26 +111,20 @@ export function historyOutboxFile(user: string): string {
   return join(userDir(user), "history-outbox.jsonl");
 }
 
-// New-handle gate (0.18) side files. Both hold a plain JSON array of message ids
-// and are always OVERWRITTEN with the current gated set, so they never grow.
-//   gated-notified.json — ids the live feed has already been told about (as a
-//     name+handle summary). Written by read_messages (chatBatch); read by the
-//     waker so it doesn't re-fire on a summary the feed already carries.
-//   gated-shown.json — ids whose BODIES the session hook has already shown to
-//     the USER (the system notice). Written and read by check-inbox only.
+// New-handle gate (0.18) side file: a plain JSON array of message ids, always
+// OVERWRITTEN with the current gated set (never grows). Holds the ids the live
+// feed has already been told about (as a name+handle summary) — written by
+// read_messages (chatBatch); read by the waker so it doesn't re-fire on a
+// summary the feed already carries.
 export function gatedNotifiedFile(user: string): string {
   return join(userDir(user), "gated-notified.json");
 }
 
-export function gatedShownFile(user: string): string {
-  return join(userDir(user), "gated-shown.json");
-}
-
 // While the live inbox ("chat") listener is running it heartbeats this lock file
-// (bumping its mtime every tick). A FRESH lock tells the session hook that chat is
-// live, so the hook suppresses its count-only notice and the listener's feed is
-// the sole surfacing path — otherwise a new message gets announced twice. See
-// await-mail.ts (writer) and check-inbox.ts (reader).
+// (bumping its mtime every tick). A FRESH lock means chat is live: the inbox
+// rider stays silent (the feed is the sole surfacing path) and a public
+// session's gate bypass applies. See await-mail.ts (writer) and core-net
+// readChatLock (reader).
 export function chatLockFile(user: string): string {
   return join(userDir(user), "chat.lock");
 }
