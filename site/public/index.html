@@ -428,22 +428,34 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
 
   /* ---- typed terminal demo: one conversation, both ends ----
      `w` picks the window: 'a' = samuel@laptop, 'b' = niels@work. The message
-     visibly leaves one terminal and lands in the other. */
+     visibly leaves one terminal and lands in the other. Each page load deals
+     the two windows a fresh pair of DIFFERENT agent CLIs — the cross-CLI
+     story told by the titlebars. */
+  (function () {
+    var clis = ['claude', 'codex', 'copilot', 'gemini'];
+    var bars = document.querySelectorAll('.terms .term-bar span');
+    if (bars.length < 2) return;
+    var i = Math.floor(Math.random() * clis.length);
+    var j = Math.floor(Math.random() * (clis.length - 1));
+    if (j >= i) j++;
+    bars[0].textContent = 'samuel@laptop — ' + clis[i] + ' — 80×24';
+    bars[1].textContent = 'niels@work — ' + clis[j] + ' — 80×24';
+  })();
   var demoA = document.getElementById('demoA');
   var demoB = document.getElementById('demoB');
   var SCRIPT = [
-    { w: 'b', t: 'user',  html: '<span class="p">❯</span> write Sam: did the deploy go out this morning?' },
-    { w: 'b', t: 'sent',  html: '↳ 📤 Sent to Sam — "Did the deploy go out this morning?"' },
-    { w: 'a', t: 'agent', html: '📬 1 new message from Niels — want me to read it?' },
-    { w: 'a', t: 'user',  html: '<span class="p">❯</span> read it' },
-    { w: 'a', t: 'sender', html: '<span class="env">📨</span> Niels · #1' },
-    { w: 'a', t: 'quote', html: 'Did the deploy go out this morning?' },
-    { w: 'a', t: 'user',  html: '<span class="p">❯</span> tell him yes, went out at 9' },
-    { w: 'a', t: 'sent',  html: '↳ 📤 Sent to Niels — "Yes, went out at 9."' },
+    { w: 'a', t: 'user',  html: '<span class="p">❯</span> write Niels: did the deploy go out this morning?' },
+    { w: 'a', t: 'sent',  html: '↳ 📤 Sent to Niels — "Did the deploy go out this morning?"' },
     { w: 'b', t: 'agent', html: '📬 1 new message from Sam — want me to read it?' },
     { w: 'b', t: 'user',  html: '<span class="p">❯</span> read it' },
     { w: 'b', t: 'sender', html: '<span class="env">📨</span> Sam · #1' },
-    { w: 'b', t: 'quote', html: 'Yes, went out at 9.' },
+    { w: 'b', t: 'quote', html: 'Did the deploy go out this morning?' },
+    { w: 'b', t: 'user',  html: '<span class="p">❯</span> tell him yes, went out at 9' },
+    { w: 'b', t: 'sent',  html: '↳ 📤 Sent to Sam — "Yes, went out at 9."' },
+    { w: 'a', t: 'agent', html: '📬 1 new message from Niels — want me to read it?' },
+    { w: 'a', t: 'user',  html: '<span class="p">❯</span> read it' },
+    { w: 'a', t: 'sender', html: '<span class="env">📨</span> Niels · #1' },
+    { w: 'a', t: 'quote', html: 'Yes, went out at 9.' },
     { w: 'a', t: 'user',  html: '<span class="p">❯</span> <span class="caret"></span>' }
   ];
   function cls(t) { return t === 'user' ? 't-line' : t === 'sender' ? 't-line card-sender' : 't-line ' + t; }
@@ -455,23 +467,23 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
     function typeLine(el, html, done) {
       /* type only plain-text lines char-by-char; html lines land whole */
       var m = html.match(/^<span class="p">❯<\/span> (.*)$/);
-      if (!m) { el.innerHTML = html; return setTimeout(done, 500); }
+      if (!m) { el.innerHTML = html; return setTimeout(done, 800); }
       var text = m[1], i = 0;
       el.innerHTML = '<span class="p">❯</span> <span class="typed"></span><span class="caret"></span>';
       var t = el.querySelector('.typed');
       (function ch() {
-        if (i < text.length) { t.textContent += text[i++]; setTimeout(ch, 34 + Math.random() * 46); }
-        else { el.querySelector('.caret').remove(); setTimeout(done, 420); }
+        if (i < text.length) { t.textContent += text[i++]; setTimeout(ch, 55 + Math.random() * 65); }
+        else { el.querySelector('.caret').remove(); setTimeout(done, 750); }
       })();
     }
     (function next() {
       if (li >= SCRIPT.length) {
-        return setTimeout(function () { demoA.innerHTML = ''; demoB.innerHTML = ''; li = 0; next(); }, 7000);
+        return setTimeout(function () { demoA.innerHTML = ''; demoB.innerHTML = ''; li = 0; next(); }, 9000);
       }
       var l = SCRIPT[li++], d = document.createElement('div');
       d.className = cls(l.t); winOf(l).appendChild(d);
       if (l.t === 'user' && li < SCRIPT.length) typeLine(d, l.html, next);
-      else { d.innerHTML = l.html; setTimeout(next, l.t === 'agent' ? 900 : 650); }
+      else { d.innerHTML = l.html; setTimeout(next, l.t === 'agent' ? 1600 : 1000); }
     })();
   }
 
