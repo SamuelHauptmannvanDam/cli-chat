@@ -30,8 +30,14 @@
       matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   var links = Array.prototype.slice.call(nav.querySelectorAll('a'));
   if (!links.length) return;
-  var RADIUS = 80;  // px of influence above/below the cursor
-  var GROW = 0.35;  // extra scale at the cursor itself
+  var GROW = 0.65;  // extra scale at the cursor itself
+  // Influence field derived from the list's actual item spacing, LINEAR falloff:
+  // the hovered link gets the full effect, its immediate neighbours exactly half,
+  // and the second item out sits at the field's edge — no effect at all.
+  var spacing = links.length > 1
+    ? (links[links.length - 1].offsetTop - links[0].offsetTop) / (links.length - 1)
+    : 40;
+  var RADIUS = spacing * 2;
   var probe = links.filter(function (a) { return !a.classList.contains('active'); })[0] || links[0];
   var baseOp = parseFloat(getComputedStyle(probe).opacity) || 0.45;
   nav.addEventListener('mousemove', function (e) {
@@ -39,7 +45,7 @@
     links.forEach(function (a) {
       var mid = navTop + a.offsetTop + a.offsetHeight / 2;
       var d = Math.abs(e.clientY - mid);
-      var f = d >= RADIUS ? 0 : Math.cos((d / RADIUS) * (Math.PI / 2));
+      var f = d >= RADIUS ? 0 : 1 - d / RADIUS;
       a.style.transform = f ? 'scale(' + (1 + GROW * f).toFixed(3) + ')' : '';
       var base = a.classList.contains('active') ? 1 : baseOp;
       a.style.opacity = f ? (base + (1 - base) * f).toFixed(3) : '';
