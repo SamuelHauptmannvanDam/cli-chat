@@ -119,6 +119,21 @@ export function historyOutboxFile(user: string): string {
   return join(userDir(user), "history-outbox.jsonl");
 }
 
+// New-handle gate (0.18) side files. Both hold a plain JSON array of message ids
+// and are always OVERWRITTEN with the current gated set, so they never grow.
+//   gated-notified.json — ids the live feed has already been told about (as a
+//     name+handle summary). Written by read_messages (chatBatch); read by the
+//     waker so it doesn't re-fire on a summary the feed already carries.
+//   gated-shown.json — ids whose BODIES the session hook has already shown to
+//     the USER (the system notice). Written and read by check-inbox only.
+export function gatedNotifiedFile(user: string): string {
+  return join(userDir(user), "gated-notified.json");
+}
+
+export function gatedShownFile(user: string): string {
+  return join(userDir(user), "gated-shown.json");
+}
+
 // While the live inbox ("chat") listener is running it heartbeats this lock file
 // (bumping its mtime every tick). A FRESH lock tells the session hook that chat is
 // live, so the hook suppresses its count-only notice and the listener's feed is

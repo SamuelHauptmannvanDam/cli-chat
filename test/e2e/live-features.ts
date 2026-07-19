@@ -73,18 +73,31 @@ const sent = await call(sam.client, "send_message", {
 assert.equal(sent.ok, true);
 console.log("1. send_message: ok");
 
-// 2. Niels reads it, replies AS ASSISTANT.
+// 2. On Niels's side Sam is a STRANGER → held behind the new-handle gate (0.18):
+//    tools return a name+handle summary only, and the user's accept reveals the
+//    held batch. Then Niels replies AS ASSISTANT.
 const avail = await call(niels.client, "messages_available", {});
-assert.equal(avail.count, 1);
-const read = await call(niels.client, "read_message", { id: avail.messages[0].id });
-assert.equal(read.ok, true);
+assert.equal(avail.count, 0, "a stranger's first message must not flow");
+assert.equal(avail.new_handles?.length, 1);
+assert.equal(avail.new_handles[0].name, "Sam Tester");
+assert.equal(avail.new_handles[0].count, 1);
+const nielsContacts = await call(niels.client, "contacts", {});
+assert.equal(nielsContacts.newHandles?.length, 1);
+assert.equal(nielsContacts.newHandles[0].state, "pending");
+assert.equal(nielsContacts.newHandles[0].held, 1);
+const held = await call(niels.client, "respond_handle", { name: "Sam Tester", action: "accept" });
+assert.equal(held.ok, true);
+assert.equal(held.count, 1);
+assert.match(held.note ?? "", /Accepted/);
+const read = held.messages[0];
+assert.match(read.body, /what env vars/);
 const reply = await call(niels.client, "send_message", {
   in_reply_to: read.id,
   body: "REDIS_URL and API_KEY, see .env.example",
   as_assistant: true,
 });
 assert.equal(reply.ok, true);
-console.log("2. send_message reply as_assistant: ok");
+console.log("2. new-handle gate (hold → summary → accept) + reply as_assistant: ok");
 
 // 3. Sam reads the reply — visibly marked + metadata + resultNote guidance.
 const got = await call(sam.client, "read_message", {});
@@ -146,10 +159,21 @@ assert.match(chatRO.note ?? "", /READ-ONLY DESK/);
 assert.doesNotMatch(chatRO.note ?? "", /WRITE SCOPE/);
 const chatPlain = await call(sam.client, "chat", {});
 assert.doesNotMatch(chatPlain.command, /MESSENGER_CHAT_MODE/);
+assert.doesNotMatch(chatPlain.command, /MESSENGER_CHAT_PUBLIC/);
+assert.match(chatPlain.note ?? "", /NEW-HANDLE GATE/);
 const chatDraft = await call(sam.client, "auto_draft_chat", {});
 assert.doesNotMatch(chatDraft.command, /MESSENGER_CHAT_MODE/);
 assert.match(chatDraft.note ?? "", /AUTO DRAFT CHAT MODE/);
-console.log("8. chat / auto_draft_chat / auto_chat wakers (incl. read_only): ok");
+// The public variant: flag travels in the waker env, note flips gate → public.
+const chatPub = await call(sam.client, "chat", { public: true });
+assert.match(chatPub.command, /MESSENGER_CHAT_PUBLIC=1/);
+assert.match(chatPub.note ?? "", /PUBLIC MODE/);
+assert.doesNotMatch(chatPub.note ?? "", /NEW-HANDLE GATE/);
+const autoPub = await call(sam.client, "auto_chat", { read_only: true, public: true });
+assert.match(autoPub.command, /MESSENGER_CHAT_PUBLIC=1/);
+assert.match(autoPub.note ?? "", /READ-ONLY DESK/);
+assert.match(autoPub.note ?? "", /PUBLIC MODE/);
+console.log("8. chat / auto_draft_chat / auto_chat wakers (incl. read_only + public): ok");
 
 // 9. Headless CLI send from Niels's home → lands for Sam.
 const out = execFileSync("node", [join(ROOT, "src", "server-net.ts"), "send", "Sam", "deploy", "landed,", "your", "move"], {

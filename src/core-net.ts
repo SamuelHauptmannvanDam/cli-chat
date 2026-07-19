@@ -5,7 +5,7 @@
 // the server only ever holds ciphertext.
 
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { writeSecretAtomic } from "./secure-fs.ts";
 import {
   getMessage,
@@ -71,7 +71,7 @@ export interface NetContext {
   // Never fired for rows applied FROM the stream — that would loop. Optional,
   // fire-and-forget, must never throw or break a send/drain.
   onHistoryAppend?: (row: MessageRow) => void;
-  // The NEW-HANDLE GATE's public-mode probe (0.17): when this returns true (a live
+  // The NEW-HANDLE GATE's public-mode probe (0.18): when this returns true (a live
   // chat session started with `public: true` — see readChatLock), a first-time
   // sender is auto-saved and flows straight into the inbox, exactly the pre-gate
   // behavior. Absent or false → unknown senders are held as gated ("pending").
@@ -467,7 +467,7 @@ export async function sync(ctx: NetContext): Promise<number> {
 }
 
 export type SendResult =
-  | { ok: true; id: string; to: { name: string; signPub: string; keyChanged?: boolean }; saved?: boolean; self?: boolean }
+  | { ok: true; id: string; to: { name: string; signPub: string; keyChanged?: boolean }; saved?: boolean; self?: boolean; acceptedHandle?: boolean }
   | {
       ok: false;
       reason: "no_contact" | "ambiguous" | "no_keys" | "bad_key";
@@ -638,8 +638,18 @@ export async function sendMessage(
   if (!c.signPub || !c.boxPub)
     return { ok: false, reason: "no_keys", query: to };
 
+  // Writing to a gated new handle is consent: the user is addressing them on
+  // purpose, so the gate clears exactly as an explicit accept would (their held
+  // messages then surface through the normal unread paths).
+  const accepted = !!c.gated;
+  if (c.gated) acceptGatedContact(ctx, c);
   const id = await sendSealed(ctx, { name: c.name, signPub: c.signPub, boxPub: c.boxPub }, args.body, null, asAssistant);
-  return { ok: true, id, to: { name: c.name, signPub: c.signPub, ...(c.keyChangedAt ? { keyChanged: true } : {}) } };
+  return {
+    ok: true,
+    id,
+    to: { name: c.name, signPub: c.signPub, ...(c.keyChangedAt ? { keyChanged: true } : {}) },
+    ...(accepted ? { acceptedHandle: true } : {}),
+  };
 }
 
 export interface InboxMessage {
@@ -673,16 +683,53 @@ function toInboxMessage(ctx: NetContext, m: MessageRow): InboxMessage {
   };
 }
 
+// The new-handle gate state of a row's sender ("pending" / "dismissed") —
+// undefined for self-mail and for every accepted or manually-saved contact.
+// This is THE filter every model-facing read path applies (0.18): a gated
+// sender's bodies reach only the USER (via the hook's system notice), never
+// the model's context, until the user accepts them.
+function gateOf(ctx: NetContext, sender: string): "pending" | "dismissed" | undefined {
+  if (sender === ctx.me.signPub) return undefined;
+  return contactByKey(ctx.book, sender)?.gated;
+}
+
+// The "new handles" summary model-facing tools return INSTEAD of gated bodies:
+// who is held (name + handle) and how many messages, never the content.
+export interface NewHandle {
+  name: string;
+  handle: string | null;
+  count: number;
+}
+
+export function pendingHandles(ctx: NetContext): NewHandle[] {
+  const by = new Map<string, NewHandle>();
+  for (const m of unreadFor(ctx.cache, ctx.me.signPub)) {
+    if (gateOf(ctx, m.sender) !== "pending") continue;
+    const c = contactByKey(ctx.book, m.sender);
+    const cur = by.get(m.sender) ?? {
+      name: c?.name ?? `${m.sender.slice(0, 8)}…`,
+      handle: c?.handle ?? null,
+      count: 0,
+    };
+    cur.count++;
+    by.set(m.sender, cur);
+  }
+  return [...by.values()];
+}
+
 // Take every currently-unread message, marking each read, with the FULL body —
 // the receive shape `read_messages` hands straight to the user when there's no fresh
 // warmer snapshot. Kept here (not inlined in the tool) so it shares the
 // sender-labelling and read semantics with the rest of the receive path instead
-// of the tool reaching into the cache directly.
+// of the tool reaching into the cache directly. Gated senders' rows are skipped
+// AND left unread — they're held for the user's accept, not consumed.
 export function takeUnread(ctx: NetContext): InboxMessage[] {
-  return unreadFor(ctx.cache, ctx.me.signPub).map((m) => {
-    markRead(ctx.cache, m.id, ctx.now());
-    return toInboxMessage(ctx, m);
-  });
+  return unreadFor(ctx.cache, ctx.me.signPub)
+    .filter((m) => !gateOf(ctx, m.sender))
+    .map((m) => {
+      markRead(ctx.cache, m.id, ctx.now());
+      return toInboxMessage(ctx, m);
+    });
 }
 
 // ---- pending snapshot: the warmer→hook channel (PUSH.md / db.ts cross-process) ----
@@ -697,6 +744,13 @@ export function takeUnread(ctx: NetContext): InboxMessage[] {
 export interface PendingSnapshot {
   writtenAt: number;
   messages: InboxMessage[];
+  // Unread messages from GATED ("pending") new handles, kept OUT of `messages` so
+  // no model-facing consumer ever returns their bodies: the hook shows these to
+  // the USER directly (a system notice), and read_messages reports only a
+  // name+handle+count summary. Never acked/marked read from here — they stay
+  // held until the user accepts (respond_handle) or goes public. Dismissed
+  // handles' messages appear in NEITHER list (silent by design).
+  gated?: InboxMessage[];
   // false → this is only the boot seed (mirrored from the local cache before the
   // warmer's first network drain), so it may be missing mail that's already on the
   // server. true → written after a real `sync`, so it reflects the server. The
@@ -739,6 +793,55 @@ export function writePendingAck(ackPath: string, ids: string[]): void {
   writeJsonAtomic(ackPath, ids);
 }
 
+// ---- chat.lock: the live-chat heartbeat + its mode flags ----
+// Written by the waker (await-mail.ts touchLock) every tick; read here so every
+// process agrees on "is a chat session live, and in which mode". `public` is the
+// new-handle gate's per-session bypass (0.18): while a public chat session
+// heartbeats the lock, sync() auto-saves new senders ungated.
+
+export const CHAT_ACTIVE_MS = 15_000; // > the waker's tick cadence, covers relaunch gap
+
+export interface ChatLockInfo {
+  active: boolean;
+  quiet: boolean;
+  public: boolean;
+}
+
+export function readChatLock(lockPath: string, nowMs: number): ChatLockInfo {
+  try {
+    if (nowMs - statSync(lockPath).mtimeMs >= CHAT_ACTIVE_MS)
+      return { active: false, quiet: false, public: false };
+    let quiet = false;
+    let pub = false;
+    try {
+      const j = JSON.parse(readFileSync(lockPath, "utf8")) as { mode?: string; public?: boolean };
+      quiet = j?.mode === "quiet";
+      pub = j?.public === true;
+    } catch {
+      /* pre-0.12 lock content (a bare timestamp) → plain chat */
+    }
+    return { active: true, quiet, public: pub };
+  } catch {
+    return { active: false, quiet: false, public: false }; // no lock → chat isn't running
+  }
+}
+
+// The gated ids a given side has already handled (the waker's wake dedup + the
+// hook's shown-to-user dedup). Same overwrite semantics as the ack file: always
+// rewritten with the CURRENT gated set, so they never grow.
+export function readIdList(path: string): string[] {
+  try {
+    const ids = JSON.parse(readFileSync(path, "utf8"));
+    return Array.isArray(ids) ? (ids as string[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function writeIdList(path: string, ids: string[]): void {
+  writeJsonAtomic(path, ids);
+}
+
 // Warmer side: apply any ids the hook acked (mark them read so they drop out), then
 // mirror the remaining unread set to pendingPath. The ONLY writer of pendingPath.
 export function refreshPending(
@@ -748,20 +851,33 @@ export function refreshPending(
   synced = true,
 ): void {
   for (const id of readAck(ackPath)) markRead(ctx.cache, id, ctx.now());
-  const messages: InboxMessage[] = unreadFor(ctx.cache, ctx.me.signPub).map((m) =>
-    toInboxMessage(ctx, m),
-  );
-  writeJsonAtomic(pendingPath, { writtenAt: ctx.now(), messages, synced } satisfies PendingSnapshot);
+  const rows = unreadFor(ctx.cache, ctx.me.signPub);
+  const messages: InboxMessage[] = rows
+    .filter((m) => !gateOf(ctx, m.sender))
+    .map((m) => toInboxMessage(ctx, m));
+  const gated: InboxMessage[] = rows
+    .filter((m) => gateOf(ctx, m.sender) === "pending")
+    .map((m) => toInboxMessage(ctx, m));
+  writeJsonAtomic(pendingPath, {
+    writtenAt: ctx.now(),
+    messages,
+    ...(gated.length ? { gated } : {}),
+    synced,
+  } satisfies PendingSnapshot);
 }
 
 export interface AvailableResult {
   count: number;
   messages: { id: string; from: string; preview: string; at: number }[];
+  // Held new handles (gate pending): name + handle + message count, NO bodies —
+  // those are shown to the user by the system, never through the model.
+  new_handles?: NewHandle[];
 }
 
 export async function messagesAvailable(ctx: NetContext): Promise<AvailableResult> {
   await sync(ctx);
-  const rows = unreadFor(ctx.cache, ctx.me.signPub);
+  const rows = unreadFor(ctx.cache, ctx.me.signPub).filter((m) => !gateOf(ctx, m.sender));
+  const held = pendingHandles(ctx);
   return {
     count: rows.length,
     messages: rows.map((m) => ({
@@ -770,6 +886,7 @@ export async function messagesAvailable(ctx: NetContext): Promise<AvailableResul
       preview: m.body.length > 200 ? m.body.slice(0, 197) + "..." : m.body,
       at: m.created_at,
     })),
+    ...(held.length ? { new_handles: held } : {}),
   };
 }
 
@@ -784,7 +901,10 @@ export type ReadResult =
       self?: boolean;
       answered_by?: string;
     }
-  | { ok: false; reason: "empty" | "not_found" };
+  | { ok: false; reason: "empty" | "not_found" }
+  // The message is from a gated new handle: the body stays held (shown to the
+  // user by the system only) until they accept via respond_handle.
+  | { ok: false; reason: "new_handle"; name: string; handle: string | null };
 
 export async function readMessage(ctx: NetContext, args: { id?: string }): Promise<ReadResult> {
   await sync(ctx);
@@ -792,16 +912,83 @@ export async function readMessage(ctx: NetContext, args: { id?: string }): Promi
   if (args.id) {
     row = getMessage(ctx.cache, args.id);
     if (!row || row.recipient !== ctx.me.signPub) return { ok: false, reason: "not_found" };
+    if (gateOf(ctx, row.sender)) {
+      const c = contactByKey(ctx.book, row.sender);
+      return {
+        ok: false,
+        reason: "new_handle",
+        name: c?.name ?? `${row.sender.slice(0, 8)}…`,
+        handle: c?.handle ?? null,
+      };
+    }
   } else {
-    row = unreadFor(ctx.cache, ctx.me.signPub)[0];
+    row = unreadFor(ctx.cache, ctx.me.signPub).filter((m) => !gateOf(ctx, m.sender))[0];
     if (!row) return { ok: false, reason: "empty" };
   }
   markRead(ctx.cache, row.id, ctx.now());
   return { ok: true, ...toInboxMessage(ctx, row) };
 }
 
+// ---- the new-handle gate: accept / dismiss (0.18) -------------------------
+
+export type HandleResponse =
+  | { ok: true; action: "accept"; name: string; handle: string | null; count: number; messages: InboxMessage[] }
+  | { ok: true; action: "dismiss"; name: string; handle: string | null; held: number }
+  | { ok: false; reason: "no_match"; query: string }
+  | { ok: false; reason: "ambiguous"; query: string; candidates: string[] };
+
+// Clear the gate on a held contact: they become a normal (auto-saved) contact,
+// their edge joins the second-degree graph, and the change syncs like any other
+// book write. Shared by respondHandle, the accept-on-write path (sendMessage /
+// sendReply) and the public-mode backlog sweep (server-net chatBatch).
+export function acceptGatedContact(ctx: NetContext, c: Contact): void {
+  delete c.gated;
+  if (ctx.contactsPath) saveContacts(ctx.contactsPath, ctx.book);
+  if (c.signPub) ctx.onEdgeAdd?.(c.signPub);
+  ctx.onBookChange?.();
+}
+
+// Resolve a gated handle by name / self-name / 6-char handle (exact match first,
+// then substring — same spirit as resolve()) and accept or dismiss it.
+// accept → the held messages are marked read and RETURNED (the user just
+// approved them for the feed). dismiss → stays quiet: later messages from them
+// accumulate silently until a future accept.
+export function respondHandle(
+  ctx: NetContext,
+  args: { name: string; action: "accept" | "dismiss" },
+): HandleResponse {
+  const q = args.name.trim().toLowerCase();
+  const pool = ctx.book.contacts.filter((c) => c.gated);
+  const namesOf = (c: Contact) =>
+    [c.name, c.selfName, c.handle].filter((n): n is string => !!n).map((n) => n.toLowerCase());
+  let matches = q ? pool.filter((c) => namesOf(c).includes(q)) : [];
+  if (!matches.length && q) matches = pool.filter((c) => namesOf(c).some((n) => n.includes(q)));
+  if (!matches.length) return { ok: false, reason: "no_match", query: args.name };
+  if (matches.length > 1)
+    return {
+      ok: false,
+      reason: "ambiguous",
+      query: args.name,
+      candidates: matches.map((c) => `${c.name}${c.handle ? ` (${c.handle})` : ""}`),
+    };
+  const c = matches[0]!;
+  const held = unreadFor(ctx.cache, ctx.me.signPub).filter((m) => m.sender === c.signPub);
+  if (args.action === "dismiss") {
+    c.gated = "dismissed";
+    if (ctx.contactsPath) saveContacts(ctx.contactsPath, ctx.book);
+    ctx.onBookChange?.();
+    return { ok: true, action: "dismiss", name: c.name, handle: c.handle ?? null, held: held.length };
+  }
+  acceptGatedContact(ctx, c);
+  const messages = held.map((m) => {
+    markRead(ctx.cache, m.id, ctx.now());
+    return toInboxMessage(ctx, m);
+  });
+  return { ok: true, action: "accept", name: c.name, handle: c.handle ?? null, count: messages.length, messages };
+}
+
 export type ReplyResult =
-  | { ok: true; id: string; to: { name: string; signPub: string; keyChanged?: boolean }; self?: boolean }
+  | { ok: true; id: string; to: { name: string; signPub: string; keyChanged?: boolean }; self?: boolean; acceptedHandle?: boolean }
   | { ok: false; reason: "not_found" | "no_keys" };
 
 // The reply half of sendMessage: recipient inferred from the replied-to message,
@@ -833,6 +1020,9 @@ async function sendReply(
   const c = contactByKey(ctx.book, other);
   if (!c || !c.signPub || !c.boxPub) return { ok: false, reason: "no_keys" };
 
+  // Replying to a gated handle's message = consent, same as writing them fresh.
+  const accepted = !!c.gated;
+  if (c.gated) acceptGatedContact(ctx, c);
   const id = await sendSealed(
     ctx,
     { name: c.name, signPub: c.signPub, boxPub: c.boxPub },
@@ -841,7 +1031,12 @@ async function sendReply(
     asAssistant,
   );
   const kc = contactByKey(ctx.book, c.signPub)?.keyChangedAt;
-  return { ok: true, id, to: { name: c.name, signPub: c.signPub, ...(kc ? { keyChanged: true } : {}) } };
+  return {
+    ok: true,
+    id,
+    to: { name: c.name, signPub: c.signPub, ...(kc ? { keyChanged: true } : {}) },
+    ...(accepted ? { acceptedHandle: true } : {}),
+  };
 }
 
 // --- history (HISTORY.md): the recall door over the local cache ------------
