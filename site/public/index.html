@@ -192,11 +192,12 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
   .mode { grid-template-columns: 1fr; }
   .hero { padding-top: 64px; }
   section.wrap { min-height: auto; margin-top: 10vh; padding: 120px 24px 70px; }
-  /* Tight space: the version always stays; the "Listening…" task line is the
-     one that truncates, and the task count goes first. */
-  .statusbar .live { display: none; }
-  .statusbar .seg-l { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .statusbar .ver { white-space: nowrap; }
+  /* Tight space: version, task count and "● Bash" all keep their place;
+     only the "(Listening for new messages)" parenthetical gives way. */
+  .statusbar .seg-l { display: flex; align-items: baseline; min-width: 0; white-space: nowrap; }
+  .statusbar .seg-l .task { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .statusbar .seg-r { flex: none; }
+  .statusbar .ver, .statusbar .live { white-space: nowrap; }
   .tabs { flex-wrap: wrap; width: 100%; }
   .tab { flex: 1 1 auto; border-bottom: 1px solid var(--line); }
 }
@@ -379,7 +380,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
 </footer>
 
 <div class="statusbar">
-  <span class="seg-l"><b>●</b>Bash(Listening for new messages)</span>
+  <span class="seg-l"><b>●</b>Bash<span class="task">(Listening for new messages)</span></span>
   <span class="seg-r"><span class="ver">v0.18.0</span><span class="live">1 background task</span></span>
 </div>
 
