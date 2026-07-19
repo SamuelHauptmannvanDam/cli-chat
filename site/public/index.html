@@ -155,7 +155,6 @@ h2 { font-family: var(--display); font-size: clamp(20px, 3vw, 30px); font-weight
 /* steps */
 .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); margin-top: 36px; }
 .step { background: var(--bg); padding: 28px 24px; transition: background .2s; }
-.step:hover { background: var(--bg-card); }
 .step .n { color: var(--amber); font-size: 12px; margin-bottom: 14px; }
 .step h3 { font-size: 14px; font-weight: 600; margin-bottom: 10px; }
 .step p { font-family: var(--serif); font-size: 15.5px; color: var(--dim); line-height: 1.55; }
@@ -164,7 +163,8 @@ h2 { font-family: var(--display); font-size: clamp(20px, 3vw, 30px); font-weight
 /* features */
 .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); margin-top: 36px; }
 .cell { background: var(--bg); padding: 26px 22px; transition: background .2s; }
-.cell:hover { background: var(--bg-card); }
+a.cell:hover { background: var(--bg-card); }
+a.cell:hover h3 { color: var(--amber); }
 .cell .ico { font-size: 17px; margin-bottom: 14px; }
 .cell h3 { font-size: 13.5px; font-weight: 600; margin-bottom: 8px; }
 .cell p { font-family: var(--serif); font-size: 15px; color: var(--dim); line-height: 1.5; }
@@ -179,9 +179,9 @@ a.cell:hover .go { color: var(--amber); }
   border: 1px solid var(--line); background: rgba(18, 16, 12, .92); padding: 28px 26px;
   position: relative; transition: border-color .2s;
 }
-.mode:hover { border-color: var(--faint); background: var(--bg-card); }
+.mode:hover { border-color: var(--faint); }
 .mode.featured { border-color: rgba(245,167,66,.35); box-shadow: 0 0 40px rgba(245,167,66,.04); }
-.mode.featured:hover { border-color: rgba(245,167,66,.65); background: var(--bg-card); box-shadow: 0 0 50px rgba(245,167,66,.08); }
+.mode.featured:hover { border-color: rgba(245,167,66,.65); box-shadow: 0 0 50px rgba(245,167,66,.08); }
 .mode .tag { position: absolute; top: -9px; left: 20px; background: var(--bg); padding: 0 8px; font-size: 11px; color: var(--amber); letter-spacing: .06em; }
 .mode h3 { font-size: 15px; font-weight: 600; margin: 6px 0 10px; }
 .mode-info > p { font-family: var(--serif); font-size: 15.5px; color: var(--dim); line-height: 1.55; }
