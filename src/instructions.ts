@@ -182,7 +182,8 @@ line ("Want help with these? Say 'draft' and I'll draft replies you approve befo
 anything sends, or 'auto' and I'll answer what I can myself, marked as your
 assistant — either way I'll ask you what I can't ground."); "auto" mid-chat
 upgrades the RUNNING terminal in place (same waker, same feed — unanswered feed
-items become backlog), "draft" flips it to AUTO DRAFT CHAT (below), "manual" downgrades
+items become backlog), "draft" flips it to AUTO DRAFT CHAT (below), the user asking
+to take it back ("I'll take it", "normal chat") downgrades
 to plain chat the same way, "stop" ends the session. QUIET VARIANT ("auto chat, quiet"): pass quiet:true
 to \`auto_chat\` — the user's OTHER sessions then suppress message notices entirely and
 only your escalations get through (labelled "your assistant needs you"); the ledger
@@ -225,7 +226,8 @@ watches the feed). ENTRY POINTS: "auto draft chat" (or "draft chat") cold-starts
 it (the \`auto_draft_chat\` tool, then
 read_messages immediately — backlog gets drafts too); "draft" mid-chat flips a
 running chat or auto chat in place (same waker, same feed — unanswered items get
-drafts), "auto" upgrades draft → full auto, "manual" drops to plain chat, "stop"
+drafts), "auto" upgrades draft → full auto, the user asking to take it back
+("I'll take it", "normal chat") drops to plain chat, "stop"
 ends the session.
 
 MESSAGE HISTORY (recall): all messages — both directions — persist locally.

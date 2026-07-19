@@ -24,6 +24,7 @@ import {
   EVIDENCE_PER_TAG_MAX,
   type Contact,
   type ContactBook,
+  safetyNumber,
 } from "../../src/contacts.ts";
 
 const book: ContactBook = {
@@ -330,4 +331,22 @@ test("declineTag records a rejection once; isTagDeclined reads it case-insensiti
   assert.equal(declineTag(c, "work"), false); // already declined
   assert.equal(isTagDeclined(c, "WORK"), true);
   assert.equal(isTagDeclined(c, "family"), false);
+});
+
+test("safetyNumber: symmetric, deterministic, 12 groups of 5 digits", () => {
+  const a = { signPub: "A".repeat(64), boxPub: "B".repeat(64) };
+  const b = { signPub: "C".repeat(64), boxPub: "D".repeat(64) };
+  const n1 = safetyNumber(a, b);
+  const n2 = safetyNumber(b, a); // order-independent: both sides render the same number
+  assert.equal(n1, n2);
+  assert.equal(n1, safetyNumber(a, b)); // deterministic
+  assert.match(n1, /^(\d{5} ){11}\d{5}$/);
+});
+
+test("safetyNumber: any key change yields a different number", () => {
+  const a = { signPub: "A".repeat(64), boxPub: "B".repeat(64) };
+  const b = { signPub: "C".repeat(64), boxPub: "D".repeat(64) };
+  const base = safetyNumber(a, b);
+  assert.notEqual(base, safetyNumber(a, { ...b, boxPub: "E".repeat(64) }));
+  assert.notEqual(base, safetyNumber({ ...a, signPub: "F".repeat(64) }, b));
 });

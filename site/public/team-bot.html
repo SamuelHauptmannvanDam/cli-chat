@@ -10,6 +10,7 @@
 <meta property="og:url" content="https://cli-chat.dev/team-bot">
 <meta property="og:type" content="article">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230b0a08'/%3E%3Ctext x='32' y='44' font-family='monospace' font-size='36' font-weight='bold' fill='%23f5a742' text-anchor='middle'%3E%E2%9D%AF%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="site.css">
 <style>
 :root {
   --bg: #000000;
@@ -27,8 +28,6 @@
   --serif: var(--mono);
   --display: var(--mono);
 }
-* { margin: 0; padding: 0; box-sizing: border-box; }
-html { scroll-behavior: smooth; overflow-x: hidden; }
 body {
   background: var(--bg);
   color: var(--ink);
@@ -38,30 +37,14 @@ body {
   overflow-x: hidden;
   cursor: crosshair;
 }
-::selection { background: var(--amber); color: var(--bg); }
-a { color: var(--cyan); text-decoration: none; border-bottom: 1px solid transparent; transition: border-color .15s; }
-a:hover { border-bottom-color: var(--cyan); }
 
 /* grain overlay */
-body::after {
-  content: ""; position: fixed; inset: 0; z-index: 50; pointer-events: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
-}
 
 .wrap { max-width: 880px; margin: 0 auto; padding: 0 24px; }
 
 /* agenda */
-.agenda {
-  position: fixed; left: 28px; top: 50%; transform: translateY(-50%);
-  z-index: 40; display: none; flex-direction: column; gap: 15px;
-  font-size: 11.5px; letter-spacing: .05em;
-}
-@media (min-width: 1280px) { .agenda { display: flex; } }
+
 .agenda a { color: var(--ink); opacity: .28; border-bottom: none; transition: opacity .25s, color .25s; }
-.agenda a:hover { opacity: .7; }
-.agenda a.active { opacity: 1; color: var(--amber); }
-.agenda a .idx { color: var(--faint); margin-right: 9px; }
-.agenda a.active .idx { color: var(--amber); }
 
 /* ---- hero ---- */
 .hero {
@@ -75,37 +58,21 @@ body::after {
   background: radial-gradient(ellipse at center, rgba(245,167,66,.07), transparent 65%);
 }
 .kicker { color: var(--dim); font-size: 12px; letter-spacing: .12em; margin-bottom: 28px; }
-.kicker b { color: var(--green); font-weight: 400; }
-.kicker a { color: var(--dim); }
-.kicker a:hover { color: var(--cyan); }
 h1 {
   font-family: var(--display);
   font-size: clamp(22px, 4vw, 38px);
   font-weight: 700; line-height: 1.3; letter-spacing: -.01em; margin-bottom: 28px;
 }
-h1 .prompt { color: var(--green); }
-h1 .arg { color: var(--amber); }
 .sub {
   font-family: var(--serif); font-size: 19px; font-weight: 400; line-height: 1.55;
   color: var(--dim); max-width: 640px; margin-bottom: 12px;
 }
-.sub em { color: var(--ink); font-style: italic; }
-.hero-note { font-size: 12px; color: var(--faint); max-width: 640px; }
-.hero-note em { color: var(--dim); font-style: normal; }
 
 /* feed card (matches the landing page modes) */
 .feed {
   font-size: 12px; line-height: 1.85; background: rgba(11, 10, 8, .9); border: 1px solid var(--line);
   padding: 16px 18px; margin-top: 34px; max-width: 560px;
 }
-.feed .fu { color: var(--green); }
-.feed .fa { color: var(--dim); }
-.feed .fs { font-weight: 600; }
-.feed .fs .env { color: var(--amber); }
-.feed .fq { border-left: 2px solid var(--amber); padding-left: 10px; color: var(--dim); }
-.feed .fr { color: var(--green); }
-.feed .fd { color: var(--cyan); }
-.feed .fw { color: var(--red); }
 
 /* ---- sections ---- */
 section.wrap {
@@ -113,50 +80,16 @@ section.wrap {
   margin-top: 14vh;
   padding: 90px 24px 30px;
 }
-.sec-label { color: var(--faint); font-size: 12px; letter-spacing: .1em; margin-bottom: 26px; }
-.sec-label b { color: var(--amber); font-weight: 400; }
 h2 { font-family: var(--display); font-size: clamp(19px, 2.6vw, 27px); font-weight: 700; line-height: 1.35; margin-bottom: 26px; }
 .lede { font-family: var(--serif); font-size: 17px; color: var(--dim); max-width: 640px; line-height: 1.6; }
-.lede em { color: var(--ink); }
-.lede code, .prose code { font-family: var(--mono); font-size: .85em; color: var(--green); background: var(--bg-raised); padding: 2px 6px; }
-.prose { font-family: var(--serif); font-size: 15.5px; color: var(--dim); max-width: 640px; line-height: 1.65; margin-top: 18px; }
-.prose em { color: var(--ink); }
-.prose + .prose { margin-top: 14px; }
 
 /* model cards */
-.grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 36px; }
+
 .cell { border: 1px solid var(--line); background: var(--bg); padding: 26px 22px; transition: border-color .2s; }
-.cell:hover { border-color: var(--faint); }
-.cell .ico { font-size: 17px; margin-bottom: 14px; }
-.cell h3 { font-size: 13.5px; font-weight: 600; margin-bottom: 8px; }
 .cell p { font-family: var(--serif); font-size: 14.5px; color: var(--dim); line-height: 1.55; }
-.cell p em { color: var(--ink); }
-.cell p code { font-family: var(--mono); font-size: 11.5px; color: var(--green); background: var(--bg-raised); padding: 1px 5px; }
 
 /* code blocks */
-.codeblock {
-  display: flex; flex-direction: column; border: 1px solid var(--line); background: var(--bg-raised);
-  margin-top: 24px; max-width: 720px;
-}
-.codeblock pre {
-  padding: 20px 22px 14px; overflow-x: auto; font-size: 12.5px; line-height: 1.85;
-  color: var(--ink); font-family: var(--mono);
-}
-.codeblock .cb-title {
-  display: block; border-bottom: 1px solid var(--line); padding: 8px 14px;
-  font-size: 11px; color: var(--faint); letter-spacing: .06em;
-}
-.codeblock .c { color: var(--faint); }
-.codeblock .g { color: var(--green); }
-.codeblock .a { color: var(--amber); }
-.codeblock .d { color: var(--dim); }
-.codeblock .cy { color: var(--cyan); }
-.copy {
-  order: 2; align-self: flex-end; margin: 0 12px 12px 0;
-  font-family: var(--mono); font-size: 11px; padding: 5px 12px; background: var(--bg-raised);
-  border: 1px solid var(--faint); color: var(--dim); cursor: pointer; transition: color .15s, border-color .15s;
-}
-.copy:hover { border-color: var(--amber); color: var(--amber); }
+
 
 /* trust-ladder rungs */
 .rungs { border: 1px solid var(--line); margin-top: 36px; background: var(--line); display: grid; gap: 1px; max-width: 720px; }
@@ -169,33 +102,13 @@ h2 { font-family: var(--display); font-size: clamp(19px, 2.6vw, 27px); font-weig
 @media (max-width: 700px) { .rung { grid-template-columns: 1fr; gap: 6px; } }
 
 /* rails */
-.notes { border: 1px solid var(--line); margin-top: 36px; background: var(--line); display: grid; gap: 1px; max-width: 720px; }
-.note { background: var(--bg); padding: 16px 22px; display: grid; grid-template-columns: 220px 1fr; gap: 18px; transition: background .2s; }
-.note .k { font-family: var(--mono); font-size: 12px; color: var(--amber); word-break: break-word; align-self: start; }
-.note .k.warn { color: var(--red); }
-.note p { font-family: var(--serif); font-size: 14px; color: var(--dim); line-height: 1.55; }
-.note p em { color: var(--ink); }
-.note p code { font-family: var(--mono); font-size: 11.5px; color: var(--green); background: var(--bg-raised); padding: 1px 5px; }
+
 @media (max-width: 700px) { .note { grid-template-columns: 1fr; gap: 6px; } }
 
 /* footer */
 footer { border-top: 1px solid var(--line); padding: 56px 0 96px; margin-top: 14vh; }
-.foot { display: flex; justify-content: space-between; gap: 24px; flex-wrap: wrap; color: var(--faint); font-size: 12px; line-height: 2.1; }
-.foot b { color: var(--dim); font-weight: 400; }
 
 /* agent-CLI status bar (the background-task line + running indicator) */
-.statusbar {
-  position: fixed; bottom: 0; left: 0; right: 0; z-index: 60;
-  display: flex; justify-content: space-between; align-items: center; gap: 12px;
-  background: var(--bg-raised); border-top: 1px solid var(--line);
-  font-size: 11px; color: var(--dim); padding: 6px 14px;
-}
-.statusbar .seg-l { color: var(--dim); }
-.statusbar .seg-l b { color: var(--green); font-weight: 400; margin-right: 8px; }
-.statusbar .seg-r { display: flex; gap: 16px; }
-.statusbar .live { color: var(--amber); }
-.statusbar .live::before { content: "●"; margin-right: 6px; animation: blink 2.2s steps(1) infinite; }
-@keyframes blink { 50% { opacity: 0; } }
 
 @media (max-width: 800px) {
   .grid3 { grid-template-columns: 1fr; }
@@ -210,6 +123,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; margin-top: 14
   * { transition: none !important; }
 }
 </style>
+<script src="site.js" defer></script>
 </head>
 <body>
 <nav class="agenda" id="agenda">
@@ -243,9 +157,9 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; margin-top: 14
   <h2 data-scramble>It answers from where you opened it.</h2>
   <p class="lede">The bot isn't a separate thing you deploy — it's <em>your assistant, in your session, grounded in the directory you started it in.</em> Open it in the repo and the repo is what it knows.</p>
   <div class="grid3">
-    <div class="cell"><p class="ico">📂</p><h3>Grounded in the repo</h3><p>Code, docs, git history — read-only. Plus your message threads and whatever you've told it to <code>remember</code>. It answers from evidence, not vibes.</p></div>
-    <div class="cell"><p class="ico">🪪</p><h3>Marked as itself</h3><p>Every autonomous reply carries a visible <em>"— your assistant"</em> line. Teammates always know whether they got you or the desk.</p></div>
-    <div class="cell"><p class="ico">🙋</p><h3>Asks when unsure</h3><p>Anything it can't ground — decisions, dates, commitments — it tells the sender <em>"I'll check with them and get back to you"</em> and puts the question to you.</p></div>
+    <div class="cell"><h3>Grounded in the repo</h3><p>Code, docs, git history — read-only. Plus your message threads and whatever you've told it to <code>remember</code>. It answers from evidence, not vibes.</p></div>
+    <div class="cell"><h3>Marked as itself</h3><p>Every autonomous reply carries a visible <em>"— your assistant"</em> line. Teammates always know whether they got you or the desk.</p></div>
+    <div class="cell"><h3>Asks when unsure</h3><p>Anything it can't ground — decisions, dates, commitments — it tells the sender <em>"I'll check with them and get back to you"</em> and puts the question to you.</p></div>
   </div>
 </section>
 
@@ -256,7 +170,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; margin-top: 14
   <div class="rungs">
     <div class="rung"><p class="word">"chat"</p><div><h3>You answer everything</h3><p>Messages stream into the terminal as a numbered feed; you reply in a line. The bot does nothing but carry the mail.</p></div></div>
     <div class="rung"><p class="word">"draft"</p><div><h3>It drafts, you send</h3><p>Every message gets a suggested reply under its card. <em>Nothing sends until you say "send 1"</em> — approved drafts go out as you. This is where trust gets built.</p></div></div>
-    <div class="rung lit"><p class="word">"auto"</p><div><h3>It answers, marked</h3><p>Grounded questions get answered autonomously, as your assistant. What it can't ground comes to you. <em>"manual" takes the feed back any time; "stop" closes the desk.</em></p></div></div>
+    <div class="rung lit"><p class="word">"auto"</p><div><h3>It answers, marked</h3><p>Grounded questions get answered autonomously, as your assistant. What it can't ground comes to you. <em>You can take the feed back any time; "stop" closes the desk.</em></p></div></div>
   </div>
   <p class="prose">Most people run a day of <em>draft</em> first, watch what it would have said, then say <em>auto</em> and forget about it. The word applies instantly to the running feed — unanswered items just become the new mode's backlog.</p>
 </section>
@@ -386,23 +300,6 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; margin-top: 14
     });
   })();
 
-  /* per-block copy (strips comment lines) */
-  document.querySelectorAll('.codeblock').forEach(function (cb) {
-    var btn = cb.querySelector('.copy');
-    if (!btn) return;
-    btn.addEventListener('click', function () {
-      var text = cb.querySelector('pre').innerText
-        .split('\n')
-        .filter(function (l) { return !/^\s*#/.test(l); })
-        .join('\n')
-        .replace(/\n{2,}/g, '\n')
-        .trim();
-      navigator.clipboard.writeText(text).then(function () {
-        btn.textContent = 'copied ✓';
-        setTimeout(function () { btn.textContent = 'copy'; }, 1600);
-      });
-    });
-  });
 })();
 </script>
 </body>

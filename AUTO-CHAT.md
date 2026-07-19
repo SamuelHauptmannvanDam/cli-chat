@@ -63,8 +63,9 @@ Auto chat is discovered through chat itself, not through docs:
   terminal mid-flight: the waker keeps running, the feed keeps its numbering,
   and anything already sitting unanswered in the feed is put through the new
   disposal right away (the backlog-drain rule below applies at flip time
-  too). **"manual"** (or "I'll take it") flips back the same way, without
-  stopping the feed. Chat → draft → auto → manual is one continuous session.
+  too). Asking to take it back ("I'll take it", "normal chat") flips back the
+  same way, without stopping the feed — no keyword needed. Chat → draft → auto
+  and back is one continuous session.
 - **"auto chat"** (or just **"auto"**) — the shortcut for people who know
   what they want: opens the live inbox with the assistant already answering,
   no question asked. Both forms work identically. (Also accept "chat assist"
@@ -321,7 +322,7 @@ as planned). Kept as the map of where each piece lives:
 1. **HISTORY.md ships first** — the grounding depends on it.
 2. `cli-chat-context/`: paths + read/write helpers; "remember X" behaviour;
    read-at-start in every session (instructions + resultNote nudges).
-3. Triggers + loop: "chat" offers auto once; "auto"/"manual" mid-flight;
+3. Triggers + loop: "chat" offers auto once; "auto" (and back down on request) mid-flight;
    "auto chat" / "auto" shortcut → same waker/`read_messages` machinery (today: the `auto_chat` tool)
    with **backlog drain on activation**, mediated disposal, live narration,
    ask-then-answer for the rest. Update the discovery tips to name both

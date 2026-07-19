@@ -1,0 +1,105 @@
+/* cli-chat.dev — shared styles for all pages (index + runbooks).
+   Page-specific rules (and deliberate per-page differences like :root --faint,
+   body background, type scale) live in each page's inline <style>, which loads
+   AFTER this file so equal-specificity page rules win. */
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { scroll-behavior: smooth; overflow-x: hidden; }
+::selection { background: var(--amber); color: var(--bg); }
+a { color: var(--cyan); text-decoration: none; border-bottom: 1px solid transparent; transition: border-color .15s; }
+a:hover { border-bottom-color: var(--cyan); }
+body::after {
+  content: ""; position: fixed; inset: 0; z-index: 50; pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
+}
+.agenda {
+  position: fixed; left: 28px; top: 50%; transform: translateY(-50%);
+  z-index: 40; display: none; flex-direction: column; gap: 15px;
+  font-size: 11.5px; letter-spacing: .05em;
+}
+@media (min-width: 1280px) { .agenda { display: flex; } }
+.agenda a:hover { opacity: .7; }
+.agenda a.active { opacity: 1; color: var(--amber); }
+.agenda a .idx { color: var(--faint); margin-right: 9px; }
+.agenda a.active .idx { color: var(--amber); }
+.kicker b { color: var(--green); font-weight: 400; }
+h1 .prompt { color: var(--green); }
+h1 .cmd { color: var(--ink); }
+h1 .arg { color: var(--amber); }
+.sub em { color: var(--ink); font-style: italic; }
+@keyframes blink { 50% { opacity: 0; } }
+.sec-label { color: var(--faint); font-size: 12px; letter-spacing: .1em; margin-bottom: 26px; }
+.sec-label b { color: var(--amber); font-weight: 400; }
+.lede em { color: var(--ink); }
+.cell h3 { font-size: 13.5px; font-weight: 600; margin-bottom: 8px; }
+.feed .fu { color: var(--green); }
+.feed .fa { color: var(--dim); }
+.feed .fs { font-weight: 600; }
+.feed .fs .env { color: var(--amber); }
+.feed .fq { border-left: 2px solid var(--amber); padding-left: 10px; color: var(--dim); }
+.feed .fr { color: var(--green); }
+.feed .fd { color: var(--cyan); }
+.feed .fw { color: var(--red); }
+.tab {
+  font-family: var(--mono); font-size: 12px; padding: 11px 20px; background: var(--bg);
+  color: var(--dim); border: none; border-right: 1px solid var(--line); cursor: pointer;
+  white-space: nowrap; transition: color .15s, background .15s;
+}
+.tab:last-child { border-right: none; }
+.tab:hover { color: var(--amber); outline: 1px solid var(--amber); outline-offset: -1px; }
+.tab.active { background: var(--bg-card); color: var(--amber); }
+.copy:hover { border-color: var(--amber); color: var(--amber); }
+.foot { display: flex; justify-content: space-between; gap: 24px; flex-wrap: wrap; color: var(--faint); font-size: 12px; line-height: 2.1; }
+.foot b { color: var(--dim); font-weight: 400; }
+.statusbar {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 60;
+  display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  background: var(--bg-raised); border-top: 1px solid var(--line);
+  font-size: 11px; color: var(--dim); padding: 6px 14px;
+}
+.statusbar .seg-l { color: var(--dim); }
+.statusbar .seg-l b { color: var(--green); font-weight: 400; margin-right: 8px; }
+.statusbar .seg-r { display: flex; gap: 16px; }
+.statusbar .live { color: var(--amber); }
+.statusbar .live::before { content: "●"; margin-right: 6px; animation: blink 2.2s steps(1) infinite; }
+.kicker a { color: var(--dim); }
+.kicker a:hover { color: var(--cyan); }
+.hero-note { font-size: 12px; color: var(--faint); max-width: 640px; }
+.hero-note em { color: var(--dim); font-style: normal; }
+.lede code, .prose code { font-family: var(--mono); font-size: .85em; color: var(--green); background: var(--bg-raised); padding: 2px 6px; }
+.prose { font-family: var(--serif); font-size: 15.5px; color: var(--dim); max-width: 640px; line-height: 1.65; margin-top: 18px; }
+.prose em { color: var(--ink); }
+.prose + .prose { margin-top: 14px; }
+.grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 36px; }
+.cell:hover { border-color: var(--faint); }
+.cell p em { color: var(--ink); }
+.cell p code { font-family: var(--mono); font-size: 11.5px; color: var(--green); background: var(--bg-raised); padding: 1px 5px; }
+.codeblock {
+  display: flex; flex-direction: column; border: 1px solid var(--line); background: var(--bg-raised);
+  margin-top: 24px; max-width: 720px;
+}
+.codeblock pre {
+  padding: 20px 22px 14px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12.5px; line-height: 1.85;
+  color: var(--ink); font-family: var(--mono);
+}
+.codeblock .cb-title {
+  display: block; border-bottom: 1px solid var(--line); padding: 8px 14px;
+  font-size: 11px; color: var(--faint); letter-spacing: .06em;
+}
+.codeblock .c { color: var(--faint); }
+.codeblock .g { color: var(--green); }
+.codeblock .a { color: var(--amber); }
+.codeblock .d { color: var(--dim); }
+.codeblock .cy { color: var(--cyan); }
+.copy {
+  order: 2; align-self: flex-end; margin: 0 12px 12px 0;
+  font-family: var(--mono); font-size: 11px; padding: 5px 12px; background: var(--bg-raised);
+  border: 1px solid var(--faint); color: var(--dim); cursor: pointer; transition: color .15s, border-color .15s;
+}
+.notes { border: 1px solid var(--line); margin-top: 36px; background: var(--line); display: grid; gap: 1px; max-width: 720px; }
+.note { background: var(--bg); padding: 16px 22px; display: grid; grid-template-columns: 220px 1fr; gap: 18px; transition: background .2s; }
+.note .k { font-family: var(--mono); font-size: 12px; color: var(--amber); word-break: break-word; align-self: start; }
+.note .k.warn { color: var(--red); }
+.note p { font-family: var(--serif); font-size: 14px; color: var(--dim); line-height: 1.55; }
+.note p em { color: var(--ink); }
+.note p code { font-family: var(--mono); font-size: 11.5px; color: var(--green); background: var(--bg-raised); padding: 1px 5px; }
