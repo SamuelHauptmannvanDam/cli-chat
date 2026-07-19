@@ -3,6 +3,7 @@
 // case-insensitive match against the contact's name and any aliases.
 
 import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { writeSecretAtomic } from "./secure-fs.ts";
 
 // Display names (the user's own, a nickname, a contact's self-name) are capped at
@@ -234,9 +235,18 @@ export interface Contact {
   signPub?: string; // Phase 1: contact's Ed25519 address (mailbox key)
   boxPub?: string; // Phase 1: contact's X25519 key we seal messages to
   handle?: string; // their shareable 6-char code, when known (carried in their messages)
+  verified?: { at: number; boxPub: string }; // the user compared safety numbers out-of-band
+  // and confirmed; snapshots the box key that was blessed. Cleared if that key changes.
+  keyChangedAt?: number; // epoch ms when a VERIFIED contact's box key changed under the
+  // same identity — the safety number no longer holds; warn and suggest re-verifying.
   auto?: boolean; // saved automatically from a received self-introduction, NOT a
   // user-chosen nick. While true, `name` is just what they call themselves, so we
   // show "name (handle)"; renaming them (a real nick) clears this and shows the nick.
+  gated?: "pending" | "dismissed"; // the NEW-HANDLE GATE (0.17): a first-time sender
+  // is held here instead of flowing into the inbox. Their messages stay out of the
+  // model's context (bodies are shown to the USER directly by the system) until the
+  // user accepts ("pending" → cleared) — or stays quiet forever once "dismissed".
+  // Absent on every real contact; never set by a manual save.
   sentCount?: number; // how many messages YOU'VE sent them; ranks the "most active"
   // shortcut in the contacts list. Absent on contacts never written to (treated 0).
   lastMessageAt?: number; // epoch ms of the last message you sent them (recency tiebreak).
@@ -375,4 +385,20 @@ export function removeContactByKey(book: ContactBook, signPub: string): boolean 
   const before = book.contacts.length;
   book.contacts = book.contacts.filter((c) => c.signPub !== signPub);
   return book.contacts.length < before;
+}
+
+// Safety number for out-of-band contact verification (Signal-style): both sides
+// compute the SAME 60-digit string from the two parties' keys — the pair is
+// sorted, so whose device runs it doesn't matter. Rendered as 12 groups of 5
+// digits, easy to read over a call. Any change to any of the four keys yields a
+// completely different number, which is what makes comparing it meaningful.
+export function safetyNumber(
+  a: { signPub: string; boxPub: string },
+  b: { signPub: string; boxPub: string },
+): string {
+  const sides = [`${a.signPub}:${a.boxPub}`, `${b.signPub}:${b.boxPub}`].sort();
+  const digest = createHash("sha256").update(sides.join("|")).digest();
+  const digits: string[] = [];
+  for (let i = 0; i < 30; i++) digits.push(String((digest[i] ?? 0) % 100).padStart(2, "0"));
+  return (digits.join("").match(/.{5}/g) as string[]).join(" ");
 }

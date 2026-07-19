@@ -262,7 +262,8 @@ anything sends, or 'auto' and I'll answer what I can myself, marked as your
 assistant — either way I'll ask you what I can't ground."* Saying **"auto"
 mid-chat upgrades the running terminal in place** (same waker, same feed;
 unanswered feed items become backlog); **"draft"** flips it to auto draft chat (next
-section); **"manual"** downgrades to plain chat the same way; "stop" ends it.
+section); the user asking to take it back ("I'll take it", "normal chat")
+downgrades to plain chat the same way; "stop" ends it.
 User-started, per session, on purpose — never start it unprompted.
 
 **Quiet variant** ("auto chat, quiet"): call `auto_chat` with `quiet: true`. The
@@ -313,8 +314,8 @@ sense while the user watches the feed).
 **Entry points:** "auto draft chat" / "draft chat" cold-starts it (the
 `auto_draft_chat` tool, then `read_messages` immediately — backlog gets drafts too). "draft" mid-chat flips a
 running chat or auto chat in place (same waker, same feed; unanswered items get
-drafts); "auto" upgrades draft → full auto; "manual" drops to plain chat; "stop"
-ends it.
+drafts); "auto" upgrades draft → full auto; the user asking to take it back
+("I'll take it", "normal chat") drops to plain chat; "stop" ends it.
 
 ## Message history (recall) & the messenger's memory
 All messages — sent and received — persist locally. "What did Niels say about X?" /
@@ -474,6 +475,21 @@ just like `send_message`, so a short "Niels" resolves a saved "Niels - bankdata"
 candidate names (name them and ask which one — don't guess). Deleting only
 forgets them locally; it doesn't block them, and they can be re-added later from
 their 6-character code.
+
+## Verifying a contact (safety numbers)
+When the user asks to verify someone ("verify Niels", "is this really Niels?"),
+call `verify_contact` with the name. It returns a 60-digit **safety number**
+(12 groups of 5) computed from both sides' keys — render it on its own line.
+Both people run verify on their own device and compare the digits on a channel
+OUTSIDE the messenger (in person, a call): identical numbers mean nobody sits
+between them. Only when the user says the digits matched do you call
+`verify_contact` again with `confirmed: true` — never confirm on your own.
+Verified contacts show `verified` in `contacts` — render a ✓ after the handle.
+If a verified contact's encryption key later changes, the ✓ drops and they're
+flagged `keyChanged`: render 🚩 in listings, and any send to them returns a
+warning — relay it in one line and suggest re-verifying. A key change is rare
+and worth attention: it can be an innocent account restore on their side, or
+someone in the middle.
 
 ## Auto-tagging contacts (local labels like "work" / "family")
 Tags are private local labels on a contact — they never leave the device — and they

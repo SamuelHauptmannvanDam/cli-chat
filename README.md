@@ -85,8 +85,7 @@ automatic to fully on-demand:
 > (*"send 1"*, *"send all"*), ask for a tweak, or answer yourself; an approved
 > reply goes out as you, since you signed off on it. What it can't answer, it
 > asks you instead of guessing. It's the trust-builder before *"auto chat"* —
-> and *"draft"* / *"auto"* / *"manual"* switch a running inbox between the modes
-> any time.
+> and *"draft"* / *"auto"* switch a running inbox between the modes any time.
 
 **🤖 Auto chat — say *"auto chat"* (your assistant answers for you)**
 > The same live inbox, one step further: your assistant answers incoming messages
@@ -97,8 +96,8 @@ automatic to fully on-demand:
 > wherever you're next working — then passes your answer on (and remembers it).
 > Only saved contacts ever get auto-replies. Add *", quiet"* and your other
 > sessions stay silent except when your assistant needs you; ask *"what did you
-> handle?"* any time for the ledger. *"manual"* takes the feed back; *"stop"*
-> closes it.
+> handle?"* any time for the ledger. Say you'll take it back and the feed is
+> yours again; *"stop"* closes it.
 >
 > Auto chat may also write what it learns into the project it's opened in —
 > topical notes under `learnings/`, on its own initiative only (nothing a sender
@@ -132,6 +131,7 @@ saves a fact your messenger can use anywhere — it's what auto chat answers fro
 - *"remember …"* — save a fact to your messenger's memory
 - *"write me: …"* — drop a note into your own inbox (it surfaces wherever you're next active)
 - *"who are my contacts?"* — list your address book
+- *"verify Niels"* — compare Signal-style safety numbers and mark a contact verified (🚩 warns if their key ever changes)
 - *"rename Sam to …"* / *"delete Sam"* — manage contacts
 - *"call me …"* — change the name others see
 - *"log in"* / *"log out"* — put your account on this device, or wipe it off

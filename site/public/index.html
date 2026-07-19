@@ -15,6 +15,7 @@
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://cli-chat.dev/og.png">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230b0a08'/%3E%3Ctext x='32' y='44' font-family='monospace' font-size='36' font-weight='bold' fill='%23f5a742' text-anchor='middle'%3E%E2%9D%AF%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="site.css">
 <style>
 :root {
   --bg: #000000;
@@ -32,8 +33,6 @@
   --serif: var(--mono);
   --display: var(--mono);
 }
-* { margin: 0; padding: 0; box-sizing: border-box; }
-html { scroll-behavior: smooth; overflow-x: hidden; }
 body {
   background: var(--bg);
   background-image: radial-gradient(rgba(245, 167, 66, .13) 1px, transparent 1.2px);
@@ -45,30 +44,14 @@ body {
   overflow-x: hidden;
   cursor: crosshair;
 }
-::selection { background: var(--amber); color: var(--bg); }
-a { color: var(--cyan); text-decoration: none; border-bottom: 1px solid transparent; transition: border-color .15s; }
-a:hover { border-bottom-color: var(--cyan); }
 
 /* grain overlay */
-body::after {
-  content: ""; position: fixed; inset: 0; z-index: 50; pointer-events: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
-}
 
 .wrap { max-width: 980px; margin: 0 auto; padding: 0 24px; }
 
 /* agenda — fixed section directory, current section lit */
-.agenda {
-  position: fixed; left: 28px; top: 50%; transform: translateY(-50%);
-  z-index: 40; display: none; flex-direction: column; gap: 15px;
-  font-size: 11.5px; letter-spacing: .05em;
-}
-@media (min-width: 1280px) { .agenda { display: flex; } }
+
 .agenda a { color: var(--ink); opacity: .45; border-bottom: none; transition: opacity .25s, color .25s; }
-.agenda a:hover { opacity: .7; }
-.agenda a.active { opacity: 1; color: var(--amber); }
-.agenda a .idx { color: var(--faint); margin-right: 9px; }
-.agenda a.active .idx { color: var(--amber); }
 
 /* ---- hero ---- */
 .hero {
@@ -80,20 +63,15 @@ body::after {
   color: var(--dim); font-size: 12px; letter-spacing: .12em; margin-bottom: 28px;
   display: flex; justify-content: space-between; align-items: baseline; gap: 16px; flex-wrap: wrap;
 }
-.kicker b { color: var(--green); font-weight: 400; }
 h1 {
   font-family: var(--display);
   font-size: clamp(26px, 5.4vw, 52px);
   font-weight: 700; line-height: 1.2; letter-spacing: -.01em; margin-bottom: 28px;
 }
-h1 .prompt { color: var(--green); }
-h1 .cmd { color: var(--ink); }
-h1 .arg { color: var(--amber); }
 .sub {
   font-family: var(--serif); font-size: 21px; font-weight: 400; line-height: 1.55;
   color: var(--dim); max-width: 620px; margin-bottom: 40px;
 }
-.sub em { color: var(--ink); font-style: italic; }
 .cta-row { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; }
 .btn {
   display: inline-block; font-family: var(--mono); font-size: 13px; font-weight: 600;
@@ -136,7 +114,6 @@ h1 .arg { color: var(--amber); }
   display: inline-block; width: 8px; height: 15px; background: var(--amber);
   vertical-align: text-bottom; animation: blink 1.06s steps(1) infinite;
 }
-@keyframes blink { 50% { opacity: 0; } }
 
 /* ---- sections ---- */
 section.wrap {
@@ -146,11 +123,8 @@ section.wrap {
   display: flex; flex-direction: column; justify-content: flex-start;
   padding: 110px 24px;
 }
-.sec-label { color: var(--faint); font-size: 12px; letter-spacing: .1em; margin-bottom: 26px; }
-.sec-label b { color: var(--amber); font-weight: 400; }
 h2 { font-family: var(--display); font-size: clamp(20px, 3vw, 30px); font-weight: 700; line-height: 1.35; margin-bottom: 26px; }
 .lede { font-family: var(--serif); font-size: 18px; color: var(--dim); max-width: 640px; line-height: 1.6; }
-.lede em { color: var(--ink); }
 
 /* ---- card component: one system for every card on the page ----
    .card            bordered box; optional .tag = floating title chip on the border
@@ -178,8 +152,7 @@ a.card:hover .go { color: var(--amber); }
 /* features */
 .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 36px; }
 .cell { padding: 26px 22px; }
-.cell .ico { font-size: 17px; margin-bottom: 14px; }
-.cell h3 { font-size: 13.5px; font-weight: 600; margin-bottom: 8px; }
+.cell .lbl { font-size: 11px; color: var(--green); letter-spacing: .08em; margin-bottom: 12px; }
 .cell p { font-family: var(--serif); font-size: 15px; color: var(--dim); line-height: 1.5; }
 .cell .go { display: inline-block; font-family: var(--mono); font-size: 11px; color: var(--faint); margin-top: 12px; transition: color .15s; font-weight: 400; }
 
@@ -198,57 +171,21 @@ a.card:hover .go { color: var(--amber); }
   font-size: 12px; line-height: 1.85; background: rgba(11, 10, 8, .9); border: 1px solid var(--line);
   padding: 16px 18px; align-self: start;
 }
-.feed .fu { color: var(--green); }
-.feed .fa { color: var(--dim); }
-.feed .fs { font-weight: 600; }
-.feed .fs .env { color: var(--amber); }
-.feed .fq { border-left: 2px solid var(--amber); padding-left: 10px; color: var(--dim); }
-.feed .fr { color: var(--green); }
-.feed .fd { color: var(--cyan); }
-.feed .fw { color: var(--red); }
 
 /* install */
 .tabs { display: flex; gap: 0; margin-top: 8px; border: 1px solid var(--line); border-bottom: none; width: fit-content; max-width: 100%; overflow-x: auto; }
-.tab {
-  font-family: var(--mono); font-size: 12px; padding: 11px 20px; background: var(--bg);
-  color: var(--dim); border: none; border-right: 1px solid var(--line); cursor: pointer;
-  white-space: nowrap; transition: color .15s, background .15s;
-}
-.tab:last-child { border-right: none; }
-.tab:hover { color: var(--amber); outline: 1px solid var(--amber); outline-offset: -1px; }
-.tab.active { background: var(--bg-card); color: var(--amber); }
-.cmdbox {
-  border: 1px solid var(--line); background: var(--bg-raised); padding: 22px;
-  display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
-}
-.cmdbox code { font-size: 13px; color: var(--green); word-break: break-all; }
-.cmdbox code .flag { color: var(--dim); }
-.copy {
-  font-family: var(--mono); font-size: 11.5px; padding: 8px 16px; background: var(--bg);
-  border: 1px solid var(--faint); color: var(--dim); cursor: pointer; transition: all .15s;
-}
-.copy:hover { border-color: var(--amber); color: var(--amber); }
+.installbox { margin-top: 0; max-width: none; }
+.installbox pre { font-size: 13px; }
+.installbox code { color: var(--green); }
 .after-note { font-family: var(--serif); font-size: 16px; color: var(--dim); margin-top: 26px; max-width: 620px; line-height: 1.6; }
 .after-note em { color: var(--ink); }
 
 /* footer */
 footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
-.foot { display: flex; justify-content: space-between; gap: 24px; flex-wrap: wrap; color: var(--faint); font-size: 12px; line-height: 2.1; }
-.foot b { color: var(--dim); font-weight: 400; }
 
 /* agent-CLI status bar (the background-task line + running indicator) */
-.statusbar {
-  position: fixed; bottom: 0; left: 0; right: 0; z-index: 60;
-  display: flex; justify-content: space-between; align-items: center; gap: 12px;
-  background: var(--bg-raised); border-top: 1px solid var(--line);
-  font-size: 11px; color: var(--dim); padding: 6px 14px;
-}
-.statusbar .seg-l { color: var(--dim); }
-.statusbar .seg-l b { color: var(--green); font-weight: 400; margin-right: 8px; }
-.statusbar .seg-r { display: flex; gap: 16px; }
+
 .statusbar .ver { color: var(--green); }
-.statusbar .live { color: var(--amber); }
-.statusbar .live::before { content: "●"; margin-right: 6px; animation: blink 2.2s steps(1) infinite; }
 
 @media (max-width: 800px) {
   .steps, .grid, .modes { grid-template-columns: 1fr; }
@@ -267,6 +204,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
   * { transition: none !important; }
 }
 </style>
+<script src="site.js" defer></script>
 </head>
 <body>
 <nav class="agenda" id="agenda">
@@ -289,9 +227,9 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
     <button class="tab" data-cmd="gemini mcp add -s user cli-chat npx -y cli-chat-mcp@latest">Gemini CLI</button>
     <button class="tab" data-cmd="npx -y cli-chat-mcp@latest">Other MCP CLI</button>
   </div>
-  <div class="cmdbox">
-    <code id="cmd">claude mcp add cli-chat --scope user -- npx -y cli-chat-mcp@latest</code>
-    <button class="copy" id="copyBtn">copy</button>
+  <div class="codeblock installbox">
+    <button class="copy">copy</button>
+    <pre><code id="cmd">claude mcp add cli-chat --scope user -- npx -y cli-chat-mcp@latest</code></pre>
   </div>
   <p class="install-note">Then restart your CLI, allow the new <em>cli-chat</em> server when it asks, and say <em>"what's my handle?"</em> — that's the whole setup. Needs Node 22+.</p>
 
@@ -371,9 +309,9 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
   <h2 data-scramble>The front desk for your team.</h2>
   <p class="lede">No framework, no webhook, no deploy. Open auto chat in a repo and <em>it answers from that directory</em> — the code, the docs, the git history.</p>
   <div class="grid">
-    <a class="card cell" href="/team-bot"><p class="ico">🤝</p><h3>Team bot</h3><p>One desk the whole team writes with questions. It answers what the repo already knows, chases what it doesn't, and remembers every answer — an FAQ that writes itself.</p><span class="go">→ the runbook</span></a>
-    <a class="card cell" href="/customer-desk"><p class="ico">🎧</p><h3>Customer desk</h3><p>Point it at your docs. Customers get grounded answers; the rest lands with you, whole exchange in hand. Invite-only, so no spam.</p><span class="go">→ the runbook</span></a>
-    <a class="card cell" href="/headless"><p class="ico">⚙️</p><h3>Scripts &amp; CI</h3><p>Pipelines message you headlessly — <code style="font-family:var(--mono);font-size:11.5px;color:var(--green)">npx cli-chat-mcp send ops "deploy landed"</code> — and auto chat on your end closes the noise, answers the routine, and wakes you only when it matters.</p><span class="go">→ the runbook</span></a>
+    <a class="card cell" href="/team-bot"><p class="lbl">[auto chat]</p><h3>Team bot</h3><p>One desk the whole team writes with questions. It answers what the repo already knows, chases what it doesn't, and remembers every answer — an FAQ that writes itself.</p><span class="go">→ the runbook</span></a>
+    <a class="card cell" href="/customer-desk"><p class="lbl">[read only]</p><h3>Customer desk</h3><p>Point it at your docs. Customers get grounded answers; the rest lands with you, whole exchange in hand. Invite-only, so no spam.</p><span class="go">→ the runbook</span></a>
+    <a class="card cell" href="/headless"><p class="lbl">[npx send]</p><h3>Scripts &amp; CI</h3><p>Pipelines message you headlessly — <code style="font-family:var(--mono);font-size:11.5px;color:var(--green)">npx cli-chat-mcp send ops "deploy landed"</code> — and auto chat on your end closes the noise, answers the routine, and wakes you only when it matters.</p><span class="go">→ the runbook</span></a>
   </div>
 </section>
 
@@ -405,12 +343,12 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
   <h2 data-scramble>A messenger that already knows your context.</h2>
   <p class="lede">Encrypted, portable, cross-CLI — and it sits <em>where the answers already live</em>.</p>
   <div class="grid">
-    <div class="card cell"><p class="ico">🔐</p><h3>Sealed in transit</h3><p>End-to-end encrypted. The mailbox only ever sees ciphertext.</p></div>
-    <div class="card cell"><p class="ico">🪪</p><h3>6-char handles</h3><p>One short handle. Rotate or disable it any time.</p></div>
-    <div class="card cell"><p class="ico">🧳</p><h3>Log in</h3><p>Email login, any device — contacts and history included.</p></div>
-    <div class="card cell"><p class="ico">🔀</p><h3>Cross-CLI</h3><p>Claude Code to Gemini to Copilot — the wire doesn't care.</p></div>
-    <div class="card cell"><p class="ico">🧠</p><h3>Messages are memory</h3><p>"What did Niels say about the endpoint?" — recall any thread, any session.</p></div>
-    <div class="card cell"><p class="ico">📟</p><h3>No new UI</h3><p>No app. Your agent is the interface.</p></div>
+    <div class="card cell"><p class="lbl">[x25519]</p><h3>Sealed in transit</h3><p>End-to-end encrypted. The mailbox only ever sees ciphertext.</p></div>
+    <div class="card cell"><p class="lbl">[qL7f2A]</p><h3>6-char handles</h3><p>One short handle. Rotate or disable it any time.</p></div>
+    <div class="card cell"><p class="lbl">[magic-link]</p><h3>Log in</h3><p>Email login, any device — contacts and history included.</p></div>
+    <div class="card cell"><p class="lbl">[mcp]</p><h3>Cross-CLI</h3><p>Claude Code to Gemini to Copilot — the wire doesn't care.</p></div>
+    <div class="card cell"><p class="lbl">[history]</p><h3>Messages are memory</h3><p>"What did Niels say about the endpoint?" — recall any thread, any session.</p></div>
+    <div class="card cell"><p class="lbl">[tty]</p><h3>No new UI</h3><p>No app. Your agent is the interface.</p></div>
   </div>
 </section>
 
@@ -440,7 +378,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
 
 <div class="statusbar">
   <span class="seg-l"><b>⏺</b>Bash(Listening for new messages)</span>
-  <span class="seg-r"><span>E2E sealed</span><span class="ver">v0.16.0</span><span class="live">1 background task</span></span>
+  <span class="seg-r"><span>E2E sealed</span><span class="ver">v0.17.0</span><span class="live">1 background task</span></span>
 </div>
 
 <script>
@@ -568,20 +506,13 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
     });
   })();
 
-  /* ---- install tabs + copy ---- */
+  /* ---- install tabs ---- */
   var cmdEl = document.getElementById('cmd');
   document.querySelectorAll('.tab').forEach(function (t) {
     t.addEventListener('click', function () {
       document.querySelectorAll('.tab').forEach(function (x) { x.classList.remove('active'); });
       t.classList.add('active');
       cmdEl.textContent = t.dataset.cmd;
-    });
-  });
-  var copyBtn = document.getElementById('copyBtn');
-  copyBtn.addEventListener('click', function () {
-    navigator.clipboard.writeText(cmdEl.textContent).then(function () {
-      copyBtn.textContent = 'copied ✓';
-      setTimeout(function () { copyBtn.textContent = 'copy'; }, 1600);
     });
   });
 })();

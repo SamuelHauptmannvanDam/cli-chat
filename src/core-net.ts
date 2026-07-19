@@ -71,6 +71,11 @@ export interface NetContext {
   // Never fired for rows applied FROM the stream — that would loop. Optional,
   // fire-and-forget, must never throw or break a send/drain.
   onHistoryAppend?: (row: MessageRow) => void;
+  // The NEW-HANDLE GATE's public-mode probe (0.17): when this returns true (a live
+  // chat session started with `public: true` — see readChatLock), a first-time
+  // sender is auto-saved and flows straight into the inbox, exactly the pre-gate
+  // behavior. Absent or false → unknown senders are held as gated ("pending").
+  allowNewSenders?: () => boolean;
 }
 
 // Save (or update) a contact in the book and persist it to disk if we know
@@ -81,7 +86,7 @@ export interface NetContext {
 // not a nick you chose); a manual save/rename leaves it off so the nick wins.
 export function rememberContact(
   ctx: NetContext,
-  c: { name: string; signPub: string; boxPub: string; handle?: string; auto?: boolean; selfName?: string },
+  c: { name: string; signPub: string; boxPub: string; handle?: string; auto?: boolean; selfName?: string; gated?: "pending" },
 ): void {
   // Upsert by key: drop any existing entry, but carry its self-name forward so a
   // rename (re-add with a new nick) doesn't lose what THEY call themselves.
@@ -90,6 +95,7 @@ export function rememberContact(
   const entry: Contact = { name: cleanName(c.name) || c.name, signPub: c.signPub, boxPub: c.boxPub };
   if (c.handle) entry.handle = c.handle;
   if (c.auto) entry.auto = true;
+  if (c.gated) entry.gated = c.gated;
   const self = cleanName(c.selfName) || prev?.selfName;
   if (self) entry.selfName = self;
   // Carry local tags + their evidence/declines forward across the upsert — a rename
@@ -97,11 +103,20 @@ export function rememberContact(
   if (prev?.tags?.length) entry.tags = [...prev.tags];
   if (prev?.tagMeta?.length) entry.tagMeta = prev.tagMeta.map((m) => ({ ...m, evidence: m.evidence ? [...m.evidence] : undefined }));
   if (prev?.declinedTags?.length) entry.declinedTags = [...prev.declinedTags];
+  // Verification survives the upsert only while the box key is unchanged: the
+  // safety number covers the keys, so a new boxPub under the same identity voids
+  // the ✓ and raises the key-changed tripwire instead (verify flow in CLAUDE.md).
+  if (prev?.verified) {
+    if (prev.verified.boxPub === c.boxPub) entry.verified = prev.verified;
+    else entry.keyChangedAt = Date.now();
+  } else if (prev?.keyChangedAt) entry.keyChangedAt = prev.keyChangedAt;
   ctx.book.contacts.push(entry);
   if (ctx.contactsPath) saveContacts(ctx.contactsPath, ctx.book);
   // Contribute this edge to the second-degree graph (best-effort, deduped server
-  // side). Fires for every save path — manual add, send-to-new, incoming auto-save.
-  ctx.onEdgeAdd?.(c.signPub);
+  // side). Fires for every save path — manual add, send-to-new, incoming auto-save
+  // — EXCEPT a gated hold: a stranger the user hasn't accepted isn't a confirmed
+  // relationship, so the edge waits for the accept (acceptGatedContact).
+  if (!entry.gated) ctx.onEdgeAdd?.(c.signPub);
   ctx.onBookChange?.();
 }
 
@@ -384,8 +399,11 @@ export async function sync(ctx: NetContext): Promise<number> {
     // the user as their own contact, and never auto-tag from it — it just lands
     // in the cache and surfaces as "your assistant" / "Me".
     const fromSelf = b.sender === ctx.me.signPub;
-    // Auto-save a genuinely new sender from the keys they introduced themselves
-    // with, so "write <name>" works next time and a reply can be sealed. NEVER
+    // A genuinely new sender: save the keys they introduced themselves with, so a
+    // reply can be sealed — but GATED ("pending", the new-handle gate) unless a
+    // public chat session is live (allowNewSenders). While gated their messages
+    // stay out of the model's paths (takeUnread/refreshPending filter them; the
+    // hook shows the bodies to the USER only) until the user accepts. NEVER
     // clobber someone you already know — your nick for them wins.
     const known = b.sender && !fromSelf ? contactByKey(ctx.book, b.sender) : undefined;
     if (env.boxPub && b.sender && !fromSelf && !known) {
@@ -398,6 +416,7 @@ export async function sync(ctx: NetContext): Promise<number> {
         handle: env.handle,
         auto: true,
         selfName: self || undefined,
+        gated: ctx.allowNewSenders?.() ? undefined : "pending",
       });
     } else if (known) {
       // Known contact: NEVER touch name/nick/auto ("your nick wins"), but keep the
@@ -448,7 +467,7 @@ export async function sync(ctx: NetContext): Promise<number> {
 }
 
 export type SendResult =
-  | { ok: true; id: string; to: { name: string; signPub: string }; saved?: boolean; self?: boolean }
+  | { ok: true; id: string; to: { name: string; signPub: string; keyChanged?: boolean }; saved?: boolean; self?: boolean }
   | {
       ok: false;
       reason: "no_contact" | "ambiguous" | "no_keys" | "bad_key";
@@ -620,7 +639,7 @@ export async function sendMessage(
     return { ok: false, reason: "no_keys", query: to };
 
   const id = await sendSealed(ctx, { name: c.name, signPub: c.signPub, boxPub: c.boxPub }, args.body, null, asAssistant);
-  return { ok: true, id, to: { name: c.name, signPub: c.signPub } };
+  return { ok: true, id, to: { name: c.name, signPub: c.signPub, ...(c.keyChangedAt ? { keyChanged: true } : {}) } };
 }
 
 export interface InboxMessage {
@@ -782,7 +801,7 @@ export async function readMessage(ctx: NetContext, args: { id?: string }): Promi
 }
 
 export type ReplyResult =
-  | { ok: true; id: string; to: { name: string; signPub: string }; self?: boolean }
+  | { ok: true; id: string; to: { name: string; signPub: string; keyChanged?: boolean }; self?: boolean }
   | { ok: false; reason: "not_found" | "no_keys" };
 
 // The reply half of sendMessage: recipient inferred from the replied-to message,
@@ -821,7 +840,8 @@ async function sendReply(
     original.id,
     asAssistant,
   );
-  return { ok: true, id, to: { name: c.name, signPub: c.signPub } };
+  const kc = contactByKey(ctx.book, c.signPub)?.keyChangedAt;
+  return { ok: true, id, to: { name: c.name, signPub: c.signPub, ...(kc ? { keyChanged: true } : {}) } };
 }
 
 // --- history (HISTORY.md): the recall door over the local cache ------------

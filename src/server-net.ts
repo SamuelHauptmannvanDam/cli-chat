@@ -14,7 +14,7 @@ import { secureDir, writeSecret, hardenExisting } from "./secure-fs.ts";
 import { extname, join, relative, isAbsolute, resolve } from "node:path";
 import { initCrypto, generateIdentity } from "./crypto.ts";
 import { loadIdentity } from "./identity.ts";
-import { loadContacts, saveContacts, orderedContacts, cleanName } from "./contacts.ts";
+import { loadContacts, saveContacts, orderedContacts, cleanName, resolve as resolveContact, safetyNumber } from "./contacts.ts";
 import { openMailbox } from "./db.ts";
 import { createMailboxClient } from "./mailbox-client.ts";
 import { encodeKey } from "./key-code.ts";
@@ -824,6 +824,49 @@ const TOOLS: {
     run: (s, { name }) => deleteContact(s.ctx, { name }),
   },
   {
+    name: "verify_contact",
+    title: "Verify a contact's keys (safety number), or confirm a completed comparison",
+    description:
+      "Out-of-band contact verification, like Signal's safety numbers. Call with " +
+      "`name` to get the 60-digit safety number shared by the user and that " +
+      "contact: BOTH people run verify on their own device and compare the digits " +
+      "over a channel OUTSIDE this messenger (in person, a phone/video call). " +
+      "Matching digits on both sides ⇔ nobody sits between them. Only when the " +
+      "user says the digits matched, call again with confirmed:true — that marks " +
+      "the contact verified (✓ in contacts) until their keys ever change. If the " +
+      "digits DIFFER, do NOT confirm: warn that someone may be in the middle, stop " +
+      "sensitive sends, and re-add the contact from a freshly-shared handle. Use " +
+      "when the user says 'verify Niels' / 'is Niels really Niels?', or after a " +
+      "contact shows `keyChanged`. Partial name matching like send_message.",
+    inputSchema: {
+      name: z.string().describe("The contact to verify (partial match ok)"),
+      confirmed: z
+        .boolean()
+        .optional()
+        .describe("true ONLY after the user says the digits matched on BOTH sides — marks the contact verified"),
+    },
+    run: (s, { name, confirmed }: { name: string; confirmed?: boolean }) => {
+      const r = resolveContact(s.book, name);
+      if (r.status === "ambiguous")
+        return { ok: false, reason: "ambiguous", candidates: r.candidates.map((c) => c.name) };
+      if (r.status !== "resolved") return { ok: false, reason: "no_contact", query: name };
+      const c = r.contact;
+      if (!c.signPub || !c.boxPub) return { ok: false, reason: "no_keys", query: name };
+      const num = safetyNumber(
+        { signPub: s.me.signPub, boxPub: s.me.boxPub },
+        { signPub: c.signPub, boxPub: c.boxPub },
+      );
+      if (confirmed === true) {
+        c.verified = { at: s.ctx.now(), boxPub: c.boxPub };
+        delete c.keyChangedAt;
+        if (s.ctx.contactsPath) saveContacts(s.ctx.contactsPath, s.book);
+        s.ctx.onBookChange?.();
+        return { ok: true, name: c.name, safetyNumber: num, verifiedNow: true };
+      }
+      return { ok: true, name: c.name, safetyNumber: num, verified: !!c.verified, keyChanged: c.keyChangedAt != null };
+    },
+  },
+  {
     name: "tag_contact",
     title: "Add a local label to a contact",
     description:
@@ -940,7 +983,10 @@ const TOOLS: {
       "by design). Render these as a separate 'Contacts of contacts' section — e.g. " +
       "'Tobias · via Niels'. They are NAME-ONLY and not directly messageable; to reach " +
       "one you send a connect request with `request_contact` (signPub = theirs). The " +
-      "`via` field is what resolves 'the Tobias that Niels knows'.",
+      "`via` field is what resolves 'the Tobias that Niels knows'. Saved people also " +
+      "carry `verified` (the user compared safety numbers — render a ✓ after the " +
+      "handle) and `keyChanged` (a verified contact's encryption key changed — " +
+      "render 🚩 and advise re-verifying with verify_contact before sensitive sends).",
     inputSchema: {},
     run: async (s) => {
       const fmt = (c: (typeof s.book.contacts)[number]) => ({
@@ -953,6 +999,8 @@ const TOOLS: {
         handle: c.handle ?? null,
         tags: c.tags ?? [], // local labels; powers "write everyone from <tag>"
         fullKey: c.signPub && c.boxPub ? encodeKey(c.signPub, c.boxPub) : null,
+        verified: !!c.verified, // ✓ — user compared safety numbers and confirmed
+        keyChanged: c.keyChangedAt != null, // 🚩 — box key changed since verification
       });
       // active = written in the last 60 days, most-written first; rest = everyone
       // else, alphabetical. A contact you stop messaging ages out of active on its
@@ -1280,7 +1328,10 @@ const resultNote = (name: string, r: any): string | undefined => {
           `AUTO-TAG (unless tagging mode is 'off'): if this message clearly signals a circle ` +
           `(work/family/gaming) and ${r.to?.name ?? "the recipient"} isn't already tagged it, ` +
           "call tag_contact. In 'auto' do it SILENTLY unless it's that contact's FIRST tag " +
-          "(then one line); in 'suggest', ask first."
+          "(then one line); in 'suggest', ask first." +
+          (r.to?.keyChanged
+            ? " ⚠️ This recipient's encryption key CHANGED since the user verified them — add one line advising a re-verify ('verify " + (r.to?.name ?? "them") + "') before anything sensitive."
+            : "")
         );
       if (r.reason === "needs_request")
         return (
@@ -1294,6 +1345,23 @@ const resultNote = (name: string, r: any): string | undefined => {
       if (r.reason === "not_found") return "No message with that id in the local store — reply from a real inbox/feed/history id.";
       if (r.reason === "need_recipient") return "Pass `to` (a contact name) or `in_reply_to` (a message id).";
       return undefined;
+    case "verify_contact":
+      if (!r.ok) {
+        if (r.reason === "ambiguous") return "Multiple contacts match — name the candidates and ask which one.";
+        if (r.reason === "no_keys") return "That contact has no stored keys (legacy entry) — re-add them from their handle, then verify.";
+        return "No contact matched — verification needs a saved contact; tell the user.";
+      }
+      if (r.verifiedNow)
+        return "Marked verified — confirm in one line ('<name> ✓ verified'). The ✓ shows in contacts until their keys ever change.";
+      return (
+        "Render the safety number on its own line, exactly as returned (12 groups of 5 digits). " +
+        "Explain in one line: both sides run verify for each other and compare digits on ANOTHER " +
+        "channel (in person, a call) — identical numbers mean a clean connection. If the user then " +
+        "says they matched, call verify_contact again with confirmed:true; never confirm on your own. " +
+        "If they DON'T match: warn plainly (someone may be in the middle), don't confirm, advise " +
+        "re-adding the contact from a freshly-shared handle." +
+        (r.keyChanged ? " NOTE: this contact is flagged key-changed — re-verifying is exactly what's called for." : "")
+      );
     case "delete_contact":
       if (r.ok) return "Confirm in one line, e.g. 'Deleted Niels.'";
       return undefined;
@@ -1497,6 +1565,7 @@ const attachNote = (name: string, r: any): any => {
 // fine; the goal is to never MISS a change.
 const MUTATING = new Set([
   "send_message",
+  "verify_contact",
   "add_contact",
   "delete_contact",
   "tag_contact",
@@ -1752,7 +1821,8 @@ const WAKER_HOWTO =
   "reconstruct the command yourself from docs or memory). When the waker EXITS, call " +
   "`read_messages` to fetch the waiting messages, render them as the live feed, then " +
   "run the SAME command again in the background to keep the inbox live. Mid-chat " +
-  "mode switches ('draft' / 'auto' / 'manual') upgrade the RUNNING terminal in " +
+  "mode switches ('draft' / 'auto' / the user asking to take the feed back) " +
+  "upgrade the RUNNING terminal in " +
   "place — same waker, same feed; do NOT call another chat tool or launch a second " +
   "waker. (Full choreography is in the server instructions.)";
 
@@ -1843,7 +1913,8 @@ registerChatTool(
     "send THAT draft with send_message (same in_reply_to) WITHOUT as_assistant (reviewed-and-approved " +
     "goes out as the user). No draft for a message with `warnings`; never secrets/" +
     "keys in a draft; can't ground → mark it 'needs you' with your ONE specific " +
-    "question instead. 'auto' upgrades to auto chat, 'manual' drops to plain chat.",
+    "question instead. 'auto' upgrades to auto chat; the user asking to take " +
+    "it back ('I'll take it', 'normal chat') drops to plain chat.",
   false,
 );
 
@@ -1855,7 +1926,8 @@ const AUTO_CHAT_NOTE_CORE =
   "messages are NEVER auto-answered; never secrets/keys/money/commitments/" +
   "personal matters. What you can't ground stays in the feed marked 'needs you', " +
   "or escalates by mail (send_message to='me', as_assistant:true). 'draft' drops " +
-  "to auto draft chat, 'manual' to plain chat.";
+  "to auto draft chat; the user asking to take it back ('I'll take it', 'normal " +
+  "chat') drops to plain chat.";
 
 const AUTO_CHAT_WRITE_NOTE =
   " WRITE SCOPE: in this mode you MAY write inside the session's working " +
