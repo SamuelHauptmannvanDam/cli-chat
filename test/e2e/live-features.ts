@@ -139,12 +139,17 @@ console.log("7. self-send escalation: ok ('your assistant', self note)");
 // 8. The three chat tools return the waker command; auto_chat quiet stamps the mode.
 const chat = await call(sam.client, "auto_chat", { quiet: true });
 assert.match(chat.command, /MESSENGER_CHAT_MODE=quiet/);
+assert.match(chat.note ?? "", /WRITE SCOPE/);
+assert.doesNotMatch(chat.note ?? "", /READ-ONLY DESK/);
+const chatRO = await call(sam.client, "auto_chat", { read_only: true });
+assert.match(chatRO.note ?? "", /READ-ONLY DESK/);
+assert.doesNotMatch(chatRO.note ?? "", /WRITE SCOPE/);
 const chatPlain = await call(sam.client, "chat", {});
 assert.doesNotMatch(chatPlain.command, /MESSENGER_CHAT_MODE/);
 const chatDraft = await call(sam.client, "auto_draft_chat", {});
 assert.doesNotMatch(chatDraft.command, /MESSENGER_CHAT_MODE/);
 assert.match(chatDraft.note ?? "", /AUTO DRAFT CHAT MODE/);
-console.log("8. chat / auto_draft_chat / auto_chat wakers: ok");
+console.log("8. chat / auto_draft_chat / auto_chat wakers (incl. read_only): ok");
 
 // 9. Headless CLI send from Niels's home → lands for Sam.
 const out = execFileSync("node", [join(ROOT, "src", "server-net.ts"), "send", "Sam", "deploy", "landed,", "your", "move"], {
