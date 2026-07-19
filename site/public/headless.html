@@ -203,7 +203,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; margin-top: 14
 <span class="g">sent</span> 71a84de1… to ops</pre></div>
   <p class="prose">That one send did two things: it delivered, and it wrote "ops" into the bot's <code>contacts.json</code>. From now on the name alone is enough — <em>the handle never appears in your pipeline config:</em></p>
   <div class="codeblock"><button class="copy">copy</button><pre><span class="cy">MESSENGER_HOME</span>=~/deploy-bot <span class="g">npx</span> cli-chat-mcp send ops <span class="a">"works by name now"</span></pre></div>
-  <p class="prose">Add the whole team the same way, one <code>--key</code> send each. And save the bot in <em>your</em> book too — say <em>"add deploy-bot, code is &lt;its handle&gt;"</em> to your agent — so its messages arrive with a name you chose.</p>
+  <p class="prose">Add the whole team the same way, one <code>--key</code> send each. And save the bot in <em>your</em> book too — say <em>"add deploy-bot, code is &lt;its handle&gt;"</em> to your agent — so its messages walk straight in, under a name you chose. (A sender you haven't saved is held at the door: the bot's first ping would sit as a 🆕 new-handle notice until you say <em>add</em>.)</p>
 </section>
 
 <section class="wrap" id="wire">

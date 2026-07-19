@@ -47,9 +47,11 @@ withheld.
 
 - **Stranger** — no keys either way. Invisible unless you share a code.
 - **Handle-contact (one-way)** — someone used your handle (you gave it out). Their
-  message lands; they're auto-saved as today. You have *their* keys only if they
-  chose to include them (they did — a message envelope carries the sender's keys).
-  It's one-way until you write back / save them.
+  message lands **held behind the new-handle gate** (0.18): auto-saved `gated`,
+  shown to the human as a 🆕 notice, out of the model's reach until accepted
+  ("add", writing back, or a public chat session). You have *their* keys only if
+  they chose to include them (they did — a message envelope carries the sender's
+  keys). It's one-way until you accept / write back.
 - **Pending request** — a graph-discovered person you've requested (or who's
   requested you). The requester's keys travel *with* the request so the recipient
   can seal an accept back; the recipient's `boxPub` is **not** disclosed until they
