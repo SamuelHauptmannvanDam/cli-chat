@@ -152,37 +152,45 @@ h2 { font-family: var(--display); font-size: clamp(20px, 3vw, 30px); font-weight
 .lede { font-family: var(--serif); font-size: 18px; color: var(--dim); max-width: 640px; line-height: 1.6; }
 .lede em { color: var(--ink); }
 
+/* ---- card component: one system for every card on the page ----
+   .card            bordered box; optional .tag = floating title chip on the border
+   div .card:hover  border whisper (content, not clickable)
+   a.card:hover     border + background light-up + amber title (clickable) */
+.card {
+  position: relative; border: 1px solid var(--line); background: var(--bg);
+  transition: background .2s, border-color .2s, box-shadow .2s;
+}
+.card:hover { border-color: var(--faint); }
+a.card { display: block; color: inherit; border-bottom: none; }
+a.card:hover { background: var(--bg-card); }
+a.card:hover h3 { color: var(--amber); }
+a.card:hover .go { color: var(--amber); }
+.card .tag { position: absolute; top: -9px; left: 20px; background: var(--bg); padding: 0 8px; font-size: 11px; color: var(--amber); letter-spacing: .06em; }
+
 /* steps */
-.steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); margin-top: 36px; }
-.step { background: var(--bg); padding: 28px 24px; transition: background .2s; }
+.steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 36px; }
+.step { padding: 28px 24px; }
 .step .n { color: var(--amber); font-size: 12px; margin-bottom: 14px; }
 .step h3 { font-size: 14px; font-weight: 600; margin-bottom: 10px; }
 .step p { font-family: var(--serif); font-size: 15.5px; color: var(--dim); line-height: 1.55; }
 .step code { font-family: var(--mono); font-size: 11.5px; color: var(--green); background: var(--bg-raised); padding: 2px 6px; }
 
 /* features */
-.grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); margin-top: 36px; }
-.cell { background: var(--bg); padding: 26px 22px; transition: background .2s; }
-a.cell:hover { background: var(--bg-card); }
-a.cell:hover h3 { color: var(--amber); }
+.grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 36px; }
+.cell { padding: 26px 22px; }
 .cell .ico { font-size: 17px; margin-bottom: 14px; }
 .cell h3 { font-size: 13.5px; font-weight: 600; margin-bottom: 8px; }
 .cell p { font-family: var(--serif); font-size: 15px; color: var(--dim); line-height: 1.5; }
-a.cell { display: block; color: inherit; border-bottom: none; }
 .cell .go { display: inline-block; font-family: var(--mono); font-size: 11px; color: var(--faint); margin-top: 12px; transition: color .15s; font-weight: 400; }
-a.cell:hover .go { color: var(--amber); }
 
 /* modes */
 .modes { display: flex; flex-direction: column; gap: 32px; margin-top: 36px; }
 .mode {
   display: grid; grid-template-columns: 1fr 1.5fr; gap: 28px;
-  border: 1px solid var(--line); background: rgba(18, 16, 12, .92); padding: 28px 26px;
-  position: relative; transition: border-color .2s;
+  background: rgba(18, 16, 12, .92); padding: 28px 26px;
 }
-.mode:hover { border-color: var(--faint); }
 .mode.featured { border-color: rgba(245,167,66,.35); box-shadow: 0 0 40px rgba(245,167,66,.04); }
 .mode.featured:hover { border-color: rgba(245,167,66,.65); box-shadow: 0 0 50px rgba(245,167,66,.08); }
-.mode .tag { position: absolute; top: -9px; left: 20px; background: var(--bg); padding: 0 8px; font-size: 11px; color: var(--amber); letter-spacing: .06em; }
 .mode h3 { font-size: 15px; font-weight: 600; margin: 6px 0 10px; }
 .mode-info > p { font-family: var(--serif); font-size: 15.5px; color: var(--dim); line-height: 1.55; }
 .mode-info .switch-note { font-family: var(--mono); font-size: 11px; color: var(--faint); margin-top: 14px; }
@@ -298,7 +306,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
   <h2 data-scramble>From inbox to autopilot, at your pace.</h2>
   <p class="lede">Three modes. Switch a running inbox with one word.</p>
   <div class="modes">
-    <div class="mode">
+    <div class="card mode">
       <div class="mode-info">
         <p class="tag">"chat"</p>
         <h3>Live inbox — you answer</h3>
@@ -317,7 +325,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
         <p class="fr">↳ 📤 Sent to Mette — "Can't — I have standup."</p>
       </div>
     </div>
-    <div class="mode featured">
+    <div class="card mode featured">
       <div class="mode-info">
         <p class="tag">"auto draft chat"</p>
         <h3>Assistant drafts — you send</h3>
@@ -337,7 +345,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
         <p class="fr">↳ 📤 Sent to Sam — "Yes — after lunch."</p>
       </div>
     </div>
-    <div class="mode">
+    <div class="card mode">
       <div class="mode-info">
         <p class="tag">"auto chat"</p>
         <h3>Assistant answers — marked as itself</h3>
@@ -363,9 +371,9 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
   <h2 data-scramble>The front desk for your team.</h2>
   <p class="lede">No framework, no webhook, no deploy. Open auto chat in a repo and <em>it answers from that directory</em> — the code, the docs, the git history.</p>
   <div class="grid">
-    <a class="cell" href="/team-bot"><p class="ico">🤝</p><h3>Team bot</h3><p>One desk the whole team writes with questions. It answers what the repo already knows, chases what it doesn't, and remembers every answer — an FAQ that writes itself.</p><span class="go">→ the runbook</span></a>
-    <a class="cell" href="/customer-desk"><p class="ico">🎧</p><h3>Customer desk</h3><p>Point it at your docs. Customers get grounded answers; the rest lands with you, whole exchange in hand. Invite-only, so no spam.</p><span class="go">→ the runbook</span></a>
-    <a class="cell" href="/headless"><p class="ico">⚙️</p><h3>Scripts &amp; CI</h3><p>Pipelines message you headlessly — <code style="font-family:var(--mono);font-size:11.5px;color:var(--green)">npx cli-chat-mcp send ops "deploy landed"</code> — and auto chat on your end closes the noise, answers the routine, and wakes you only when it matters.</p><span class="go">→ the runbook</span></a>
+    <a class="card cell" href="/team-bot"><p class="ico">🤝</p><h3>Team bot</h3><p>One desk the whole team writes with questions. It answers what the repo already knows, chases what it doesn't, and remembers every answer — an FAQ that writes itself.</p><span class="go">→ the runbook</span></a>
+    <a class="card cell" href="/customer-desk"><p class="ico">🎧</p><h3>Customer desk</h3><p>Point it at your docs. Customers get grounded answers; the rest lands with you, whole exchange in hand. Invite-only, so no spam.</p><span class="go">→ the runbook</span></a>
+    <a class="card cell" href="/headless"><p class="ico">⚙️</p><h3>Scripts &amp; CI</h3><p>Pipelines message you headlessly — <code style="font-family:var(--mono);font-size:11.5px;color:var(--green)">npx cli-chat-mcp send ops "deploy landed"</code> — and auto chat on your end closes the noise, answers the routine, and wakes you only when it matters.</p><span class="go">→ the runbook</span></a>
   </div>
 </section>
 
@@ -374,17 +382,17 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
   <h2 data-scramble>Swap handles once. Message forever.</h2>
   <p class="lede">A <em>6-character handle</em> is your phone number.</p>
   <div class="steps">
-    <div class="step">
+    <div class="card step">
       <p class="n">[1/3]</p>
       <h3>Add it to your CLI</h3>
       <p>One command, any MCP-capable CLI.</p>
     </div>
-    <div class="step">
+    <div class="card step">
       <p class="n">[2/3]</p>
       <h3>Log in with your email</h3>
       <p>Your agent sends a magic link. Click it — done.</p>
     </div>
-    <div class="step">
+    <div class="card step">
       <p class="n">[3/3]</p>
       <h3>Share your handle</h3>
       <p>Ask <em>"what's my handle?"</em>, swap with a friend. First message names it — <code>write Sam at qL7f2A: hey</code> — and that saves him. From then on <code>write Sam: hey</code> is enough.</p>
@@ -397,12 +405,12 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
   <h2 data-scramble>A messenger that already knows your context.</h2>
   <p class="lede">Encrypted, portable, cross-CLI — and it sits <em>where the answers already live</em>.</p>
   <div class="grid">
-    <div class="cell"><p class="ico">🔐</p><h3>Sealed in transit</h3><p>End-to-end encrypted. The mailbox only ever sees ciphertext.</p></div>
-    <div class="cell"><p class="ico">🪪</p><h3>6-char handles</h3><p>One short handle. Rotate or disable it any time.</p></div>
-    <div class="cell"><p class="ico">🧳</p><h3>Log in</h3><p>Email login, any device — contacts and history included.</p></div>
-    <div class="cell"><p class="ico">🔀</p><h3>Cross-CLI</h3><p>Claude Code to Gemini to Copilot — the wire doesn't care.</p></div>
-    <div class="cell"><p class="ico">🧠</p><h3>Messages are memory</h3><p>"What did Niels say about the endpoint?" — recall any thread, any session.</p></div>
-    <div class="cell"><p class="ico">📟</p><h3>No new UI</h3><p>No app. Your agent is the interface.</p></div>
+    <div class="card cell"><p class="ico">🔐</p><h3>Sealed in transit</h3><p>End-to-end encrypted. The mailbox only ever sees ciphertext.</p></div>
+    <div class="card cell"><p class="ico">🪪</p><h3>6-char handles</h3><p>One short handle. Rotate or disable it any time.</p></div>
+    <div class="card cell"><p class="ico">🧳</p><h3>Log in</h3><p>Email login, any device — contacts and history included.</p></div>
+    <div class="card cell"><p class="ico">🔀</p><h3>Cross-CLI</h3><p>Claude Code to Gemini to Copilot — the wire doesn't care.</p></div>
+    <div class="card cell"><p class="ico">🧠</p><h3>Messages are memory</h3><p>"What did Niels say about the endpoint?" — recall any thread, any session.</p></div>
+    <div class="card cell"><p class="ico">📟</p><h3>No new UI</h3><p>No app. Your agent is the interface.</p></div>
   </div>
 </section>
 
