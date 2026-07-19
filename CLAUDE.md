@@ -97,7 +97,12 @@ waits until the login lands, then runs. Two outcomes:
   them), so ask for their FULL name and wait — don't fall back to the OS login
   name unless they actively decline (a first name is fine if that's all they
   give). Finish `login` with the same poll_id plus `name`, then report their new
-  6-char handle in one line so they can share it.
+  6-char handle in one line so they can share it. Every account carries one
+  contact pre-saved: **cli-chat feedback** (the project's own inbox; new
+  accounts get it at creation, older ones on first boot after upgrade) —
+  mention once that "write feedback: …" reaches the cli-chat makers anytime;
+  it's a normal contact the user can delete like any other, and deleting it
+  is final (it's never re-seeded).
 
 They can change their name any time with `set_name` ("call me X" / "change my
 name to X") and see their current name + handle at the top of `contacts`.

@@ -35,7 +35,7 @@ import { existsSync, rmSync, statSync } from "node:fs";
 import { rebuildThreads, rememberNote, recallNotes } from "./threads.ts";
 import { runCliSend } from "./cli-send.ts";
 import { loadSettings, saveSettings, type TagMode } from "./settings.ts";
-import { resolveMailboxUrl, DEFAULT_MAILBOX_URL } from "./config.ts";
+import { resolveMailboxUrl, DEFAULT_MAILBOX_URL, resolveFeedbackHandle, FEEDBACK_CONTACT_NAME } from "./config.ts";
 import { createAccountClient } from "./account-client.ts";
 import {
   loadSession,
@@ -72,6 +72,7 @@ import {
   listRequests,
   acceptRequest,
   declineRequest,
+  rememberContact,
   type NetContext,
 } from "./core-net.ts";
 import { randomHandle } from "./key-code.ts";
@@ -251,6 +252,10 @@ function publishNameAndEdges(): void {
 }
 publishNameAndEdges();
 
+// Backfill the feedback contact for accounts that predate it (no-op once the
+// per-account flag is set — see ensureFeedbackContact).
+if (S) void ensureFeedbackContact(S);
+
 // Behavior travels WITH the server (MCP `instructions`, sent on connect) so it
 // works in any MCP-capable CLI — not just Claude Code's CLAUDE.md. The text is
 // the single source in ./instructions.ts; esbuild inlines it into the bundle.
@@ -325,7 +330,33 @@ async function createIdentityForLogin(name: string): Promise<Session> {
   // Publish our display name to the directory (claimHandle registered without it).
   if (session.me.handle && session.me.name)
     void session.ctx.client.registerHandle(session.me.handle, session.me.name).catch(() => {});
+  // Awaited so the seed rides the create path's first vault push to the account.
+  await ensureFeedbackContact(session);
   return session;
+}
+
+// Seed the project's feedback contact ("write feedback: …" reaches the makers —
+// config.ts) ONCE per account: brand-new accounts at creation, existing accounts
+// on their first boot after upgrading to a build that has this. The settings
+// flag rides the vault with everything else, so one device seeding covers them
+// all — and a user who deletes the contact never gets it re-seeded. Best-effort:
+// an unregistered handle (dev mailbox) or a registry hiccup leaves the flag
+// unset so a later boot retries, and never breaks the session.
+async function ensureFeedbackContact(s: Session): Promise<void> {
+  const fbHandle = resolveFeedbackHandle();
+  if (!fbHandle) return;
+  const path = settingsFile(s.user);
+  const settings = loadSettings(path);
+  if (settings.feedbackSeeded) return;
+  try {
+    const keys = await s.ctx.client.resolveHandle(fbHandle);
+    if (!keys) return; // registry doesn't know the handle — retry next boot
+    if (!s.book.contacts.some((c) => c.signPub === keys.signPub))
+      rememberContact(s.ctx, { name: FEEDBACK_CONTACT_NAME, ...keys, handle: fbHandle });
+    saveSettings(path, { ...settings, feedbackSeeded: true });
+  } catch {
+    /* offline — retry next boot */
+  }
 }
 
 // ===========================================================================
@@ -503,7 +534,11 @@ async function establishSession(token: string, account: ReadyAccount, name?: str
       `Account created and online. Share this 6-character code so people can message ` +
       `you: ${S.me.handle}. Logging in with ${account.email} on any device brings this ` +
       `account there. Also tell the user, in one line, that they can say "chat" anytime ` +
-      `to keep a live inbox open.`,
+      `to keep a live inbox open.` +
+      (S.ctx.book.contacts.some((c) => c.name === FEEDBACK_CONTACT_NAME)
+        ? ` A "${FEEDBACK_CONTACT_NAME}" contact is pre-saved — the user can send the ` +
+          `cli-chat makers feedback anytime with "write feedback: …".`
+        : ""),
   };
 }
 
