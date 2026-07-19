@@ -189,15 +189,15 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; margin-top: 14
 .foot { display: flex; justify-content: space-between; gap: 24px; flex-wrap: wrap; color: var(--faint); font-size: 12px; line-height: 2.1; }
 .foot b { color: var(--dim); font-weight: 400; }
 
-/* tmux status bar */
+/* shell status bar (headless = no agent, so a plain prompt, not a task line) */
 .statusbar {
   position: fixed; bottom: 0; left: 0; right: 0; z-index: 60;
   display: flex; justify-content: space-between; align-items: center; gap: 12px;
   background: var(--bg-raised); border-top: 1px solid var(--line);
   font-size: 11px; color: var(--dim); padding: 6px 14px;
 }
-.statusbar .seg-l { color: var(--green); }
-.statusbar .seg-l b { color: var(--bg); background: var(--green); font-weight: 400; padding: 1px 7px; margin-right: 8px; }
+.statusbar .seg-l { color: var(--dim); }
+.statusbar .seg-l b { color: var(--green); font-weight: 400; margin-right: 8px; }
 .statusbar .seg-r { display: flex; gap: 16px; }
 .statusbar .live { color: var(--amber); }
 .statusbar .live::before { content: "●"; margin-right: 6px; animation: blink 2.2s steps(1) infinite; }
@@ -384,7 +384,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; margin-top: 14
 </footer>
 
 <div class="statusbar">
-  <span class="seg-l"><b>cli-chat</b>1:headless-runbook*</span>
+  <span class="seg-l"><b>$</b>cli-chat send ops "deploy went out"</span>
   <span class="seg-r"><span>exit 0 · sealed</span><span class="live">one-shot</span></span>
 </div>
 
