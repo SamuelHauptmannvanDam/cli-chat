@@ -28,7 +28,7 @@
   --display: var(--mono);
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
-html { scroll-behavior: smooth; }
+html { scroll-behavior: smooth; overflow-x: hidden; }
 body {
   background: var(--bg);
   color: var(--ink);
@@ -71,7 +71,7 @@ body::after {
 }
 .hero::before {
   content: ""; position: absolute; top: -200px; left: 50%; transform: translateX(-50%);
-  width: 900px; height: 600px; pointer-events: none;
+  width: min(900px, 100vw); height: 600px; pointer-events: none;
   background: radial-gradient(ellipse at center, rgba(108,199,209,.06), transparent 65%);
 }
 .kicker { color: var(--dim); font-size: 12px; letter-spacing: .12em; margin-bottom: 28px; }
@@ -205,6 +205,8 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; margin-top: 14
   .hero { padding-top: 64px; min-height: auto; }
   section.wrap { margin-top: 8vh; padding: 70px 24px 20px; }
   .statusbar .seg-r span:first-child { display: none; }
+  .statusbar .seg-l { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .statusbar .live { white-space: nowrap; }
 }
 @media (prefers-reduced-motion: reduce) {
   .statusbar .live::before { animation: none; }
@@ -265,7 +267,8 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; margin-top: 14
   <p class="sec-label"><b>##</b> 02 · opening hours</p>
   <h2 data-scramble>Open the desk on the docs.</h2>
   <div class="codeblock"><button class="copy">copy</button><pre><span class="g">cd</span> ~/acme/docs <span class="d">&amp;&amp;</span> <span class="cy">MESSENGER_HOME</span>=~/support-desk <span class="g">claude</span>
-<span class="g">❯</span> <span class="a">auto chat, quiet</span></pre></div>
+<span class="g">❯</span> <span class="a">auto chat read only, quiet</span></pre></div>
+  <p class="prose"><em>Read only</em> is the outward-facing variant (0.16): the desk can consult the docs but never touch them — the right posture for an inbox strangers can reach. Only you, at the desk's keyboard, can switch it to write mode; nothing a customer sends ever can.</p>
   <p class="prose">While the session runs, the desk answers. Close it and messages <em>queue sealed in the mailbox</em> — customers can write at 3am and the desk works the backlog when it reopens. Nothing is lost, nothing needs to be "always on".</p>
   <p class="prose">Want to supervise first? Start with <code>auto draft chat</code> instead — same desk, but every reply waits for your <em>"send 1"</em>. Run a week of drafts, then say <em>"auto"</em> when the drafts stop surprising you.</p>
 </section>
@@ -275,7 +278,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; margin-top: 14
   <h2 data-scramble>Invite-only: you decide who's a customer.</h2>
   <p class="lede">The desk auto-answers <em>saved contacts only</em>. Anyone else — cold outreach, spam, a stranger who found the handle — just surfaces to you, unanswered. Being a customer means <em>being in the desk's address book</em>, and you hold the pen. Three door settings:</p>
   <div class="doors">
-    <div class="door"><p class="word">open handle</p><div><h3>Share the code</h3><p>Put <em>Ac5upP</em> in your onboarding email. A customer's first message introduces them; save them and from then on they're answered automatically.</p></div></div>
+    <div class="door"><p class="word">open handle</p><div><h3>Share the code</h3><p>Put <em>Ac5upP</em> in your onboarding email. A customer's first message names it — <em>"write acme support at Ac5upP: the export API is 500ing"</em> — and after that the name alone reaches you. Save them and from then on they're answered automatically.</p></div></div>
     <div class="door"><p class="word">requests-only</p><div><h3>Handle off, requests on</h3><p>Say <em>"kill my handle"</em> in the desk session: the code stops resolving, and new people can only reach the desk through a <em>connect request you approve</em>. Existing customers are unaffected.</p></div></div>
     <div class="door"><p class="word">rotate</p><div><h3>Fresh code</h3><p>Handle leaked somewhere spammy? <em>"Give me a new code"</em> mints a fresh one and retires the old. Every saved customer keeps working — they key on identity, not the code.</p></div></div>
   </div>
@@ -293,6 +296,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; margin-top: 14
     <p class="fr">↳ 📤 passed to Jonas · noted — next pricing question won't escalate</p>
   </div>
   <p class="prose">Every answer you give gets <em>remembered</em>, so the desk's coverage compounds: week one escalates a lot, week four barely at all. And the fix is often just documentation — <em>add the missing page and the desk knows it on the next question.</em></p>
+  <p class="prose">Escalations are also where <em>tickets</em> come from. The whole exchange is already in your session, and your agent is a coding agent — so when a report is real, <em>"file that as an issue"</em> is one instruction from <em>you</em>: it drafts the ticket from the thread, checks it isn't a duplicate, and opens it. And because the reporter stays a contact, closing the loop — <em>"that crash you reported is fixed in 0.16.0"</em> — is a send, not a newsletter.</p>
 </section>
 
 <section class="wrap" id="notes">

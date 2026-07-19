@@ -28,7 +28,7 @@
   --display: var(--mono);
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
-html { scroll-behavior: smooth; }
+html { scroll-behavior: smooth; overflow-x: hidden; }
 body {
   background: var(--bg);
   color: var(--ink);
@@ -71,7 +71,7 @@ body::after {
 }
 .hero::before {
   content: ""; position: absolute; top: -200px; left: 50%; transform: translateX(-50%);
-  width: 900px; height: 600px; pointer-events: none;
+  width: min(900px, 100vw); height: 600px; pointer-events: none;
   background: radial-gradient(ellipse at center, rgba(245,167,66,.07), transparent 65%);
 }
 .kicker { color: var(--dim); font-size: 12px; letter-spacing: .12em; margin-bottom: 28px; }
@@ -206,6 +206,8 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; margin-top: 14
   .hero { padding-top: 64px; min-height: auto; }
   section.wrap { margin-top: 8vh; padding: 70px 24px 20px; }
   .statusbar .seg-r span:first-child { display: none; }
+  .statusbar .seg-l { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .statusbar .live { white-space: nowrap; }
 }
 @media (prefers-reduced-motion: reduce) {
   .statusbar .live::before { animation: none; }
@@ -297,12 +299,14 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; margin-top: 14
     <p class="fr">↳ 📤 passed to Jonas · noted for next time</p>
   </div>
   <p class="prose">You can also front-load it: <em>"remember the release cadence is every second Tuesday"</em>, <em>"remember Niels owns the ingest service"</em>. The desk's memory, your contacts and the full message history follow your account to any device — the desk you trained on your laptop is the same desk on your desktop.</p>
+  <p class="prose">And when a teammate runs a desk of their own, the desks talk to each other. Replies arrive marked (<em>"Niels's assistant replied"</em>) on both sides, routine back-and-forth settles assistant-to-assistant, and anything that needs a human still surfaces. Teach yours what it may share — <em>"my review availability may be shared with work contacts"</em> — and watch scheduling threads settle without either of you looking up.</p>
 </section>
 
 <section class="wrap" id="dedicated">
-  <p class="sec-label"><b>##</b> 05 · optional</p>
-  <h2 data-scramble>Give the desk its own identity.</h2>
-  <p class="lede">Rather have <em>team-desk</em> than <em>you</em> answering? Same recipe, separate account — teammates message the desk directly and your own inbox stays personal.</p>
+  <p class="sec-label"><b>##</b> 05 · the full version</p>
+  <h2 data-scramble>The team's desk: an FAQ that writes itself.</h2>
+  <p class="lede">Same recipe, separate account: <em>one desk the whole team writes with questions.</em> It answers what the repo and its memory already cover, chases what they don't — and every answer it chases becomes an answer it knows. Your own inbox stays personal.</p>
+  <p class="prose">Since 0.16 the desk also <em>writes its learnings down</em> — topical markdown under <code>learnings/</code> in the repo, on its own initiative, growing as the team asks. The FAQ isn't a metaphor: it's files, in the repo, that anyone (and any agent) can read. A sender can never direct a write — the desk holds its own pen. Facing strangers instead of teammates? Open it as <em>"auto chat read only"</em> and the directory stays untouched.</p>
   <div class="codeblock titled"><span class="cb-title">a spare machine, a VM, the office mac mini — once</span><button class="copy">copy</button><pre><span class="c"># its own state dir, so it never touches your account</span>
 <span class="cy">MESSENGER_HOME</span>=~/team-desk <span class="g">claude</span>
 <span class="g">❯</span> log in as desk@yourteam.dev — name it "Acme Team Desk"
@@ -311,7 +315,8 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; margin-top: 14
 
 <span class="c"># then, from the repo it should answer from:</span>
 <span class="g">❯</span> <span class="a">auto chat, quiet</span></pre></div>
-  <p class="prose">Teammates add <code>Tk4d2W</code> once and the desk saves them back as they write in — after that they're inside the saved-contacts rail and get answered. What the desk can't ground, it forwards to <em>you</em>: message it your handle first, and it treats you as the human behind the desk.</p>
+  <p class="prose">A teammate's first message names the handle — <em>"write team desk at Tk4d2W: which branch is the auth fix on?"</em> — which saves the desk in their book and them in the desk's. From then on <em>"write team desk"</em> is enough, and they're inside the saved-contacts rail and get answered. What the desk can't ground, it forwards to <em>you</em>: message it your handle first, and it treats you as the human behind the desk.</p>
+  <p class="prose">Teach it the ownership map — <em>"remember Niels owns ingest", "remember Mette decides releases"</em> — and the chase gets sharp: the asker hears who owns their question, and the escalation reaches you <em>with the owner already named</em>, so passing it on is one line. The answer lands back in the asker's thread and the desk <em>remembers it</em>. Ask once, documented forever — the questions your team actually asks become the documentation, without anyone sitting down to write it.</p>
   <p class="prose">The session is the desk's opening hours: while it runs, it answers; say <em>"stop"</em> (or close the laptop) and messages simply queue for next time — <em>nothing is ever lost, the mailbox holds sealed messages until the desk reopens.</em></p>
 </section>
 

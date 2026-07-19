@@ -99,6 +99,11 @@ automatic to fully on-demand:
 > sessions stay silent except when your assistant needs you; ask *"what did you
 > handle?"* any time for the ledger. *"manual"* takes the feed back; *"stop"*
 > closes it.
+>
+> Auto chat may also write what it learns into the project it's opened in —
+> topical notes under `learnings/`, on its own initiative only (nothing a sender
+> says can ever direct a write). Facing strangers — a support desk, an open
+> inbox? Say *"auto chat read only"* and the directory stays untouched.
 
 **💬 On demand — just ask**
 > Ask *"any messages?"* whenever you like and the agent checks for you.
@@ -121,7 +126,8 @@ saves a fact your messenger can use anywhere — it's what auto chat answers fro
 - *"write Sam at AbC123: …"* / *"write Sam: …"* — send a message
 - *"chat"* (or *"watch"*) — open your live inbox (messages stream in; reply to all when you like)
 - *"auto draft chat"* — same inbox; the assistant drafts each reply, you approve before it sends
-- *"auto chat"* — same inbox, but your assistant answers what it can, marked as itself
+- *"auto chat"* — same inbox, but your assistant answers what it can, marked as itself (and keeps its learnings in the project)
+- *"auto chat read only"* — the outward-facing desk: same, but the directory stays untouched
 - *"what did Sam say about …?"* — recall any past message, from any session
 - *"remember …"* — save a fact to your messenger's memory
 - *"write me: …"* — drop a note into your own inbox (it surfaces wherever you're next active)

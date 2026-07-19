@@ -33,9 +33,11 @@
   --display: var(--mono);
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
-html { scroll-behavior: smooth; }
+html { scroll-behavior: smooth; overflow-x: hidden; }
 body {
   background: var(--bg);
+  background-image: radial-gradient(rgba(245, 167, 66, .13) 1px, transparent 1.2px);
+  background-size: 24px 24px;
   color: var(--ink);
   font-family: var(--mono);
   font-size: 14px;
@@ -73,11 +75,6 @@ body::after {
   min-height: 100vh;
   display: flex; flex-direction: column; justify-content: center;
   padding: 70px 24px; position: relative;
-}
-.hero::before {
-  content: ""; position: absolute; top: -200px; left: 50%; transform: translateX(-50%);
-  width: 900px; height: 600px; pointer-events: none;
-  background: radial-gradient(ellipse at center, rgba(245,167,66,.07), transparent 65%);
 }
 .kicker {
   color: var(--dim); font-size: 12px; letter-spacing: .12em; margin-bottom: 28px;
@@ -172,20 +169,8 @@ h2 { font-family: var(--display); font-size: clamp(20px, 3vw, 30px); font-weight
 .cell h3 { font-size: 13.5px; font-weight: 600; margin-bottom: 8px; }
 .cell p { font-family: var(--serif); font-size: 15px; color: var(--dim); line-height: 1.5; }
 a.cell { display: block; color: inherit; border-bottom: none; }
-a.cell .go { display: inline-block; font-family: var(--mono); font-size: 11px; color: var(--faint); margin-top: 12px; transition: color .15s; }
+.cell .go { display: inline-block; font-family: var(--mono); font-size: 11px; color: var(--faint); margin-top: 12px; transition: color .15s; font-weight: 400; }
 a.cell:hover .go { color: var(--amber); }
-.grid.two { grid-template-columns: repeat(2, 1fr); }
-
-/* field-idea sketches (collapsed) */
-.sketches { margin-top: 22px; border: 1px solid var(--line); background: var(--bg-raised); }
-.sketches summary { cursor: pointer; padding: 13px 18px; font-size: 12px; color: var(--dim); letter-spacing: .06em; list-style: none; transition: color .15s; }
-.sketches summary::-webkit-details-marker { display: none; }
-.sketches summary:hover { color: var(--amber); }
-.sketches[open] summary { border-bottom: 1px solid var(--line); color: var(--amber); }
-.sketches .sk { padding: 18px 20px 20px; display: flex; flex-direction: column; gap: 12px; }
-.sketches .sk p { font-family: var(--serif); font-size: 14.5px; color: var(--dim); line-height: 1.6; max-width: 760px; }
-.sketches .sk b { color: var(--ink); font-weight: 600; }
-.sketches .sk-cta { color: var(--faint); font-size: 12.5px; }
 
 /* modes */
 .modes { display: flex; flex-direction: column; gap: 32px; margin-top: 36px; }
@@ -255,11 +240,15 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
 .statusbar .live::before { content: "●"; margin-right: 6px; animation: blink 2.2s steps(1) infinite; }
 
 @media (max-width: 800px) {
-  .steps, .grid, .grid.two, .modes { grid-template-columns: 1fr; }
+  .steps, .grid, .modes { grid-template-columns: 1fr; }
   .mode { grid-template-columns: 1fr; }
   .hero { padding-top: 64px; }
   section.wrap { min-height: auto; margin-top: 10vh; padding: 120px 24px 70px; }
   .statusbar .seg-r span:first-child { display: none; }
+  .statusbar .seg-l { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .statusbar .live { white-space: nowrap; }
+  .tabs { flex-wrap: wrap; width: 100%; }
+  .tab { flex: 1 1 auto; border-bottom: 1px solid var(--line); }
 }
 @media (prefers-reduced-motion: reduce) {
   .caret { animation: none; }
@@ -349,8 +338,8 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
       <div class="mode-info">
         <p class="tag">"auto chat"</p>
         <h3>Assistant answers — marked as itself</h3>
-        <p>It answers from <em>the directory you opened it in</em> — code, docs, git history — marked as your assistant. What it can't ground, it asks <em>you</em>.</p>
-        <p class="switch-note">"manual" takes the feed back any time</p>
+        <p>It answers from <em>the directory you opened it in</em> — code, docs, git history — marked as your assistant, and writes what it learns back into that directory. What it can't ground, it asks <em>you</em>.</p>
+        <p class="switch-note">"auto chat read only" keeps the directory untouched · "manual" takes the feed back any time</p>
       </div>
       <div class="feed">
         <p class="fu">❯ auto chat, quiet</p>
@@ -370,22 +359,11 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
   <p class="sec-label"><b>##</b> 02 · run it as</p>
   <h2 data-scramble>The front desk for your team.</h2>
   <p class="lede">No framework, no webhook, no deploy. Open auto chat in a repo and <em>it answers from that directory</em> — the code, the docs, the git history.</p>
-  <div class="grid two">
-    <a class="cell" href="/team-bot"><p class="ico">🤝</p><h3>Team bot</h3><p>Teammates ask your assistant — "which branch is the fix on?" — while you stay heads-down. And when their side runs one too, the assistants sort it out between them, marked, while you both skim.</p><span class="go">→ the runbook</span></a>
-    <a class="cell" href="/customer-desk"><p class="ico">🎧</p><h3>Customer desk</h3><p>Point it at your docs. Customers get grounded answers; the rest lands with you — one clarifying question away from a ticket that files itself. Invite-only, so no spam.</p><span class="go">→ the runbook</span></a>
-    <a class="cell" href="/headless"><p class="ico">⚙️</p><h3>Scripts &amp; CI</h3><p>Pipelines message you headlessly — <code style="font-family:var(--mono);font-size:11.5px;color:var(--green)">npx cli-chat-mcp send ops "deploy landed"</code></p><span class="go">→ the runbook</span></a>
-    <div class="cell"><p class="ico">🚨</p><h3>On-call triage desk</h3><p>Headless, in reverse: CI, cron and monitors message you — auto chat closes the noise, answers the routine ("rerun"), and wakes you only when it matters. A pager that reads the logs first.</p><span class="go">runbook coming</span></div>
+  <div class="grid">
+    <a class="cell" href="/team-bot"><p class="ico">🤝</p><h3>Team bot</h3><p>One desk the whole team writes with questions. It answers what the repo already knows, chases what it doesn't, and remembers every answer — an FAQ that writes itself.</p><span class="go">→ the runbook</span></a>
+    <a class="cell" href="/customer-desk"><p class="ico">🎧</p><h3>Customer desk</h3><p>Point it at your docs. Customers get grounded answers; the rest lands with you, whole exchange in hand. Invite-only, so no spam.</p><span class="go">→ the runbook</span></a>
+    <a class="cell" href="/headless"><p class="ico">⚙️</p><h3>Scripts &amp; CI</h3><p>Pipelines message you headlessly — <code style="font-family:var(--mono);font-size:11.5px;color:var(--green)">npx cli-chat-mcp send ops "deploy landed"</code> — and auto chat on your end closes the noise, answers the routine, and wakes you only when it matters.</p><span class="go">→ the runbook</span></a>
   </div>
-  <details class="sketches">
-    <summary>▸ more field ideas — same primitives, new problems</summary>
-    <div class="sk">
-      <p><b>🖥️ Fleet chat-ops</b> — an account is just a directory, so every box you own can have one. "write buildbox: status?" — your contact book becomes your infrastructure.</p>
-      <p><b>📋 Standup, minus the meeting</b> — a cron bot messages everyone tagged <em>work</em> at 9:00; each side's assistant answers or asks its human; one digest lands with the lead.</p>
-      <p><b>📦 Ship a contact with your tool</b> — our installer seeds a feedback contact, yours can too. "write yourtool: it crashed on M1" becomes your support channel — no GitHub account, no Discord.</p>
-      <p><b>🔗 A job queue you can read</b> — agents on different machines coordinate over messages, and the whole thread stays readable by the humans who own them.</p>
-      <p class="sk-cta">Sketches, not features — everything here runs on what's already shipped. Built one? <a href="#contact">write feedback: …</a></p>
-    </div>
-  </details>
 </section>
 
 <section class="wrap" id="handles">
@@ -406,7 +384,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
     <div class="step">
       <p class="n">[3/3]</p>
       <h3>Share your handle</h3>
-      <p>Ask <em>"what's my handle?"</em>, swap with a friend. Then: <code>write Sam: hey</code></p>
+      <p>Ask <em>"what's my handle?"</em>, swap with a friend. First message names it — <code>write Sam at qL7f2A: hey</code> — and that saves him. From then on <code>write Sam: hey</code> is enough.</p>
     </div>
   </div>
 </section>
@@ -451,7 +429,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
 
 <div class="statusbar">
   <span class="seg-l"><b>⏺</b>Bash(Listening for new messages)</span>
-  <span class="seg-r"><span>E2E sealed · v0.15.0</span><span class="live">1 background task</span></span>
+  <span class="seg-r"><span>E2E sealed · v0.16.0</span><span class="live">1 background task</span></span>
 </div>
 
 <script>
@@ -535,14 +513,18 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
     function start(n) {
       function render() { num.textContent = n.toLocaleString('en-US'); }
       render(); wrap.hidden = false;
-      var first = true;
+      var inc = 0;
       (function tick() {
         setTimeout(function () {
-          n += first ? 1 : (Math.random() < .25 ? 2 : 1);
-          first = false;
+          if (!inc || Math.random() >= .65) {
+            var next = 1 + Math.floor(Math.random() * 3);
+            while (next === inc) next = 1 + Math.floor(Math.random() * 3);
+            inc = next;
+          }
+          n += inc;
           try { localStorage.setItem(KEY, n); } catch (e) {}
           render(); tick();
-        }, first ? 1000 : 4000 + Math.random() * 6000);
+        }, 1000 + Math.random() * 6000);
       })();
     }
     var stored = 0;
