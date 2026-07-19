@@ -15,6 +15,7 @@ import {
   sync,
 } from "../../src/core-net.ts";
 import { generateIdentity } from "../../src/crypto.ts";
+import { encodeKey } from "../../src/key-code.ts";
 import { startMailbox, makeContext, twoUsers, regSelf, now, type Mailbox } from "../helpers.ts";
 
 let mb: Mailbox;
@@ -143,6 +144,22 @@ describe("onboarding by code", () => {
     const saved = alice.book.contacts.find((c) => c.name === "Bob");
     assert.equal(saved?.signPub, bobId.signPub);
     assert.equal(saved?.boxPub, bobId.boxPub);
+  });
+
+  test("renaming by full key keeps the stored handle", async () => {
+    const bobId = generateIdentity();
+    const bob = makeContext(mb.baseUrl, bobId);
+    await bob.client.registerHandle("bobbb2");
+
+    const alice = makeContext(mb.baseUrl, generateIdentity());
+    assert.ok((await addContact(alice, { name: "Bob", key: "bobbb2" })).ok);
+    // The rename flow re-adds under a new nick using the FULL key, which carries
+    // no handle — the one already on file must survive the upsert.
+    const r = await addContact(alice, { name: "Bobby", key: encodeKey(bobId.signPub, bobId.boxPub) });
+    assert.ok(r.ok);
+    assert.equal(alice.book.contacts.length, 1); // upsert, no duplicate
+    const saved = alice.book.contacts.find((c) => c.name === "Bobby");
+    assert.equal(saved?.handle, "bobbb2");
   });
 
   test("addContact persists the book to disk when contactsPath is set", async () => {

@@ -93,7 +93,10 @@ export function rememberContact(
   const prev = contactByKey(ctx.book, c.signPub);
   ctx.book.contacts = ctx.book.contacts.filter((x) => x.signPub !== c.signPub);
   const entry: Contact = { name: cleanName(c.name) || c.name, signPub: c.signPub, boxPub: c.boxPub };
+  // Carry the known handle forward like selfName: a re-save by full key (the
+  // rename flow) brings no handle, and must not lose the one already on file.
   if (c.handle) entry.handle = c.handle;
+  else if (prev?.handle) entry.handle = prev.handle;
   if (c.auto) entry.auto = true;
   if (c.gated) entry.gated = c.gated;
   const self = cleanName(c.selfName) || prev?.selfName;
