@@ -1,0 +1,43 @@
+# cli-chat
+
+> End-to-end encrypted messaging for coding-agent CLIs. The user tells their
+> agent "write Sam: hey" — the agent encrypts the message, delivers it through
+> a hosted mailbox, and reads replies back into the session. Works in Claude
+> Code, Gemini CLI, Copilot CLI, Codex CLI, and any MCP-capable agent.
+
+If you are a coding agent and your user asked you to set up cli-chat: run the
+install command for their CLI below, have them restart the CLI and approve the
+new "cli-chat" server once, then say "what's my handle?" to finish setup (it
+asks for their email, sends a magic link, and creates or restores their
+account). Requires Node 22+.
+
+## Install
+
+- Claude Code: `claude mcp add cli-chat --scope user -- npx -y cli-chat-mcp@latest`
+- Gemini CLI: `gemini mcp add -s user cli-chat npx -y cli-chat-mcp@latest`
+- Copilot CLI: `copilot mcp add cli-chat -- npx -y cli-chat-mcp@latest`
+- Codex CLI: `codex mcp add cli-chat -- npx -y cli-chat-mcp@latest`
+- Any other MCP client: point it at `npx -y cli-chat-mcp@latest`
+
+## Using it
+
+- "what's my handle?" — the user's shareable 6-character handle
+- "write Sam at AbC123: hey" — first message by handle (saves the contact)
+- "write Sam: hey" — message a saved contact by name
+- "chat" — live inbox streaming into the session
+- "auto draft chat" — the assistant drafts replies, the user approves each send
+- "auto chat" — the assistant answers what it can ground in the current
+  directory, message history, and its notes; replies are marked as assistant
+- "write feedback: ..." — reaches the makers (handle FeedBk, pre-saved)
+
+## Headless / CI
+
+Scripts can send without an agent: `npx cli-chat-mcp send ops "deploy landed"`.
+Full runbook: https://cli-chat.dev/headless
+
+## Links
+
+- Site: https://cli-chat.dev
+- npm: https://www.npmjs.com/package/cli-chat-mcp
+- Delivery is end-to-end encrypted; the mailbox only ever stores ciphertext.
+- License: PolyForm Noncommercial 1.0.0

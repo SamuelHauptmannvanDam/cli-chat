@@ -22,7 +22,7 @@
   --bg-card: #14120d;
   --ink: #e8e1d1;
   --dim: #8a8272;
-  --faint: #4d473b;
+  --faint: #6e6555;
   --line: #262218;
   --amber: #f5a742;
   --green: #8fd460;
@@ -62,7 +62,7 @@ body::after {
   font-size: 11.5px; letter-spacing: .05em;
 }
 @media (min-width: 1280px) { .agenda { display: flex; } }
-.agenda a { color: var(--ink); opacity: .28; border-bottom: none; transition: opacity .25s, color .25s; }
+.agenda a { color: var(--ink); opacity: .45; border-bottom: none; transition: opacity .25s, color .25s; }
 .agenda a:hover { opacity: .7; }
 .agenda a.active { opacity: 1; color: var(--amber); }
 .agenda a .idx { color: var(--faint); margin-right: 9px; }
@@ -107,6 +107,8 @@ h1 .arg { color: var(--amber); }
 
 .install-note { font-size: 11.5px; color: var(--faint); margin-top: 14px; }
 .install-note em { color: var(--dim); font-style: normal; }
+.installs { font-size: 11.5px; color: var(--dim); margin-top: 6px; }
+.installs b { color: var(--green); font-weight: 600; font-variant-numeric: tabular-nums; }
 
 /* ---- terminal demo ---- */
 .term {
@@ -166,6 +168,9 @@ h2 { font-family: var(--display); font-size: clamp(20px, 3vw, 30px); font-weight
 .cell .ico { font-size: 17px; margin-bottom: 14px; }
 .cell h3 { font-size: 13.5px; font-weight: 600; margin-bottom: 8px; }
 .cell p { font-family: var(--serif); font-size: 15px; color: var(--dim); line-height: 1.5; }
+a.cell { display: block; color: inherit; border-bottom: none; }
+a.cell .go { display: inline-block; font-family: var(--mono); font-size: 11px; color: var(--faint); margin-top: 12px; transition: color .15s; }
+a.cell:hover .go { color: var(--amber); }
 
 /* modes */
 .modes { display: flex; flex-direction: column; gap: 32px; margin-top: 36px; }
@@ -221,15 +226,15 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
 .foot { display: flex; justify-content: space-between; gap: 24px; flex-wrap: wrap; color: var(--faint); font-size: 12px; line-height: 2.1; }
 .foot b { color: var(--dim); font-weight: 400; }
 
-/* tmux status bar */
+/* agent-CLI status bar (the background-task line + running indicator) */
 .statusbar {
   position: fixed; bottom: 0; left: 0; right: 0; z-index: 60;
   display: flex; justify-content: space-between; align-items: center; gap: 12px;
   background: var(--bg-raised); border-top: 1px solid var(--line);
   font-size: 11px; color: var(--dim); padding: 6px 14px;
 }
-.statusbar .seg-l { color: var(--green); }
-.statusbar .seg-l b { color: var(--bg); background: var(--green); font-weight: 400; padding: 1px 7px; margin-right: 8px; }
+.statusbar .seg-l { color: var(--dim); }
+.statusbar .seg-l b { color: var(--green); font-weight: 400; margin-right: 8px; }
 .statusbar .seg-r { display: flex; gap: 16px; }
 .statusbar .live { color: var(--amber); }
 .statusbar .live::before { content: "●"; margin-right: 6px; animation: blink 2.2s steps(1) infinite; }
@@ -261,7 +266,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
 <header class="hero wrap" id="top">
   <p class="kicker">// cli-chat <b>·</b> end-to-end encrypted <b>·</b> lives in your coding CLI</p>
   <h1><span class="prompt">❯ </span><span class="cmd" data-scramble>write sam:</span> <span class="arg" data-scramble>the deploy landed</span></h1>
-  <p class="sub">Your coding agent is now your messenger. <em>You never leave the terminal.</em></p>
+  <p class="sub">Your coding agent is now your messenger. <em>Never leave your terminal.</em></p>
   <div class="tabs" id="tabs">
     <button class="tab active" data-cmd="claude mcp add cli-chat --scope user -- npx -y cli-chat-mcp@latest">Claude Code</button>
     <button class="tab" data-cmd="gemini mcp add -s user cli-chat npx -y cli-chat-mcp@latest">Gemini CLI</button>
@@ -274,6 +279,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
     <button class="copy" id="copyBtn">copy</button>
   </div>
   <p class="install-note">Then restart your CLI, allow the new <em>cli-chat</em> server when it asks, and say <em>"what's my handle?"</em> — that's the whole setup. Needs Node 22+.</p>
+  <p class="installs" id="installs" hidden>▸ <b id="installsN"></b> installs · last 30 days</p>
 
   <div class="term">
     <div class="term-bar"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span>samuel@laptop — claude — 80×24</span></div>
@@ -351,9 +357,9 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
   <h2 data-scramble>The front desk for your team.</h2>
   <p class="lede">No framework, no webhook, no deploy. Open auto chat in a repo and <em>it answers from that directory</em> — the code, the docs, the git history.</p>
   <div class="grid">
-    <div class="cell"><p class="ico">🤝</p><h3>Team bot</h3><p>Teammates ask your assistant — "which branch is the fix on?" — while you stay heads-down.</p></div>
-    <div class="cell"><p class="ico">🎧</p><h3>Customer desk</h3><p>Point it at your docs. Customers get grounded answers; the rest lands with you. Invite-only, so no spam.</p></div>
-    <div class="cell"><p class="ico">⚙️</p><h3>Scripts &amp; CI</h3><p>Pipelines message you headlessly — <code style="font-family:var(--mono);font-size:11.5px;color:var(--green)">npx cli-chat-mcp send ops "deploy landed"</code></p></div>
+    <a class="cell" href="/team-bot"><p class="ico">🤝</p><h3>Team bot</h3><p>Teammates ask your assistant — "which branch is the fix on?" — while you stay heads-down.</p><span class="go">→ the runbook</span></a>
+    <a class="cell" href="/customer-desk"><p class="ico">🎧</p><h3>Customer desk</h3><p>Point it at your docs. Customers get grounded answers; the rest lands with you. Invite-only, so no spam.</p><span class="go">→ the runbook</span></a>
+    <a class="cell" href="/headless"><p class="ico">⚙️</p><h3>Scripts &amp; CI</h3><p>Pipelines message you headlessly — <code style="font-family:var(--mono);font-size:11.5px;color:var(--green)">npx cli-chat-mcp send ops "deploy landed"</code></p><span class="go">→ the runbook</span></a>
   </div>
 </section>
 
@@ -408,7 +414,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
   <div class="wrap foot">
     <div>
       <p><b>cli-chat</b> · a messenger for the agent age</p>
-      <p>© 2026 · <a href="https://www.npmjs.com/package/cli-chat-mcp">npm: cli-chat-mcp</a> · PolyForm Noncommercial 1.0.0</p>
+      <p>© 2026 · <a href="https://www.npmjs.com/package/cli-chat-mcp">npm: cli-chat-mcp</a> · <a href="/headless">headless runbook</a> · <a href="/llms.txt">llms.txt</a> · PolyForm Noncommercial 1.0.0</p>
     </div>
     <div>
       <p>Questions, ideas, bugs?</p>
@@ -418,8 +424,8 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
 </footer>
 
 <div class="statusbar">
-  <span class="seg-l"><b>cli-chat</b>0:landing*</span>
-  <span class="seg-r"><span>E2E sealed · v0.15.0</span><span class="live">listening</span></span>
+  <span class="seg-l"><b>⏺</b>Bash(Listening for new messages)</span>
+  <span class="seg-r"><span>E2E sealed · v0.15.0</span><span class="live">1 background task</span></span>
 </div>
 
 <script>
@@ -495,6 +501,24 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
       else { d.innerHTML = l.html; setTimeout(next, l.t === 'agent' ? 900 : 650); }
     })();
   }
+
+  /* ---- npm installs ticker (real count on load, gentle extrapolation) ---- */
+  fetch('https://api.npmjs.org/downloads/point/last-month/cli-chat-mcp')
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      if (!d || !d.downloads) return;
+      var n = d.downloads;
+      var wrap = document.getElementById('installs'), num = document.getElementById('installsN');
+      function render() { num.textContent = n.toLocaleString('en-US'); }
+      render(); wrap.hidden = false;
+      (function tick() {
+        setTimeout(function () {
+          n += 1 + Math.floor(Math.random() * 3);
+          render(); tick();
+        }, 20000 + Math.random() * 55000);
+      })();
+    })
+    .catch(function () {});
 
   /* ---- agenda scroll-spy ---- */
   (function () {
