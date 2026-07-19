@@ -199,7 +199,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; margin-top: 14
   <h2 data-scramble>First contact: send to a handle.</h2>
   <p class="lede">The bot's contact book is empty. The first message targets your <em>6-char handle</em> — ask your own agent <em>"what's my handle?"</em> if you've forgotten it.</p>
   <div class="codeblock"><button class="copy">copy</button><pre><span class="c"># --key resolves the handle, sends, AND saves the contact</span>
-<span class="cy">MESSENGER_HOME</span>=~/deploy-bot <span class="g">npx</span> cli-chat-mcp send ops <span class="d">--key</span> <span class="a">qL7f2A</span> <span class="a">"deploy bot reporting in"</span>
+<span class="cy">MESSENGER_HOME</span>=~/deploy-bot <span class="g">npx</span> cli-chat-mcp send ops <span class="d">--key</span> <span class="a">qL7fA</span> <span class="a">"deploy bot reporting in"</span>
 <span class="g">sent</span> 71a84de1… to ops</pre></div>
   <p class="prose">That one send did two things: it delivered, and it wrote "ops" into the bot's <code>contacts.json</code>. From now on the name alone is enough — <em>the handle never appears in your pipeline config:</em></p>
   <div class="codeblock"><button class="copy">copy</button><pre><span class="cy">MESSENGER_HOME</span>=~/deploy-bot <span class="g">npx</span> cli-chat-mcp send ops <span class="a">"works by name now"</span></pre></div>

@@ -22,7 +22,7 @@ account). Requires Node 22+.
 ## Using it
 
 - "what's my handle?" — the user's shareable 6-character handle
-- "write Sam at AbC123: hey" — first message by handle (saves the contact)
+- "write Sam at AbC12: hey" — first message by handle (saves the contact)
 - "write Sam: hey" — message a saved contact by name
 - "chat" — live inbox streaming into the session
 - "draft chat" — the assistant drafts replies, the user approves each send

@@ -50,12 +50,12 @@ lands with the people who make cli-chat. (Don't want it? Delete it like any
 contact — it won't come back.)
 
 **3. Get your code and share it.** Ask *"what's my code?"* — the agent prints your
-6-char handle (e.g. `AbC123`). Send it to whoever you want to reach. To message
+6-char handle (e.g. `AbC12`). Send it to whoever you want to reach. To message
 *them*, you just need *their* 6-char code — swap codes both directions, once.
 
 **4. Write.** With their code in hand:
 ```
-write Sam at AbC123: hey      # first time: by code — saves them as a contact
+write Sam at AbC12: hey      # first time: by code — saves them as a contact
 write Sam: hey                # after that: by name
 ```
 That first send is all the setup there is. When the recipient opens their CLI
@@ -128,7 +128,7 @@ saves a fact your messenger can use anywhere — it's what auto chat answers fro
 
 ## What you can ask your agent to do
 - *"what's my code?"* — show your handle to share
-- *"write Sam at AbC123: …"* / *"write Sam: …"* — send a message
+- *"write Sam at AbC12: …"* / *"write Sam: …"* — send a message
 - *"chat"* (or *"watch"*) — open your live inbox (messages stream in; reply to all when you like)
 - *"draft chat"* — same inbox; the assistant drafts each reply, you approve before it sends
 - *"auto chat"* — same inbox, but your assistant answers what it can, marked as itself (and keeps its learnings in the project)
