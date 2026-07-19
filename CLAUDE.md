@@ -157,7 +157,9 @@ When the user says **"chat"** (or "go live" / "start chat", and also "watch" /
 call the **`chat`** tool to get a shell `command` and run it as a **background
 task**. (The three chat tools match the three modes by name — `chat`,
 `auto_draft_chat`, `auto_chat` — call the one for the mode the user asked for;
-all return the same waker command.)
+all return the same waker command.) Every mode also has a **public** variant —
+"chat public" / "go public" — pass `public: true`: new handles are auto-accepted
+into this terminal instead of held behind the gate (see *New handles* above).
 **Sequence strictly: launch the waker only AFTER the chat tool returns, using the
 `command` it returned** — never in the same parallel batch as the tool call, and
 never a command you reconstructed from docs or memory (a jumped-ahead launch is
@@ -332,7 +334,9 @@ stop is always announced, never silent.
 
 ## Auto draft chat — you draft, the user sends ("auto draft chat" / "draft chat" / "drafts")
 The midway rung between chat and auto chat, for building trust: the same
-live-inbox loop, but you **draft instead of send**. Per message:
+live-inbox loop, but you **draft instead of send**. ("auto draft chat public"
+works like every mode's public variant — new handles walk in and get drafts
+too.) Per message:
 
 1. Build the best grounded reply exactly as in auto chat (same grounding stack,
    same code of conduct) — but do **not** send it. Render it under the message's

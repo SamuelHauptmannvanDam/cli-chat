@@ -77,7 +77,10 @@ for" messages — call the \`chat\` tool to get a shell \`command\` and RUN IT A
 BACKGROUND TASK. (The three chat tools match the three modes by name: \`chat\` =
 plain live chat, \`auto_draft_chat\` = you draft and the user approves,
 \`auto_chat\` = you answer — call the one for the mode the user asked for; all
-return the same waker command.) SEQUENCE STRICTLY: launch the waker only AFTER
+return the same waker command. Every mode also has a PUBLIC variant — "chat
+public" / "go public" → pass public:true — where new handles are auto-accepted
+into this terminal instead of held behind the gate; see NEW HANDLES.)
+SEQUENCE STRICTLY: launch the waker only AFTER
 the chat tool RETURNS, using the exact \`command\` from its result — never in the same parallel
 batch as the tool call, and never a command reconstructed from docs/memory (that
 is how a raw path ends up on screen, and it misses env the server embeds).
