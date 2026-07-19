@@ -88,9 +88,10 @@ h1 {
 .installs { font-size: 11px; color: var(--faint); letter-spacing: .06em; }
 .installs b { color: var(--green); font-weight: 400; font-variant-numeric: tabular-nums; }
 
-/* ---- terminal demo ---- */
+/* ---- terminal demo: the SAME conversation from both ends ---- */
+.terms { margin-top: 72px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
 .term {
-  margin-top: 72px; border: 1px solid var(--line); background: rgba(18, 16, 12, .92);
+  border: 1px solid var(--line); background: rgba(18, 16, 12, .92);
   box-shadow: 0 30px 80px rgba(0,0,0,.5), 0 0 0 1px rgba(245,167,66,.04);
 }
 .term-bar {
@@ -102,7 +103,7 @@ h1 {
 .term-bar .dot:nth-child(2) { background: #4f4630; }
 .term-bar .dot:nth-child(3) { background: #35472e; }
 .term-bar span { margin-left: 10px; }
-.term-body { padding: 22px 22px 26px; min-height: 300px; font-size: 13px; line-height: 1.9; }
+.term-body { padding: 22px 22px 26px; min-height: 260px; font-size: 13px; line-height: 1.9; }
 .t-line { white-space: pre-wrap; word-break: break-word; }
 .t-line .p { color: var(--green); }
 .t-line.agent { color: var(--dim); }
@@ -188,8 +189,9 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
 .statusbar .ver { color: var(--green); }
 
 @media (max-width: 800px) {
-  .steps, .grid, .modes { grid-template-columns: 1fr; }
+  .steps, .grid, .modes, .terms { grid-template-columns: 1fr; }
   .mode { grid-template-columns: 1fr; }
+  .term-body { min-height: 0; }
   .hero { padding-top: 64px; }
   section.wrap { min-height: auto; margin-top: 10vh; padding: 120px 24px 70px; }
   /* Tight space: version, task count and "● Bash" all keep their place;
@@ -236,9 +238,15 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
   </div>
   <p class="install-note">Then restart your CLI, allow the new <em>cli-chat</em> server when it asks, and say <em>"what's my handle?"</em> — that's the whole setup. Needs Node 22+.</p>
 
-  <div class="term">
-    <div class="term-bar"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span>samuel@laptop — claude — 80×24</span></div>
-    <div class="term-body" id="demo"></div>
+  <div class="terms">
+    <div class="term">
+      <div class="term-bar"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span>samuel@laptop — claude — 80×24</span></div>
+      <div class="term-body" id="demoA"></div>
+    </div>
+    <div class="term">
+      <div class="term-bar"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span>niels@work — claude — 80×24</span></div>
+      <div class="term-body" id="demoB"></div>
+    </div>
   </div>
 </header>
 
@@ -418,21 +426,30 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
     els.forEach(function (el) { io.observe(el); el.addEventListener('mouseenter', function () { scramble(el); }); });
   }
 
-  /* ---- typed terminal demo ---- */
-  var demo = document.getElementById('demo');
+  /* ---- typed terminal demo: one conversation, both ends ----
+     `w` picks the window: 'a' = samuel@laptop, 'b' = niels@work. The message
+     visibly leaves one terminal and lands in the other. */
+  var demoA = document.getElementById('demoA');
+  var demoB = document.getElementById('demoB');
   var SCRIPT = [
-    { t: 'user',  html: '<span class="p">❯</span> any messages?' },
-    { t: 'agent', html: '📬 1 new message from Niels — want me to read it?' },
-    { t: 'user',  html: '<span class="p">❯</span> read it' },
-    { t: 'sender', html: '<span class="env">📨</span> Niels · #1' },
-    { t: 'quote', html: 'Did the deploy go out this morning?' },
-    { t: 'user',  html: '<span class="p">❯</span> tell him yes, went out at 9' },
-    { t: 'sent',  html: '↳ 📤 Sent to Niels — "Yes, went out at 9."' },
-    { t: 'user',  html: '<span class="p">❯</span> <span class="caret"></span>' }
+    { w: 'b', t: 'user',  html: '<span class="p">❯</span> write Sam: did the deploy go out this morning?' },
+    { w: 'b', t: 'sent',  html: '↳ 📤 Sent to Sam — "Did the deploy go out this morning?"' },
+    { w: 'a', t: 'agent', html: '📬 1 new message from Niels — want me to read it?' },
+    { w: 'a', t: 'user',  html: '<span class="p">❯</span> read it' },
+    { w: 'a', t: 'sender', html: '<span class="env">📨</span> Niels · #1' },
+    { w: 'a', t: 'quote', html: 'Did the deploy go out this morning?' },
+    { w: 'a', t: 'user',  html: '<span class="p">❯</span> tell him yes, went out at 9' },
+    { w: 'a', t: 'sent',  html: '↳ 📤 Sent to Niels — "Yes, went out at 9."' },
+    { w: 'b', t: 'agent', html: '📬 1 new message from Sam — want me to read it?' },
+    { w: 'b', t: 'user',  html: '<span class="p">❯</span> read it' },
+    { w: 'b', t: 'sender', html: '<span class="env">📨</span> Sam · #1' },
+    { w: 'b', t: 'quote', html: 'Yes, went out at 9.' },
+    { w: 'a', t: 'user',  html: '<span class="p">❯</span> <span class="caret"></span>' }
   ];
   function cls(t) { return t === 'user' ? 't-line' : t === 'sender' ? 't-line card-sender' : 't-line ' + t; }
+  function winOf(l) { return l.w === 'b' ? demoB : demoA; }
   if (reduced || touch) {
-    SCRIPT.forEach(function (l) { var d = document.createElement('div'); d.className = cls(l.t); d.innerHTML = l.html; demo.appendChild(d); });
+    SCRIPT.forEach(function (l) { var d = document.createElement('div'); d.className = cls(l.t); d.innerHTML = l.html; winOf(l).appendChild(d); });
   } else {
     var li = 0;
     function typeLine(el, html, done) {
@@ -449,10 +466,10 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
     }
     (function next() {
       if (li >= SCRIPT.length) {
-        return setTimeout(function () { demo.innerHTML = ''; li = 0; next(); }, 7000);
+        return setTimeout(function () { demoA.innerHTML = ''; demoB.innerHTML = ''; li = 0; next(); }, 7000);
       }
       var l = SCRIPT[li++], d = document.createElement('div');
-      d.className = cls(l.t); demo.appendChild(d);
+      d.className = cls(l.t); winOf(l).appendChild(d);
       if (l.t === 'user' && li < SCRIPT.length) typeLine(d, l.html, next);
       else { d.innerHTML = l.html; setTimeout(next, l.t === 'agent' ? 900 : 650); }
     })();
