@@ -192,9 +192,11 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
   .mode { grid-template-columns: 1fr; }
   .hero { padding-top: 64px; }
   section.wrap { min-height: auto; margin-top: 10vh; padding: 120px 24px 70px; }
-  .statusbar .seg-r span:first-child { display: none; }
+  /* Tight space: the version always stays; the "Listening…" task line is the
+     one that truncates, and the task count goes first. */
+  .statusbar .live { display: none; }
   .statusbar .seg-l { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .statusbar .live { white-space: nowrap; }
+  .statusbar .ver { white-space: nowrap; }
   .tabs { flex-wrap: wrap; width: 100%; }
   .tab { flex: 1 1 auto; border-bottom: 1px solid var(--line); }
 }
