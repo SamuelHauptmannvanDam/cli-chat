@@ -22,6 +22,13 @@ body::after {
 .agenda a.active { opacity: 1; color: var(--amber); }
 .agenda a .idx { color: var(--faint); margin-right: 9px; }
 .agenda a.active .idx { color: var(--amber); }
+/* Dock zoom: site.js sets per-link transform/opacity from cursor distance.
+   Id selector so the later-loading page rules (same class specificity) can't
+   drop the transform out of the transition list. */
+#agenda a {
+  transform-origin: left center; will-change: transform;
+  transition: transform .16s ease-out, opacity .25s, color .25s;
+}
 .kicker b { color: var(--green); font-weight: 400; }
 h1 .prompt { color: var(--green); }
 h1 .cmd { color: var(--ink); }

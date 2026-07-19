@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>cli-chat — your coding agent is your messenger</title>
-<meta name="description" content="End-to-end encrypted messaging for coding-agent CLIs. Tell your agent 'write Sam: …' — it encrypts, delivers, and reads replies back. Claude Code, Codex, Copilot, Gemini CLI, any MCP CLI.">
+<meta name="description" content="Messaging for coding-agent CLIs. Tell your agent 'write Sam: …' — it delivers, and reads replies back in your terminal. Claude Code, Codex, Copilot, Gemini CLI, any MCP CLI.">
 <meta property="og:title" content="cli-chat — your coding agent is your messenger">
-<meta property="og:description" content="End-to-end encrypted messaging for coding-agent CLIs. One npx away.">
+<meta property="og:description" content="Messaging for coding-agent CLIs. One npx away.">
 <meta property="og:url" content="https://cli-chat.dev">
 <meta property="og:type" content="website">
 <meta property="og:image" content="https://cli-chat.dev/og.png">
@@ -217,8 +217,8 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
 </nav>
 
 <header class="hero wrap" id="top">
-  <p class="kicker"><span>// cli-chat <b>·</b> end-to-end encrypted <b>·</b> lives in your coding CLI</span><span class="installs" id="installs" hidden><b id="installsN"></b> installs</span></p>
-  <h1><span class="prompt">❯ </span><span class="cmd" data-scramble>write sam:</span> <span class="arg" data-scramble>the deploy landed</span></h1>
+  <p class="kicker"><span>// cli-chat <b>·</b> lives in your coding CLI</span><span class="installs" id="installs" hidden><b id="installsN"></b> installs</span></p>
+  <h1><span class="prompt">❯ </span><span class="cmd" data-scramble>write Sam:</span> <span class="arg" data-scramble>the deploy landed</span></h1>
   <p class="sub">Your coding agent is now your messenger. <em>Never leave your terminal.</em></p>
   <div class="tabs" id="tabs">
     <button class="tab active" data-cmd="claude mcp add cli-chat --scope user -- npx -y cli-chat-mcp@latest">Claude Code</button>
@@ -341,9 +341,9 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
 <section class="wrap" id="context">
   <p class="sec-label"><b>##</b> 04 · what you get</p>
   <h2 data-scramble>A messenger that already knows your context.</h2>
-  <p class="lede">Encrypted, portable, cross-CLI — and it sits <em>where the answers already live</em>.</p>
+  <p class="lede">Portable, cross-CLI — and it sits <em>where the answers already live</em>.</p>
   <div class="grid">
-    <div class="card cell"><p class="lbl">[x25519]</p><h3>Sealed in transit</h3><p>End-to-end encrypted. The mailbox only ever sees ciphertext.</p></div>
+    <div class="card cell"><p class="lbl">[local-first]</p><h3>Never waits on the network</h3><p>History, contacts and recall are served from your device; sync catches up in the background.</p></div>
     <div class="card cell"><p class="lbl">[qL7f2A]</p><h3>6-char handles</h3><p>One short handle. Rotate or disable it any time.</p></div>
     <div class="card cell"><p class="lbl">[magic-link]</p><h3>Log in</h3><p>Email login, any device — contacts and history included.</p></div>
     <div class="card cell"><p class="lbl">[mcp]</p><h3>Cross-CLI</h3><p>Claude Code to Gemini to Copilot — the wire doesn't care.</p></div>
@@ -358,7 +358,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
   <p class="lede">Our handle is <em>FeedBk</em>.</p>
   <div class="feed" style="max-width: 560px; margin-top: 28px;">
     <p class="fu">❯ write feedback: loving it — any chance of group threads?</p>
-    <p class="fr">↳ 📤 Sent to cli-chat feedback — it lands in our CLI, E2E sealed.</p>
+    <p class="fr">↳ 📤 Sent to cli-chat feedback — it lands in our CLI.</p>
   </div>
   <p class="after-note">Not installed yet? <a href="mailto:feedback@cli-chat.dev">feedback@cli-chat.dev</a> works too.</p>
 </section>
@@ -378,7 +378,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
 
 <div class="statusbar">
   <span class="seg-l"><b>⏺</b>Bash(Listening for new messages)</span>
-  <span class="seg-r"><span>E2E sealed</span><span class="ver">v0.17.0</span><span class="live">1 background task</span></span>
+  <span class="seg-r"><span class="ver">v0.17.0</span><span class="live">1 background task</span></span>
 </div>
 
 <script>
