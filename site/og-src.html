@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- Source for site/public/og.png (2400x1260). Regenerate after design/version changes:
+  "Google Chrome" --headless --disable-gpu --hide-scrollbars \
+    --window-size=1200,630 --force-device-scale-factor=2 \
+    --screenshot=site/public/og.png "file://$PWD/site/og-src.html" -->
+<style>
+:root {
+  --bg: #000000; --bg-raised: #12100c; --ink: #e8e1d1; --dim: #8a8272;
+  --faint: #6e6555; --line: #262218; --amber: #f5a742; --green: #8fd460;
+  --mono: ui-monospace, 'SF Mono', Menlo, Monaco, 'Cascadia Mono', Consolas, monospace;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  width: 1200px; height: 630px; overflow: hidden;
+  background: var(--bg);
+  background-image: radial-gradient(rgba(245, 167, 66, .13) 1px, transparent 1.2px);
+  background-size: 24px 24px;
+  font-family: var(--mono); color: var(--ink);
+  display: flex; flex-direction: column;
+}
+.kicker { color: var(--dim); font-size: 18px; letter-spacing: .12em; padding: 64px 64px 0; }
+.card {
+  margin: 52px 64px 0; border: 1px solid var(--line); background: rgba(18, 16, 12, .92);
+  padding: 52px 54px; font-size: 28px; line-height: 1.5;
+}
+.sender { font-weight: 700; }
+.sender .n { color: var(--faint); font-weight: 400; }
+.quote {
+  margin-top: 20px; border-left: 4px solid var(--amber); padding-left: 22px; color: var(--ink);
+}
+.sent { margin-top: 26px; color: var(--green); }
+.tagline { padding: 58px 64px 0; font-size: 31px; color: var(--ink); }
+.tagline .site { color: var(--amber); }
+.statusbar {
+  margin-top: auto; display: flex; justify-content: space-between; align-items: center;
+  background: var(--bg-raised); border-top: 1px solid var(--line);
+  font-size: 20px; color: var(--dim); padding: 16px 30px;
+}
+.seg-l b { color: var(--green); font-weight: 400; margin-right: 12px; }
+.seg-r { display: flex; gap: 26px; }
+.ver { color: var(--green); }
+.live { color: var(--amber); }
+.live::before { content: "●"; margin-right: 10px; }
+</style>
+</head>
+<body>
+<p class="kicker">// cli-chat &nbsp;·&nbsp; end-to-end encrypted &nbsp;·&nbsp; lives in your coding CLI</p>
+<div class="card">
+  <p class="sender">📨 Niels <span class="n">· #1</span></p>
+  <p class="quote">did the deploy go out this morning?</p>
+  <p class="sent">↳ 📤 Sent to Niels — "Yes, went out at 9."</p>
+</div>
+<p class="tagline">your coding agent is now your messenger → <span class="site">cli-chat.dev</span></p>
+<div class="statusbar">
+  <span class="seg-l"><b>⏺</b>Bash(Listening for new messages)</span>
+  <span class="seg-r"><span>E2E sealed</span><span class="ver">v0.16.0</span><span class="live">1 background task</span></span>
+</div>
+</body>
+</html>
