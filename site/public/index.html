@@ -161,7 +161,7 @@ h2 { font-family: var(--display); font-size: clamp(20px, 3vw, 30px); font-weight
   transition: background .2s, border-color .2s, box-shadow .2s;
 }
 .card:hover { border-color: var(--faint); }
-a.card { display: block; color: inherit; border-bottom: none; }
+a.card { display: block; color: inherit; }
 a.card:hover { background: var(--bg-card); }
 a.card:hover h3 { color: var(--amber); }
 a.card:hover .go { color: var(--amber); }
@@ -350,7 +350,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
         <p class="tag">"auto chat"</p>
         <h3>Assistant answers — marked as itself</h3>
         <p>It answers from <em>the directory you opened it in</em> — code, docs, git history — marked as your assistant, and writes what it learns back into that directory. What it can't ground, it asks <em>you</em>.</p>
-        <p class="switch-note">"auto chat read only" keeps the directory untouched · "manual" takes the feed back any time</p>
+        <p class="switch-note">"auto chat read only" keeps the directory untouched · "stop" closes it any time</p>
       </div>
       <div class="feed">
         <p class="fu">❯ auto chat, quiet</p>
