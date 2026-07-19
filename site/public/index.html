@@ -236,6 +236,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
 .statusbar .seg-l { color: var(--dim); }
 .statusbar .seg-l b { color: var(--green); font-weight: 400; margin-right: 8px; }
 .statusbar .seg-r { display: flex; gap: 16px; }
+.statusbar .ver { color: var(--green); }
 .statusbar .live { color: var(--amber); }
 .statusbar .live::before { content: "●"; margin-right: 6px; animation: blink 2.2s steps(1) infinite; }
 
@@ -429,7 +430,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
 
 <div class="statusbar">
   <span class="seg-l"><b>⏺</b>Bash(Listening for new messages)</span>
-  <span class="seg-r"><span>E2E sealed · v0.16.0</span><span class="live">1 background task</span></span>
+  <span class="seg-r"><span>E2E sealed</span><span class="ver">v0.16.0</span><span class="live">1 background task</span></span>
 </div>
 
 <script>
