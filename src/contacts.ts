@@ -235,6 +235,8 @@ export interface Contact {
   signPub?: string; // Phase 1: contact's Ed25519 address (mailbox key)
   boxPub?: string; // Phase 1: contact's X25519 key we seal messages to
   handle?: string; // their shareable 6-char code, when known (carried in their messages)
+  email?: string; // the address they were first written at (EMAIL-SEND.md), when the
+  // contact was made by email send. Shown where a handle would be until one is known.
   verified?: { at: number; boxPub: string }; // the user compared safety numbers out-of-band
   // and confirmed; snapshots the box key that was blessed. Cleared if that key changes.
   keyChangedAt?: number; // epoch ms when a VERIFIED contact's box key changed under the

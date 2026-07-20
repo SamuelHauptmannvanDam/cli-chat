@@ -33,7 +33,7 @@ account). Requires Node 22+.
 ## Headless / CI
 
 Scripts can send without an agent: `npx cli-chat-mcp send ops "deploy landed"`.
-Full runbook: https://cli-chat.dev/headless
+Full playbook: https://cli-chat.dev/headless
 
 ## Links
 

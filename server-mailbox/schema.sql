@@ -98,6 +98,26 @@ CREATE TABLE IF NOT EXISTS friend_accepts (
 );
 CREATE INDEX IF NOT EXISTS idx_accepts_to ON friend_accepts (to_signpub);
 
+-- Send by email (EMAIL-SEND.md): provisional identities for written-to emails.
+-- POST /email/resolve mints a keypair for an unknown address and holds BOTH
+-- halves until the email's owner claims the account by logging in (secrets are
+-- then nulled — the device holds them). `notified_at` is the once-EVER invite
+-- marker: a given email is mailed at most once, forever — it survives claim
+-- and the key purge (the row is a permanent tombstone). On an existing D1 the
+-- CREATE below is applied once:
+--   wrangler d1 execute cli-chat --remote --file server-mailbox/schema.sql
+CREATE TABLE IF NOT EXISTS email_stubs (
+  email       TEXT PRIMARY KEY,   -- lowercased
+  sign_pub    TEXT,               -- null once keys were purged (re-minted on next resolve)
+  box_pub     TEXT,
+  sign_sec    TEXT,               -- null once claimed (handed to the owner's device)
+  box_sec     TEXT,
+  created_by  TEXT,               -- sender signPub whose resolve provisioned it
+  created_at  INTEGER NOT NULL,
+  notified_at INTEGER             -- once-ever invite marker; never reset
+);
+CREATE INDEX IF NOT EXISTS idx_email_stubs_signpub ON email_stubs (sign_pub);
+
 -- ===========================================================================
 -- Account layer (AUTH-SYNC.md): optional, paid online account for multi-device
 -- login + full-state sync. Distinct from the mailbox above, which stays

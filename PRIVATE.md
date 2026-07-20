@@ -19,7 +19,7 @@ The honest map of who can see what, as built:
 - **Message transport stays sealed end-to-end.** Bodies cross the wire and sit
   in the mailbox sealed to the recipient's box key; the relay never has a key
   for them. That part *is* E2E, unchanged.
-- **All reads are local.** `history`, `recall`, contacts, thread pulls — every
+- **All reads are local.** `history`, `memory_recall`, contacts, thread pulls — every
   read is served from the device's own store. The server is written to (sync)
   and never queried to answer you.
 - **Logout wipes the device.** `logout` pushes everything still pending,
@@ -76,7 +76,7 @@ agent-reuse path:
 | `history` tool | **Excluded by default.** Included only when the user explicitly asks for that thread by name ("show my history with Ana") — never swept into topic searches or "recent mail" pulls feeding a workflow. |
 | Auto chat | **Never auto-answered.** Their messages always land in the needs-you feed. In quiet mode the interrupt says only *"a private message from Ana"* — the escalation never carries the body. |
 | `cli-chat-context` | **Never written.** No facts, no notes, no escalation-answer saves from private threads. |
-| Auto-tagging / `suggest_tags` | **Skipped entirely** — their bodies contribute no signals. |
+| Auto-tagging / tag suggestions | **Skipped entirely** — their bodies contribute no signals. |
 | Normal reading/replying | Unchanged. Hooks announce count + sender as today; you read and reply like any mail. |
 
 Storage: messages still land in the local store (otherwise "read it again"

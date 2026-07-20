@@ -19,7 +19,17 @@ export type PollResult =
       session_token: string;
       // `dataKey` (hex) encrypts vault/history blobs client-side; optional so a
       // pre-upgrade server that doesn't send one still logs in (plaintext blobs).
-      account: { email: string; paid: boolean; hasVault: boolean; dataKey?: string };
+      // `stub` (EMAIL-SEND.md): the provisional identity minted when someone
+      // wrote to this email before its owner ever logged in — mail is waiting
+      // sealed to it. Present only while the account has no identity of its own;
+      // setup ADOPTS these keys instead of minting fresh ones.
+      account: {
+        email: string;
+        paid: boolean;
+        hasVault: boolean;
+        dataKey?: string;
+        stub?: { signPub: string; signSec: string; boxPub: string; boxSec: string };
+      };
     };
 
 export interface VaultPull {

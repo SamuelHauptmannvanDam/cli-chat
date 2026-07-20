@@ -43,6 +43,9 @@ import type { FriendRequest, MailboxClient, RequestOutcome } from "./mailbox-cli
 import type { WireMessage } from "./identity.ts";
 
 const SIGNPUB_RE = /^[0-9a-f]{64}$/;
+// Loose email shape for the send-by-email path (EMAIL-SEND.md); the server
+// validates again with the same pattern.
+const EMAIL_ADDR_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export interface NetContext {
   me: Identity;
@@ -86,7 +89,7 @@ export interface NetContext {
 // not a nick you chose); a manual save/rename leaves it off so the nick wins.
 export function rememberContact(
   ctx: NetContext,
-  c: { name: string; signPub: string; boxPub: string; handle?: string; auto?: boolean; selfName?: string; gated?: "pending" },
+  c: { name: string; signPub: string; boxPub: string; handle?: string; email?: string; auto?: boolean; selfName?: string; gated?: "pending" },
 ): void {
   // Upsert by key: drop any existing entry, but carry its self-name forward so a
   // rename (re-add with a new nick) doesn't lose what THEY call themselves.
@@ -97,6 +100,9 @@ export function rememberContact(
   // rename flow) brings no handle, and must not lose the one already on file.
   if (c.handle) entry.handle = c.handle;
   else if (prev?.handle) entry.handle = prev.handle;
+  // Same for the email a contact was first written at (EMAIL-SEND.md).
+  if (c.email) entry.email = c.email;
+  else if (prev?.email) entry.email = prev.email;
   if (c.auto) entry.auto = true;
   if (c.gated) entry.gated = c.gated;
   const self = cleanName(c.selfName) || prev?.selfName;
@@ -282,7 +288,7 @@ export type TagContactResult =
   | { ok: true; name: string; tag: string; tags: string[]; changed: boolean }
   | { ok: false; reason: "no_contact" | "ambiguous" | "bad_tag"; query: string; candidates?: string[] };
 
-// Resolve a name the same way send_message/delete_contact does, then add a LOCAL
+// Resolve a name the same way send_message/update_contact does, then add a LOCAL
 // tag. Tags never leave the device. Also records WHY (2a-iii): `source` (manual /
 // self / cross) and any `evidence` tokens merge into the contact's tagMeta — even
 // when the tag itself was already present, so evidence keeps accumulating. `changed`
@@ -395,6 +401,20 @@ export async function sync(ctx: NetContext): Promise<number> {
       console.error(`sync: skipping a blob that won't decrypt (id ${b.id}).`);
       continue;
     }
+    if (ingestWireMessage(ctx, b, plain)) added++;
+  }
+  return added;
+}
+
+// Ingest ONE decrypted wire message into the local cache + contact book — the
+// shared tail of every drain. `plain` is the already-opened body. Exported so
+// the email-stub adoption path (EMAIL-SEND.md: mail that waited on a
+// provisional identity, opened with the stub's keys) reuses the exact same
+// gating/auto-save/history behavior as a normal sync. Returns false when the
+// id was already cached.
+export function ingestWireMessage(ctx: NetContext, b: WireMessage, plain: string): boolean {
+  if (getMessage(ctx.cache, b.id)) return false;
+  {
     // Split the text from the sender's self-introduction. Only the text is cached;
     // the identity feeds the contact book.
     const env = unpackBody(plain);
@@ -464,13 +484,14 @@ export async function sync(ctx: NetContext): Promise<number> {
       at: b.created_at,
       assistant: env.answered_by === "assistant",
     });
-    added++;
   }
-  return added;
+  return true;
 }
 
 export type SendResult =
-  | { ok: true; id: string; to: { name: string; signPub: string; keyChanged?: boolean }; saved?: boolean; self?: boolean; acceptedHandle?: boolean }
+  // `email` rides along when the send addressed (and saved) someone by email —
+  // it's the identifier the caller shows where a handle would go.
+  | { ok: true; id: string; to: { name: string; signPub: string; keyChanged?: boolean }; saved?: boolean; self?: boolean; acceptedHandle?: boolean; email?: string }
   | {
       ok: false;
       reason: "no_contact" | "ambiguous" | "no_keys" | "bad_key";
@@ -479,6 +500,9 @@ export type SendResult =
     }
   // Neither `to` nor `in_reply_to` was given — there's no one to send to.
   | { ok: false; reason: "need_recipient" }
+  // The email's owner closed out-of-band reach (requests-only) — the one case
+  // an email doesn't resolve (every other address provisions on demand).
+  | { ok: false; reason: "email_unreachable"; query: string }
   // The name isn't a saved contact but DOES match a friend-of-friend, who is
   // name-only and not directly messageable — steer the caller to a connect request
   // (FRIENDS.md) instead of failing with no_contact.
@@ -590,7 +614,7 @@ const SELF_WORDS = new Set(["me", "myself", "self"]);
 // user's own identity ("me"/their own name) — the self-send path.
 export async function sendMessage(
   ctx: NetContext,
-  args: { to?: string; body: string; key?: string; in_reply_to?: string; as_assistant?: boolean },
+  args: { to?: string; body: string; key?: string; email?: string; in_reply_to?: string; as_assistant?: boolean },
 ): Promise<SendResult | ReplyResult> {
   const asAssistant = args.as_assistant === true;
   // A reply: the recipient is definitionally the other side of the replied-to
@@ -605,7 +629,28 @@ export async function sendMessage(
   const r = resolve(ctx.book, to);
 
   if (r.status === "none") {
-    // No such contact. If the user supplied a key code or handle, resolve it,
+    // No such contact. An EMAIL address reaches anyone (EMAIL-SEND.md): the
+    // server answers with the account's keys or provisions an identity on the
+    // spot — the sender can't tell which ("sent" either way), and the first-ever
+    // provision of an address triggers the once-ever invite email server-side.
+    // The address may arrive as `email`, as `key` ("write Sam at sam@gmail.com"), or
+    // as `to` itself ("write sam@gmail.com: hey").
+    const emailAddr =
+      (args.email?.trim() && EMAIL_ADDR_RE.test(args.email.trim()) ? args.email.trim() : undefined) ??
+      (args.key?.trim() && EMAIL_ADDR_RE.test(args.key.trim()) ? args.key.trim() : undefined) ??
+      (EMAIL_ADDR_RE.test(to) ? to : undefined);
+    if (emailAddr) {
+      const addr = emailAddr.toLowerCase();
+      const keys = await ctx.client.resolveEmail(addr);
+      if (!keys) return { ok: false, reason: "email_unreachable", query: addr };
+      // The address resolved to the user's own account → self-send, never self-save.
+      if (keys.signPub === ctx.me.signPub) return sendToSelf(ctx, args.body, asAssistant);
+      const name = EMAIL_ADDR_RE.test(to) ? (cleanName(to.split("@")[0]!) || to) : to;
+      rememberContact(ctx, { name, signPub: keys.signPub, boxPub: keys.boxPub, email: addr });
+      const id = await sendSealed(ctx, { name, ...keys }, args.body, null, asAssistant);
+      return { ok: true, id, to: { name, signPub: keys.signPub }, saved: true, email: addr };
+    }
+    // If the user supplied a key code or handle, resolve it,
     // remember them under the name they gave, and send.
     if (args.key) {
       if (!parseKey(args.key) && !isHandle(args.key))
@@ -690,7 +735,7 @@ function toInboxMessage(ctx: NetContext, m: MessageRow): InboxMessage {
 // undefined for self-mail and for every accepted or manually-saved contact.
 // This is THE filter every model-facing read path applies (0.18): a gated
 // sender's bodies stay out of the model's context entirely until the user
-// accepts them (respond_handle returns the held batch).
+// accepts them (the requests tool's accept returns the held batch).
 function gateOf(ctx: NetContext, sender: string): "pending" | "dismissed" | undefined {
   if (sender === ctx.me.signPub) return undefined;
   return contactByKey(ctx.book, sender)?.gated;
@@ -751,7 +796,7 @@ export interface PendingSnapshot {
   // no model-facing consumer ever returns their bodies: the waker wakes on them
   // once (so the feed can show the 🆕 summary), and read_messages reports only a
   // name+handle+count summary. Never acked/marked read from here — they stay
-  // held until the user accepts (respond_handle) or goes public. Dismissed
+  // held until the user accepts (requests accept) or goes public. Dismissed
   // handles' messages appear in NEITHER list (silent by design).
   gated?: InboxMessage[];
   // false → this is only the boot seed (mirrored from the local cache before the
@@ -903,7 +948,7 @@ export type ReadResult =
     }
   | { ok: false; reason: "empty" | "not_found" }
   // The message is from a gated new handle: the body stays held (shown to the
-  // user by the system only) until they accept via respond_handle.
+  // user by the system only) until they accept via the requests tool.
   | { ok: false; reason: "new_handle"; name: string; handle: string | null };
 
 export async function readMessage(ctx: NetContext, args: { id?: string }): Promise<ReadResult> {

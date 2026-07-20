@@ -133,3 +133,78 @@ test("D1: handle registry register/resolve/isRegistered round-trips", async () =
   // A different key can't steal a claimed handle.
   assert.equal(await store.registerHandle("AbC123", "signpub-2", "boxpub-2", 2000), "taken");
 });
+
+test("D1: email stub lifecycle — upsert, once-ever notify, claim, provision count", async () => {
+  const store = freshStore();
+  const keys = { signPub: "stub-sign", boxPub: "stub-box", signSec: "sec-sign", boxSec: "sec-box" };
+  await store.upsertEmailStub("Sam@Example.com", keys, "alice-pub", 1000);
+  // Lowercased on write; read back whole (null-prototype row spread, as above).
+  assert.deepEqual({ ...(await store.getEmailStub("sam@example.com")) }, {
+    email: "sam@example.com",
+    signPub: "stub-sign",
+    boxPub: "stub-box",
+    signSec: "sec-sign",
+    boxSec: "sec-box",
+    createdBy: "alice-pub",
+    createdAt: 1000,
+    notifiedAt: null,
+  });
+  // Stub signPubs accept mail without holding a handle (isRegistered carve-out).
+  assert.equal(await store.isRegistered("stub-sign"), true);
+
+  // The once-ever marker sets exactly once — a later mark never moves it.
+  await store.markEmailNotified("sam@example.com", 1500);
+  await store.markEmailNotified("sam@example.com", 9999);
+  assert.equal((await store.getEmailStub("sam@example.com"))?.notifiedAt, 1500);
+
+  // Claim drops the private halves; publics stay as the email → identity map.
+  await store.claimEmailStub("stub-sign");
+  const claimed = await store.getEmailStub("sam@example.com");
+  assert.equal(claimed?.signSec, null);
+  assert.equal(claimed?.boxSec, null);
+  assert.equal(claimed?.signPub, "stub-sign");
+
+  // Provision cap counts by creator within the window.
+  assert.equal(await store.countRecentEmailProvisions("alice-pub", 0), 1);
+  assert.equal(await store.countRecentEmailProvisions("alice-pub", 2000), 0);
+});
+
+test("D1: purgeEmailStubs spares waiting mail and claimed stubs, keeps the tombstone across re-keys", async () => {
+  const store = freshStore();
+  await store.upsertEmailStub(
+    "old@example.com",
+    { signPub: "old-sign", boxPub: "old-box", signSec: "s", boxSec: "b" },
+    "alice-pub",
+    1000,
+  );
+  await store.markEmailNotified("old@example.com", 1200);
+
+  // Unread mail waiting → spared even past the cutoff.
+  await store.put(wire({ id: "held", recipient: "old-sign" }));
+  assert.equal(await store.purgeEmailStubs(5000), 0);
+
+  // Mail drained → the keys purge; the row and its notified_at remain.
+  await store.drain("old-sign", 2000);
+  assert.equal(await store.purgeEmailStubs(5000), 1);
+  const row = await store.getEmailStub("old@example.com");
+  assert.equal(row?.signPub, null);
+  assert.equal(row?.notifiedAt, 1200);
+
+  // A later resolve re-keys the same row: fresh keys and retention clock, same tombstone.
+  await store.upsertEmailStub(
+    "old@example.com",
+    { signPub: "new-sign", boxPub: "new-box", signSec: "s2", boxSec: "b2" },
+    "carol-pub",
+    8000,
+  );
+  const rekeyed = await store.getEmailStub("old@example.com");
+  assert.equal(rekeyed?.signPub, "new-sign");
+  assert.equal(rekeyed?.createdAt, 8000);
+  assert.equal(rekeyed?.createdBy, "carol-pub");
+  assert.equal(rekeyed?.notifiedAt, 1200);
+
+  // A claimed stub (sign_sec already NULL) is never a purge candidate.
+  await store.claimEmailStub("new-sign");
+  assert.equal(await store.purgeEmailStubs(99999), 0);
+  assert.equal((await store.getEmailStub("old@example.com"))?.signPub, "new-sign");
+});

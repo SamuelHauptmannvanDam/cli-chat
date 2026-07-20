@@ -8,6 +8,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   appendToThread,
+  appendDigestFact,
+  audienceInUse,
   threadFilePath,
   rebuildThreads,
   rememberNote,
@@ -133,6 +135,41 @@ test("rebuildThreads projects db rows into pages, preserving an existing digest"
   assert.match(page, /→ me: answer/);
   assert.doesNotMatch(page, /seed/); // rebuilt tail reflects the db, not the old file
   db.close();
+});
+
+test("appendDigestFact routes a fact into the Digest section, tail untouched", () => {
+  appendToThread(dir, contact, entry("hello", NOW), NOW);
+  const path = appendDigestFact(dir, contact, "owns the ingest pipeline", NOW, "answer to Mette");
+  assert.equal(path, threadFilePath(dir, "Niels", KEY));
+  let text = readFileSync(path, "utf8");
+  // Placeholder replaced by the dated fact; tail entry still present below.
+  assert.doesNotMatch(text, /agent-curated:/);
+  assert.match(text, /## Digest\n\n- 2023-11-14 \(answer to Mette\): owns the ingest pipeline\n/);
+  assert.match(text, /## Recent\n[\s\S]*hello/);
+
+  // Second fact appends under the first; hand-written digest prose survives.
+  appendDigestFact(dir, contact, "prefers async reviews", NOW);
+  appendToThread(dir, contact, entry("more mail", NOW + 1000), NOW + 1000);
+  text = readFileSync(path, "utf8");
+  assert.match(text, /owns the ingest pipeline\n- 2023-11-14: prefers async reviews/);
+  assert.match(text, /more mail/);
+
+  // On a fresh page (no thread yet) it creates the file, digest-first.
+  const other = { name: "Mette", signPub: "fedcba9876543210".repeat(4) };
+  const p2 = appendDigestFact(dir, other, "runs the design desk", NOW);
+  assert.match(readFileSync(p2, "utf8"), /# Mette\n\n## Digest\n\n- 2023-11-14: runs the design desk/);
+});
+
+test("audienceInUse spots tags that gate memory disclosure", () => {
+  const ndir = dir + "-notes";
+  rememberNote(ndir, { text: "release is on the 15th", audience: "anyone" }, NOW);
+  rememberNote(ndir, { text: "staging URL is https://s.example", audience: "work" }, NOW);
+  rememberNote(ndir, { text: "private thing" }, NOW);
+  assert.equal(audienceInUse(ndir, "work"), true);
+  assert.equal(audienceInUse(ndir, "WORK"), true); // case-folded like tags
+  assert.equal(audienceInUse(ndir, "family"), false); // no note carries it
+  assert.equal(audienceInUse(ndir, ""), false);
+  assert.equal(audienceInUse(dir + "-missing", "work"), false); // no notes dir yet
 });
 
 test("rememberNote appends dated facts per topic; recallNotes reads them back", () => {

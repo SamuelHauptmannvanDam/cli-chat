@@ -1,6 +1,6 @@
 // E2E of the history + auto-chat features (0.11/0.12) through REAL MCP server
-// processes: history recall, assistant-marked replies, self-send escalations,
-// remember/recall notes, thread files on disk, and the headless CLI send.
+// processes: history recall (the history tool), assistant-marked replies, self-send escalations,
+// memory_add/memory_recall notes, thread files on disk, and the headless CLI send.
 //
 // Run against a local dev mailbox:
 //   PORT=18787 npm run dev:mailbox
@@ -85,7 +85,7 @@ const nielsContacts = await call(niels.client, "contacts", {});
 assert.equal(nielsContacts.newHandles?.length, 1);
 assert.equal(nielsContacts.newHandles[0].state, "pending");
 assert.equal(nielsContacts.newHandles[0].held, 1);
-const held = await call(niels.client, "respond_handle", { name: "Sam Tester", action: "accept" });
+const held = await call(niels.client, "requests", { name: "Sam Tester", action: "accept" });
 assert.equal(held.ok, true);
 assert.equal(held.count, 1);
 assert.match(held.note ?? "", /Accepted/);
@@ -100,7 +100,8 @@ assert.equal(reply.ok, true);
 console.log("2. new-handle gate (hold → summary → accept) + reply as_assistant: ok");
 
 // 3. Sam reads the reply — visibly marked + metadata + resultNote guidance.
-const got = await call(sam.client, "read_message", {});
+const gotAvail = await call(sam.client, "messages_available", {});
+const got = await call(sam.client, "read_messages", { id: gotAvail.messages[0].id });
 assert.equal(got.answered_by, "assistant");
 assert.match(got.body, /— Niels Tester's assistant$/);
 assert.match(got.note ?? "", /assistant/i);
@@ -126,12 +127,12 @@ assert.match(page, /→ me: what env vars/);
 assert.match(page, /← .*REDIS_URL/);
 console.log(`5. thread file: ok (${files[0]})`);
 
-// 6. remember / recall.
-await call(sam.client, "remember", { text: "Niels's staging URL is https://s.example", topic: "Niels", source: "Niels" });
-const rec = await call(sam.client, "recall", { q: "staging" });
+// 6. memory_add / memory_recall.
+await call(sam.client, "memory_add", { text: "Niels's staging URL is https://s.example", topic: "Niels", source: "Niels" });
+const rec = await call(sam.client, "memory_recall", { q: "staging" });
 assert.equal(rec.notes.length, 1);
 assert.match(rec.notes[0].content, /staging URL/);
-console.log("6. remember/recall: ok");
+console.log("6. memory_add/memory_recall: ok");
 
 // 7. Self-send (escalation shape) surfaces as "your assistant".
 const esc = await call(sam.client, "send_message", {
@@ -144,7 +145,7 @@ assert.equal(esc.self, true);
 const selfAvail = await call(sam.client, "messages_available", {});
 assert.equal(selfAvail.count, 1);
 assert.equal(selfAvail.messages[0].from, "your assistant");
-const selfRead = await call(sam.client, "read_message", {});
+const selfRead = await call(sam.client, "read_messages", { id: selfAvail.messages[0].id });
 assert.equal(selfRead.self, true);
 assert.match(selfRead.note ?? "", /SELF-MAIL/);
 console.log("7. self-send escalation: ok ('your assistant', self note)");
@@ -179,7 +180,8 @@ const out = execFileSync("node", [join(ROOT, "src", "server-net.ts"), "send", "S
   encoding: "utf8",
 });
 assert.match(out, /^sent /);
-const cliGot = await call(sam.client, "read_message", {});
+const cliAvail = await call(sam.client, "messages_available", {});
+const cliGot = await call(sam.client, "read_messages", { id: cliAvail.messages[0].id });
 assert.match(cliGot.body, /deploy landed, your move/);
 console.log("9. CLI send subcommand: ok");
 

@@ -6,6 +6,7 @@
 import type {
   AcceptedRecord,
   AccountRecord,
+  EmailStubRecord,
   FriendRequestRecord,
   HandleRecord,
   LoginPoll,
@@ -102,11 +103,17 @@ export function d1Store(db: D1Like): Store {
     },
 
     async isRegistered(signPub: string): Promise<boolean> {
+      // A live email stub is deliverable too (EMAIL-SEND.md).
       const row = await db
         .prepare(`SELECT 1 FROM handles WHERE signPub = ? LIMIT 1`)
         .bind(signPub)
         .first();
-      return row != null;
+      if (row != null) return true;
+      const stub = await db
+        .prepare(`SELECT 1 FROM email_stubs WHERE sign_pub = ? LIMIT 1`)
+        .bind(signPub)
+        .first();
+      return stub != null;
     },
 
     async purge(readBefore: number, unreadBefore: number): Promise<number> {
@@ -165,6 +172,121 @@ export function d1Store(db: D1Like): Store {
         .bind(sender, since)
         .first()) as { n?: number } | null;
       return Number(row?.n ?? 0);
+    },
+
+    // --- Send by email (EMAIL-SEND.md) --------------------------------------
+    async accountByEmail(email: string): Promise<AccountRecord | null> {
+      const found = (await db
+        .prepare(`SELECT id, email, signPub, paid, data_key FROM accounts WHERE email = ?`)
+        .bind(email.toLowerCase())
+        .first()) as
+        | { id: string; email: string; signPub: string | null; paid: number; data_key: string | null }
+        | null;
+      if (!found) return null;
+      return {
+        id: found.id,
+        email: found.email,
+        signPub: found.signPub,
+        paid: !!found.paid,
+        dataKey: found.data_key,
+      };
+    },
+
+    async identityKeys(signPub: string) {
+      const row = (await db
+        .prepare(`SELECT boxPub, name, requests_only FROM handles WHERE signPub = ? LIMIT 1`)
+        .bind(signPub)
+        .first()) as { boxPub: string; name: string | null; requests_only: number } | null;
+      if (!row) return null;
+      return { boxPub: row.boxPub, name: row.name, requestsOnly: !!row.requests_only };
+    },
+
+    async getEmailStub(email: string): Promise<EmailStubRecord | null> {
+      const row = (await db
+        .prepare(
+          `SELECT email, sign_pub, box_pub, sign_sec, box_sec, created_by, created_at, notified_at
+           FROM email_stubs WHERE email = ?`,
+        )
+        .bind(email.toLowerCase())
+        .first()) as
+        | {
+            email: string;
+            sign_pub: string | null;
+            box_pub: string | null;
+            sign_sec: string | null;
+            box_sec: string | null;
+            created_by: string | null;
+            created_at: number;
+            notified_at: number | null;
+          }
+        | null;
+      if (!row) return null;
+      return {
+        email: row.email,
+        signPub: row.sign_pub,
+        boxPub: row.box_pub,
+        signSec: row.sign_sec,
+        boxSec: row.box_sec,
+        createdBy: row.created_by,
+        createdAt: Number(row.created_at),
+        notifiedAt: row.notified_at == null ? null : Number(row.notified_at),
+      };
+    },
+
+    async upsertEmailStub(
+      email: string,
+      keys: { signPub: string; boxPub: string; signSec: string; boxSec: string },
+      createdBy: string,
+      now: number,
+    ) {
+      // notified_at deliberately NOT updated: the once-ever marker survives re-keys.
+      await db
+        .prepare(
+          `INSERT INTO email_stubs (email, sign_pub, box_pub, sign_sec, box_sec, created_by, created_at, notified_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, NULL)
+           ON CONFLICT(email) DO UPDATE SET
+             sign_pub = excluded.sign_pub, box_pub = excluded.box_pub,
+             sign_sec = excluded.sign_sec, box_sec = excluded.box_sec,
+             created_by = excluded.created_by, created_at = excluded.created_at`,
+        )
+        .bind(email.toLowerCase(), keys.signPub, keys.boxPub, keys.signSec, keys.boxSec, createdBy, now)
+        .run();
+    },
+
+    async markEmailNotified(email: string, now: number) {
+      await db
+        .prepare(`UPDATE email_stubs SET notified_at = ? WHERE email = ? AND notified_at IS NULL`)
+        .bind(now, email.toLowerCase())
+        .run();
+    },
+
+    async claimEmailStub(signPub: string) {
+      await db
+        .prepare(`UPDATE email_stubs SET sign_sec = NULL, box_sec = NULL WHERE sign_pub = ?`)
+        .bind(signPub)
+        .run();
+    },
+
+    async countRecentEmailProvisions(createdBy: string, since: number): Promise<number> {
+      const row = (await db
+        .prepare(`SELECT COUNT(*) AS n FROM email_stubs WHERE created_by = ? AND created_at >= ?`)
+        .bind(createdBy, since)
+        .first()) as { n?: number } | null;
+      return Number(row?.n ?? 0);
+    },
+
+    async purgeEmailStubs(cutoff: number): Promise<number> {
+      const res = (await db
+        .prepare(
+          `UPDATE email_stubs SET sign_pub = NULL, box_pub = NULL, sign_sec = NULL, box_sec = NULL
+           WHERE sign_sec IS NOT NULL AND created_at < ?
+             AND NOT EXISTS (
+               SELECT 1 FROM messages m WHERE m.recipient = email_stubs.sign_pub AND m.fetched_at IS NULL
+             )`,
+        )
+        .bind(cutoff)
+        .run()) as { meta?: { changes?: number } };
+      return Number(res?.meta?.changes ?? 0);
     },
 
     // --- Account layer ------------------------------------------------------

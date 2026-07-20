@@ -11,7 +11,8 @@ import { verifyRequest } from "./verify.ts";
 import type { WireMessage } from "../src/identity.ts";
 import type { AccountRecord, Store } from "./store.ts";
 import { randomToken, sha256hex } from "./token.ts";
-import { magicLinkEmail, type SendEmail } from "./email.ts";
+import { inviteEmail, magicLinkEmail, type SendEmail } from "./email.ts";
+import { generateIdentity, initCrypto } from "../src/crypto.ts";
 
 export interface AppDeps {
   store: Store;
@@ -34,6 +35,8 @@ export interface AppDeps {
     unknownPairHourly?: number;
     unknownRecipientHourly?: number;
     unknownSenderDaily?: number;
+    // EMAIL-SEND.md: how many NEW email stubs one sender may provision per day.
+    emailProvisionDaily?: number;
   };
   // Optional edge rate-limiter (the Cloudflare Workers Rate Limiting binding on
   // the deploy; absent on the Node runner). Given a bucket + key, returns true to
@@ -48,6 +51,12 @@ export interface AppDeps {
   // login response instead carries `devLink` (see exposeMagicLink) so the flow is
   // exercisable without a real mailbox. On the Worker this is the Resend sender.
   sendEmail?: SendEmail;
+  // Outbound email for the once-ever invite (EMAIL-SEND.md). Kept separate from
+  // `sendEmail` so the Worker can send invites from their own subdomain identity
+  // — magic-link deliverability is load-bearing and invite bounces must not
+  // poison it. Absent → no invite goes out (the stub still provisions; the
+  // notified_at marker stays null so a later configured deploy sends the one).
+  sendInviteEmail?: SendEmail;
   // Public base URL the email link points back at (…/auth/verify). Falls back to
   // the request origin when omitted.
   appBaseUrl?: string;
@@ -97,6 +106,10 @@ const ADMISSION_DAY_MS = 24 * 60 * 60 * 1000; // rolling day (sender daily cap)
 const DEFAULT_UNKNOWN_PAIR_HOURLY = 5;
 const DEFAULT_UNKNOWN_RECIPIENT_HOURLY = 10;
 const DEFAULT_UNKNOWN_SENDER_DAILY = 50;
+// EMAIL-SEND.md: distinct NEW email provisions one sender may cause per day.
+// Bounds a mass-provisioning run; each provision is at most ONE invite email
+// ever, so N addresses can never receive more than N total emails from us.
+const DEFAULT_EMAIL_PROVISION_DAILY = 20;
 function envInt(name: string): number | undefined {
   const n = Number(process.env[name]);
   return Number.isFinite(n) && n > 0 ? n : undefined;
@@ -117,6 +130,10 @@ export function createApp(deps: AppDeps): Hono {
     deps.limits?.unknownSenderDaily ??
     envInt("MAILBOX_UNKNOWN_SENDER_DAILY") ??
     DEFAULT_UNKNOWN_SENDER_DAILY;
+  const emailProvisionDaily =
+    deps.limits?.emailProvisionDaily ??
+    envInt("MAILBOX_EMAIL_PROVISION_DAILY") ??
+    DEFAULT_EMAIL_PROVISION_DAILY;
 
   // Edge rate-limit helper. The client IP is Cloudflare's CF-Connecting-IP on the
   // deploy; absent locally → a shared "local" key (the limiter is usually absent
@@ -256,6 +273,10 @@ export function createApp(deps: AppDeps): Hono {
     const name = typeof body.name === "string" ? body.name.slice(0, 120) : undefined;
     const result = await store.registerHandle(body.handle, body.signPub, body.boxPub, now(), name);
     if (result === "taken") return c.json({ ok: false, reason: "taken" }, 409);
+    // Registering a handle for a provisional email identity IS the claim
+    // (EMAIL-SEND.md): the owner's device holds the keys now, so the server's
+    // copies of the private halves are dropped. No-op for everyone else.
+    await store.claimEmailStub(body.signPub);
     return c.json({ ok: true, handle: body.handle });
   });
 
@@ -465,6 +486,70 @@ export function createApp(deps: AppDeps): Hono {
     return c.json({ signPub: rec.signPub, boxPub: rec.boxPub });
   });
 
+  // Resolve an EMAIL → public keys (EMAIL-SEND.md), provisioning on demand. An
+  // address with a bound account returns that account's keys; any other address
+  // gets a provisional identity minted right here — SAME response shape either
+  // way, so resolving reveals nothing about who uses cli-chat (provision-on-
+  // demand IS the enumeration defense). The first-ever provision of an address
+  // queues the one invite email (once ever, notified_at is a permanent marker).
+  // Signed like /resolve/:handle, and the sender must be registered themselves.
+  app.post("/email/resolve", async (c) => {
+    if (await limited("resolve", clientIp(c)))
+      return c.json({ error: "rate limited" }, 429);
+    const raw = await c.req.text();
+    const auth = await verifyRequest((h) => c.req.header(h), "POST", "/email/resolve", raw, now());
+    if (!auth.ok) return c.json({ error: auth.reason }, 401);
+    let body: { email?: string };
+    try {
+      body = JSON.parse(raw);
+    } catch {
+      return c.json({ error: "invalid json" }, 400);
+    }
+    const email = (body.email ?? "").trim().toLowerCase();
+    if (!EMAIL_RE.test(email)) return c.json({ error: "invalid email" }, 400);
+    // Only a registered identity may resolve emails (their name also fronts the
+    // invite). Keeps anonymous keys from farming provisions.
+    const sender = await store.identityKeys(auth.pubkey);
+    if (!sender) return c.json({ error: "unregistered sender" }, 403);
+
+    // A bound account answers with its real keys. Requests-only reads as
+    // not-found, mirroring the handle path: the owner closed out-of-band reach.
+    const account = await store.accountByEmail(email);
+    if (account?.signPub) {
+      const keys = await store.identityKeys(account.signPub);
+      if (!keys || keys.requestsOnly) return c.json({ error: "not found" }, 404);
+      return c.json({ signPub: account.signPub, boxPub: keys.boxPub });
+    }
+
+    // No bound account → serve (or mint) the provisional identity.
+    let stub = await store.getEmailStub(email);
+    if (!stub?.signPub || !stub.boxPub) {
+      if ((await store.countRecentEmailProvisions(auth.pubkey, now() - ADMISSION_DAY_MS)) >= emailProvisionDaily)
+        return c.json({ error: "rate limited: too many new emails contacted today" }, 429);
+      await initCrypto();
+      const id = generateIdentity();
+      await store.upsertEmailStub(
+        email,
+        { signPub: id.signPub, boxPub: id.boxPub, signSec: id.signSec, boxSec: id.boxSec },
+        auth.pubkey,
+        now(),
+      );
+      stub = await store.getEmailStub(email);
+      if (!stub?.signPub || !stub.boxPub) return c.json({ error: "provision failed" }, 500);
+    }
+    // The once-ever invite: only while notified_at is null, marked only when the
+    // send actually succeeded (a failed send retries on a later resolve).
+    if (stub.notifiedAt == null && deps.sendInviteEmail) {
+      try {
+        await deps.sendInviteEmail(inviteEmail(email, sender.name));
+        await store.markEmailNotified(email, now());
+      } catch {
+        /* invite is best-effort — the message itself still delivers */
+      }
+    }
+    return c.json({ signPub: stub.signPub, boxPub: stub.boxPub });
+  });
+
   // ==========================================================================
   // Account layer (AUTH-SYNC.md): magic-link login + bearer-gated vault sync.
   // Separate from the signature-authed mailbox above — these use a session token,
@@ -567,6 +652,17 @@ export function createApp(deps: AppDeps): Hono {
     // first login, same key returned on every later one. The client encrypts its
     // vault/history blobs with it before pushing.
     const dataKey = account.dataKey ?? (await store.ensureDataKey(account.id, randomToken(), now()));
+    // EMAIL-SEND.md: if this email was written to before its owner ever logged
+    // in, a provisional identity (with mail waiting) exists. Hand its keys to
+    // the authenticated device so setup ADOPTS that identity instead of minting
+    // a fresh one — the waiting mail is then simply theirs. Only while the
+    // account has no identity of its own and the stub is unclaimed.
+    let stub: { signPub: string; signSec: string; boxPub: string; boxSec: string } | undefined;
+    if (account.signPub == null) {
+      const s = await store.getEmailStub(poll.email);
+      if (s?.signPub && s.boxPub && s.signSec && s.boxSec)
+        stub = { signPub: s.signPub, signSec: s.signSec, boxPub: s.boxPub, boxSec: s.boxSec };
+    }
     return c.json({
       status: "ready",
       session_token: sessionToken,
@@ -575,6 +671,7 @@ export function createApp(deps: AppDeps): Hono {
         paid: account.paid,
         hasVault: account.signPub != null,
         dataKey,
+        ...(stub ? { stub } : {}),
       },
     });
   });

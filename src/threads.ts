@@ -186,6 +186,75 @@ export function appendToThread(
   writeSecretAtomic(path, renderFile(contact.name, digest, trim(blocks, now)));
 }
 
+// Append one dated fact to a contact's Digest section — the memory_add `about`
+// route. The digest stays agent-curated prose otherwise; routed facts use the
+// same dated one-per-line shape as memory notes so staleness stays checkable
+// and the agent can prune lines surgically. First routed fact replaces the
+// placeholder. Returns the file written.
+export function appendDigestFact(
+  dir: string,
+  contact: { name: string; signPub: string },
+  text: string,
+  now: number,
+  source?: string,
+): string {
+  secureDir(dir);
+  const target = threadFilePath(dir, contact.name, contact.signPub);
+  let path = findThreadFile(dir, contact.signPub);
+  if (path && path !== target) {
+    try {
+      renameSync(path, target);
+      path = target;
+    } catch {
+      /* keep writing under the old name rather than lose the fact */
+    }
+  }
+  if (!path) path = target;
+  let digest = "";
+  let blocks: { at: number; block: string }[] = [];
+  if (existsSync(path)) {
+    try {
+      const prev = splitFile(readFileSync(path, "utf8"));
+      digest = prev.digest;
+      blocks = parseTail(prev.recent);
+    } catch {
+      /* unreadable — regenerate around the new fact */
+    }
+  }
+  if (digest === DIGEST_PLACEHOLDER) digest = "";
+  const src = source ? ` (${source.replace(/[()\n]/g, " ").trim()})` : "";
+  const line = `- ${new Date(now).toISOString().slice(0, 10)}${src}: ${text.replace(/\s*\n\s*/g, " ").trim()}`;
+  writeSecretAtomic(
+    path,
+    renderFile(contact.name, digest ? `${digest}\n${line}` : line, trim(blocks, now)),
+  );
+  return path;
+}
+
+// Is this tag load-bearing for disclosure — i.e. does any memory note carry it
+// as an `@<tag>` audience? Powers the never-silent-when-load-bearing rule:
+// auto-applying such a tag widens what that contact may hear via memory_recall,
+// so the apply is always announced.
+export function audienceInUse(notesDirPath: string, tag: string): boolean {
+  const t = tag.trim().toLowerCase();
+  if (!t) return false;
+  let files: string[] = [];
+  try {
+    files = readdirSync(notesDirPath).filter((f) => f.endsWith(".md"));
+  } catch {
+    return false;
+  }
+  for (const f of files) {
+    try {
+      for (const ln of readFileSync(join(notesDirPath, f), "utf8").split("\n"))
+        if (FACT_RE.exec(ln)?.[1] === t) return true;
+    } catch {
+      /* unreadable file — skip */
+    }
+  }
+  return false;
+}
+
 // Regenerate every thread tail from the recall db (digests preserved where the
 // file already exists). Used on upgrade so pre-existing cached mail appears as
 // files day one, and available any time the files drift.

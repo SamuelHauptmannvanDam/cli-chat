@@ -43,6 +43,23 @@ export interface AcceptedRecord {
   name: string | null;
 }
 
+// --- Send by email (EMAIL-SEND.md) -------------------------------------------
+// A provisional identity minted when someone writes to an email that has no
+// account yet. The server holds BOTH key halves until the email's owner claims
+// the account by logging in (same exposure class as the account data key —
+// AUTH-SYNC.md §4). `notifiedAt` is the once-EVER invite marker: it survives
+// claim and key-purge alike, so a given email is never mailed twice.
+export interface EmailStubRecord {
+  email: string;
+  signPub: string | null; // null once the keys were purged (re-minted on next resolve)
+  boxPub: string | null;
+  signSec: string | null; // null once claimed (secrets handed to the owner's device)
+  boxSec: string | null;
+  createdBy: string | null; // signPub of the sender whose resolve provisioned it
+  createdAt: number;
+  notifiedAt: number | null;
+}
+
 // --- Account layer (AUTH-SYNC.md) -------------------------------------------
 export interface AccountRecord {
   id: string;
@@ -116,6 +133,40 @@ export interface Store {
   // Retention sweep: delete already-read mail fetched before `readBefore`, and
   // ANY mail created before `unreadBefore`. Returns the row count deleted.
   purge(readBefore: number, unreadBefore: number): number | Promise<number>;
+
+  // --- Send by email (EMAIL-SEND.md) ----------------------------------------
+  // Read-only account lookup by email (getOrCreateAccount CREATES — resolve
+  // must never mint account rows for arbitrary probed addresses).
+  accountByEmail(email: string): AccountRecord | null | Promise<AccountRecord | null>;
+  // A registered identity's public keys + directory state, from the handles
+  // directory (reverse of resolveHandle). Null when the signPub has no handle.
+  identityKeys(
+    signPub: string,
+  ):
+    | { boxPub: string; name: string | null; requestsOnly: boolean }
+    | null
+    | Promise<{ boxPub: string; name: string | null; requestsOnly: boolean } | null>;
+  getEmailStub(email: string): EmailStubRecord | null | Promise<EmailStubRecord | null>;
+  // Insert a stub, or re-key one whose keys were purged. Preserves notified_at
+  // across re-keys (the once-ever rule); resets created_at so fresh keys get a
+  // fresh retention clock.
+  upsertEmailStub(
+    email: string,
+    keys: { signPub: string; boxPub: string; signSec: string; boxSec: string },
+    createdBy: string,
+    now: number,
+  ): void | Promise<void>;
+  // Set the once-ever invite marker. Never cleared by anything.
+  markEmailNotified(email: string, now: number): void | Promise<void>;
+  // The email's owner finished setup with the stub's keys (they registered a
+  // handle for its signPub): drop the private halves — the device holds them now.
+  claimEmailStub(signPub: string): void | Promise<void>;
+  // Provision cap: how many stubs this sender has caused since `since`.
+  countRecentEmailProvisions(createdBy: string, since: number): number | Promise<number>;
+  // Retention: null the keys of UNCLAIMED stubs older than `cutoff` that have no
+  // mail still waiting. The row (and notified_at) remains as the once-ever
+  // tombstone; a later resolve re-mints keys without re-emailing.
+  purgeEmailStubs(cutoff: number): number | Promise<number>;
 
   // --- Anti-spam admission (PLAN open Q#7) ----------------------------------
   // A sender is "known" to a recipient once that recipient has sent them at
@@ -335,6 +386,21 @@ export function nodeSqliteStore(path: string): Store {
       created_at  INTEGER NOT NULL,
       PRIMARY KEY (owner, peer)
     );
+    -- Send by email (EMAIL-SEND.md): provisional identities for written-to
+    -- emails. Kept in step with server-mailbox/schema.sql. The row is a
+    -- permanent once-ever tombstone: keys may be nulled (claim / purge), but
+    -- notified_at is never reset.
+    CREATE TABLE IF NOT EXISTS email_stubs (
+      email       TEXT PRIMARY KEY,
+      sign_pub    TEXT,
+      box_pub     TEXT,
+      sign_sec    TEXT,
+      box_sec     TEXT,
+      created_by  TEXT,
+      created_at  INTEGER NOT NULL,
+      notified_at INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS idx_email_stubs_signpub ON email_stubs (sign_pub);
     -- Account layer (AUTH-SYNC.md). Kept in step with server-mailbox/schema.sql.
     CREATE TABLE IF NOT EXISTS accounts (
       id          TEXT PRIMARY KEY,
@@ -472,7 +538,14 @@ export function nodeSqliteStore(path: string): Store {
     },
 
     isRegistered(signPub) {
-      return !!db.prepare(`SELECT 1 FROM handles WHERE signPub = ? LIMIT 1`).get(signPub);
+      // A live email stub is deliverable too (EMAIL-SEND.md): mail sealed to a
+      // provisional identity waits for its owner to claim the account.
+      return (
+        !!db.prepare(`SELECT 1 FROM handles WHERE signPub = ? LIMIT 1`).get(signPub) ||
+        !!db
+          .prepare(`SELECT 1 FROM email_stubs WHERE sign_pub = ? LIMIT 1`)
+          .get(signPub)
+      );
     },
 
     purge(readBefore, unreadBefore) {
@@ -527,6 +600,111 @@ export function nodeSqliteStore(path: string): Store {
         )
         .get(sender, since) as { n: number };
       return Number(r?.n ?? 0);
+    },
+
+    // --- Send by email (EMAIL-SEND.md) --------------------------------------
+    accountByEmail(email) {
+      const found = db
+        .prepare(`SELECT id, email, signPub, paid, data_key FROM accounts WHERE email = ?`)
+        .get(email.toLowerCase()) as
+        | { id: string; email: string; signPub: string | null; paid: number; data_key: string | null }
+        | undefined;
+      if (!found) return null;
+      return {
+        id: found.id,
+        email: found.email,
+        signPub: found.signPub,
+        paid: !!found.paid,
+        dataKey: found.data_key,
+      };
+    },
+
+    identityKeys(signPub) {
+      const row = db
+        .prepare(`SELECT boxPub, name, requests_only FROM handles WHERE signPub = ? LIMIT 1`)
+        .get(signPub) as { boxPub: string; name: string | null; requests_only: number } | undefined;
+      if (!row) return null;
+      return { boxPub: row.boxPub, name: row.name, requestsOnly: !!row.requests_only };
+    },
+
+    getEmailStub(email) {
+      const row = db
+        .prepare(
+          `SELECT email, sign_pub, box_pub, sign_sec, box_sec, created_by, created_at, notified_at
+           FROM email_stubs WHERE email = ?`,
+        )
+        .get(email.toLowerCase()) as
+        | {
+            email: string;
+            sign_pub: string | null;
+            box_pub: string | null;
+            sign_sec: string | null;
+            box_sec: string | null;
+            created_by: string | null;
+            created_at: number;
+            notified_at: number | null;
+          }
+        | undefined;
+      if (!row) return null;
+      return {
+        email: row.email,
+        signPub: row.sign_pub,
+        boxPub: row.box_pub,
+        signSec: row.sign_sec,
+        boxSec: row.box_sec,
+        createdBy: row.created_by,
+        createdAt: Number(row.created_at),
+        notifiedAt: row.notified_at == null ? null : Number(row.notified_at),
+      };
+    },
+
+    upsertEmailStub(email, keys, createdBy, now) {
+      // notified_at is deliberately NOT in the update set: the once-ever invite
+      // marker survives a re-key of a purged stub.
+      db.prepare(
+        `INSERT INTO email_stubs (email, sign_pub, box_pub, sign_sec, box_sec, created_by, created_at, notified_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, NULL)
+         ON CONFLICT(email) DO UPDATE SET
+           sign_pub = excluded.sign_pub, box_pub = excluded.box_pub,
+           sign_sec = excluded.sign_sec, box_sec = excluded.box_sec,
+           created_by = excluded.created_by, created_at = excluded.created_at`,
+      ).run(email.toLowerCase(), keys.signPub, keys.boxPub, keys.signSec, keys.boxSec, createdBy, now);
+    },
+
+    markEmailNotified(email, now) {
+      db.prepare(`UPDATE email_stubs SET notified_at = ? WHERE email = ? AND notified_at IS NULL`).run(
+        now,
+        email.toLowerCase(),
+      );
+    },
+
+    claimEmailStub(signPub) {
+      db.prepare(`UPDATE email_stubs SET sign_sec = NULL, box_sec = NULL WHERE sign_pub = ?`).run(
+        signPub,
+      );
+    },
+
+    countRecentEmailProvisions(createdBy, since) {
+      const r = db
+        .prepare(`SELECT COUNT(*) AS n FROM email_stubs WHERE created_by = ? AND created_at >= ?`)
+        .get(createdBy, since) as { n: number };
+      return Number(r?.n ?? 0);
+    },
+
+    purgeEmailStubs(cutoff) {
+      // Only UNCLAIMED stubs (secrets still held) with no mail waiting: purging
+      // keys under waiting mail would strand it. The row itself stays — it IS
+      // the once-ever tombstone.
+      const res = db
+        .prepare(
+          `UPDATE email_stubs SET sign_pub = NULL, box_pub = NULL, sign_sec = NULL, box_sec = NULL
+           WHERE sign_sec IS NOT NULL AND created_at < ?
+             AND NOT EXISTS (
+               SELECT 1 FROM messages m WHERE m.recipient = email_stubs.sign_pub AND m.fetched_at IS NULL
+             )`,
+        )
+        .run(cutoff);
+      return Number(res.changes ?? 0);
     },
 
     // --- Account layer ------------------------------------------------------

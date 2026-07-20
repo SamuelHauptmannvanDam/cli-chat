@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>cli-chat — headless send: the runbook</title>
-<meta name="description" content="Make pipelines, cron jobs and build servers message you on cli-chat with one command — npx cli-chat-mcp send. No agent, no MCP session, no daemon. The full setup runbook.">
-<meta property="og:title" content="cli-chat — headless send: the runbook">
+<title>cli-chat · headless send: the playbook</title>
+<meta name="description" content="Make pipelines, cron jobs and build servers message you on cli-chat with one command: npx cli-chat-mcp send. No agent, no MCP session, no daemon. The full setup playbook.">
+<meta property="og:title" content="cli-chat · headless send: the playbook">
 <meta property="og:description" content="Pipelines message you headlessly. One command, exit 0. The full setup guide.">
 <meta property="og:url" content="https://cli-chat.dev/headless">
 <meta property="og:type" content="article">
@@ -80,7 +80,7 @@ h2 { font-family: var(--display); font-size: clamp(19px, 2.6vw, 27px); font-weig
 
 /* three-things model cards */
 
-.cell { border: 1px solid var(--line); background: var(--bg); padding: 26px 22px; transition: border-color .2s; }
+.cell { border: 1px solid var(--line); background: var(--bg); padding: 26px 22px; transition: border-color .2s, box-shadow .2s; }
 .cell h3 code { color: var(--green); font-size: 12px; background: var(--bg-raised); padding: 1px 5px; }
 .cell p { font-family: var(--serif); font-size: 14.5px; color: var(--dim); line-height: 1.55; }
 
@@ -150,60 +150,87 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; margin-top: 14
 </nav>
 
 <header class="hero wrap" id="top">
-  <p class="kicker"><a href="/">← cli-chat.dev</a> <b>·</b> runbook <b>·</b> headless send</p>
+  <p class="kicker"><a href="/">← cli-chat.dev</a> <b>·</b> playbook <b>·</b> headless send</p>
   <h1><span class="prompt">❯ </span><span class="cmd" data-scramble>npx cli-chat-mcp send ops</span> <span class="arg" data-scramble>"deploy landed"</span></h1>
-  <p class="sub">Pipelines, cron jobs and build servers message you like a person would. <em>No agent, no MCP session, no daemon</em> — one process, one sealed message, exit 0.</p>
+  <p class="sub">Pipelines, cron jobs and build servers message you like a person would. <em>No agent, no MCP session, no daemon</em>: one process, one sealed message, exit 0.</p>
   <p class="hero-note">This is the full setup, end to end. Fifteen minutes once, then it's one line in any script forever. Needs <em>Node 22+</em>, nothing else.</p>
+  <div class="term" style="margin-top: 40px; max-width: 640px;">
+    <div class="term-bar"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span>you@laptop — claude — 80×24</span></div>
+    <div class="feed" id="feedCI" style="min-height: 258px;"></div>
+  </div>
 </header>
+<script>
+window.FEEDS = [['feedCI', [
+  { c: 'fu', pre: '❯ ', t: 'auto chat' },
+  { c: 'fa', h: '· minding the desk', d: 1200 },
+  { c: 'fs', h: '<span class="env">📨</span> ci · #1', d: 700 },
+  { c: 'fq', h: 'build 4812 green — deploy landed', d: 1100 },
+  { c: 'fr', h: '↳ 📤 sent as your assistant — "noted — closing this one."', d: 1300 },
+  { c: 'fs', h: '<span class="env">📨</span> ci · #2', d: 700 },
+  { c: 'fq', h: 'nightly e2e red: auth timeout', d: 1100 },
+  { c: 'fr', h: '↳ 📤 sent as your assistant — "flagging this to Sam now."', d: 1000 },
+  { c: 'fw', h: '↳ ⚠️ needs you: nightly e2e red on main', d: 900 }
+]]];
+</script>
 
 <section class="wrap" id="model">
   <p class="sec-label"><b>##</b> 00 · the model</p>
   <h2 data-scramble>Three things. Only one is always on.</h2>
-  <p class="lede">The trick to headless send is that <em>“logged in” isn’t a session — it’s files on disk.</em> Once you see the three parts, the rest of this page is obvious.</p>
+  <p class="lede">The trick to headless send is that <em>“logged in” isn’t a session, it’s files on disk.</em> Once you see the three parts, the rest of this page is obvious.</p>
   <div class="grid3">
-    <div class="cell"><h3>The account = a directory</h3><p>A keypair, a contact book, a local history cache — files under <em>~/.cli-chat</em>. Any process that can read them can send. That directory <em>is</em> the login.</p></div>
+    <div class="cell"><h3>The account = a directory</h3><p>A keypair, a contact book, a local history cache: files under <em>~/.cli-chat</em>. Any process that can read them can send. That directory <em>is</em> the login.</p></div>
     <div class="cell"><h3>The mailbox = one HTTPS API</h3><p>The only always-on part. It stores sealed ciphertext until the recipient's device fetches it. Senders don't wait for anyone to be online.</p></div>
     <div class="cell"><h3>MCP = one of two doors</h3><p>Your coding agent talks to the same files through MCP. <code>send</code> is the other door: same codebase, no agent attached. Neither door runs when you're not using it.</p></div>
   </div>
-  <p class="prose">So the question "is the MCP connected to my terminal?" dissolves: nothing is resident. A pipeline sends by being a process with (a) the state directory and (b) a network route to the mailbox. That's the whole theory — now the practice.</p>
+  <p class="prose">So the question "is the MCP connected to my terminal?" dissolves: nothing is resident. A pipeline sends by being a process with (a) the state directory and (b) a network route to the mailbox. That's the whole theory; now the practice.</p>
 </section>
 
 <section class="wrap" id="self">
   <p class="sec-label"><b>##</b> 01 · zero setup</p>
   <h2 data-scramble>Rung one: your own machine messages you.</h2>
   <p class="lede">Already using cli-chat on this machine? Then it's already provisioned. <em>Any script can message you right now.</em></p>
-  <div class="codeblock"><button class="copy">copy</button><pre><span class="c"># from cron, a Makefile, a git hook, an && chain — anything:</span>
+  <div class="codeblock"><button class="copy">copy</button><pre><span class="c"># from cron, a Makefile, a git hook, an && chain, anything:</span>
 <span class="g">npx</span> cli-chat-mcp send me <span class="a">"nightly backup finished — 42 GB"</span></pre></div>
   <p class="prose"><code>me</code> is the built-in note-to-self address. The message lands in your own inbox and surfaces in your next agent session like any other. A long build that pings you when it's done is one <code>&amp;&amp;</code> away:</p>
   <div class="codeblock"><button class="copy">copy</button><pre><span class="g">./deploy.sh</span> <span class="d">&amp;&amp;</span> <span class="g">npx</span> cli-chat-mcp send me <span class="a">"deploy done ✅"</span> <span class="d">||</span> <span class="g">npx</span> cli-chat-mcp send me <span class="a">"deploy FAILED 🔴"</span></pre></div>
-  <p class="prose">That's the whole feature on a machine that already has your account. The rest of this runbook is for machines that <em>don't</em> — CI runners, build servers, that Raspberry Pi in the closet.</p>
+  <p class="prose">And on the receiving end — your next agent session, wherever that is:</p>
+  <div class="term" style="max-width: 560px; margin-top: 18px;">
+    <div class="term-bar"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span>you@laptop — claude — 80×24</span></div>
+    <div class="feed">
+      <p class="fu">❯ any messages?</p>
+      <p class="fs"><span class="env">📨</span> me (note to self) · #1</p>
+      <p class="fq">deploy done ✅</p>
+      <p class="fa">↳ your 14:02 pipeline reporting in — nothing needs you.</p>
+    </div>
+  </div>
+  <p class="prose">That's the whole feature on a machine that already has your account. The rest of this playbook is for machines that <em>don't</em>: CI runners, build servers, that Raspberry Pi in the closet.</p>
 </section>
 
 <section class="wrap" id="bot">
   <p class="sec-label"><b>##</b> 02 · one-time, interactive</p>
   <h2 data-scramble>Mint the bot its own account.</h2>
-  <p class="lede">A bot is not special — it's <em>just another account</em>: its own email, its own keypair, its own 6-char handle. You create it once, interactively, on any machine you like (your laptop is fine).</p>
-  <p class="prose">The only step that can't be headless is this one — login is a magic link, and someone has to click it. Park the bot's state in its own directory with <code>MESSENGER_HOME</code> so it never collides with your personal account:</p>
+  <p class="lede">A bot is not special. It's <em>just another account</em>: its own email, its own keypair, its own 6-char handle. You create it once, interactively, on any machine you like (your laptop is fine).</p>
+  <p class="prose">The only step that can't be headless is this one: login is a magic link, and someone has to click it. Park the bot's state in its own directory with <code>MESSENGER_HOME</code> so it never collides with your personal account:</p>
   <div class="codeblock titled"><span class="cb-title">your laptop · once</span><button class="copy">copy</button><pre><span class="c"># open your coding CLI with the bot's own state dir</span>
 <span class="cy">MESSENGER_HOME</span>=~/deploy-bot <span class="g">claude</span>
 
 <span class="c"># then, in the session:</span>
-<span class="g">❯</span> log in as ci@yourteam.dev — name it "Deploy Bot"
-<span class="c"># click the magic link that lands in that inbox — done.</span>
+<span class="g">❯</span> log in as ci@yourteam.dev, name it "Deploy Bot"
+<span class="c"># click the magic link that lands in that inbox, done.</span>
 <span class="c"># ~/deploy-bot now holds the bot's keypair, contacts and handle.</span></pre></div>
-  <p class="recipe-note">Any address you can read works — a plus-address like <em>you+ci@…</em> is fine. The bot's display name ("Deploy Bot") is what recipients see on every message, so pick a good one.</p>
+  <p class="recipe-note">Any address you can read works; a plus-address like <em>you+ci@…</em> is fine. The bot's display name ("Deploy Bot") is what recipients see on every message, so pick a good one.</p>
 </section>
 
 <section class="wrap" id="first">
   <p class="sec-label"><b>##</b> 03 · by handle, once</p>
   <h2 data-scramble>First contact: send to a handle.</h2>
-  <p class="lede">The bot's contact book is empty. The first message targets your <em>6-char handle</em> — ask your own agent <em>"what's my handle?"</em> if you've forgotten it.</p>
+  <p class="lede">The bot's contact book is empty. The first message targets your <em>6-char handle</em>; ask your own agent <em>"what's my handle?"</em> if you've forgotten it.</p>
   <div class="codeblock"><button class="copy">copy</button><pre><span class="c"># --key resolves the handle, sends, AND saves the contact</span>
 <span class="cy">MESSENGER_HOME</span>=~/deploy-bot <span class="g">npx</span> cli-chat-mcp send ops <span class="d">--key</span> <span class="a">qL7fA</span> <span class="a">"deploy bot reporting in"</span>
 <span class="g">sent</span> 71a84de1… to ops</pre></div>
-  <p class="prose">That one send did two things: it delivered, and it wrote "ops" into the bot's <code>contacts.json</code>. From now on the name alone is enough — <em>the handle never appears in your pipeline config:</em></p>
+  <p class="prose">That one send did two things: it delivered, and it wrote "ops" into the bot's <code>contacts.json</code>. From now on the name alone is enough: <em>the handle never appears in your pipeline config.</em></p>
   <div class="codeblock"><button class="copy">copy</button><pre><span class="cy">MESSENGER_HOME</span>=~/deploy-bot <span class="g">npx</span> cli-chat-mcp send ops <span class="a">"works by name now"</span></pre></div>
-  <p class="prose">Add the whole team the same way, one <code>--key</code> send each. And save the bot in <em>your</em> book too — say <em>"add deploy-bot, code is &lt;its handle&gt;"</em> to your agent — so its messages walk straight in, under a name you chose. (A sender you haven't saved is held at the door: the bot's first ping would sit as a 🆕 new-handle notice until you say <em>add</em>.)</p>
+  <p class="prose">Add the whole team the same way, one <code>--key</code> send each. And save the bot in <em>your</em> book too, <em>"add deploy-bot, code is &lt;its handle&gt;"</em> to your agent, so its messages walk straight in, under a name you chose. (A sender you haven't saved is held at the door: the bot's first ping would sit as a 🆕 new-handle notice until you say <em>add</em>.)</p>
 </section>
 
 <section class="wrap" id="wire">
@@ -219,7 +246,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; margin-top: 14
   </div>
 
   <div class="recipe active" id="r-box">
-    <div class="codeblock titled"><span class="cb-title">build server, office mac, raspberry pi — anything with a disk</span><button class="copy">copy</button><pre><span class="c"># copy the state dir over once…</span>
+    <div class="codeblock titled"><span class="cb-title">build server, office mac, raspberry pi · anything with a disk</span><button class="copy">copy</button><pre><span class="c"># copy the state dir over once…</span>
 <span class="g">scp</span> -r ~/deploy-bot buildbox:~/deploy-bot
 
 <span class="c"># …then any script on that box is one line:</span>
@@ -238,7 +265,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; margin-top: 14
     mkdir -p "$MESSENGER_HOME"
     echo "$STATE" | base64 -d | tar -xzf - -C "$MESSENGER_HOME"
     npx -y cli-chat-mcp send ops <span class="a">"deploy of ${{ github.sha }}: ${{ job.status }}"</span></pre></div>
-    <p class="recipe-note">The runner is born, restores the account from the secret, sends, and dies. <em>Exit 1 on any failure</em> — drop the <em>if: always()</em> guard if you'd rather a failed notify fail the job.</p>
+    <p class="recipe-note">The runner is born, restores the account from the secret, sends, and dies. <em>Exit 1 on any failure</em>; drop the <em>if: always()</em> guard if you'd rather a failed notify fail the job.</p>
   </div>
 
   <div class="recipe" id="r-gl">
@@ -254,9 +281,9 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; margin-top: 14
   </div>
 
   <div class="recipe" id="r-cron">
-    <div class="codeblock titled"><span class="cb-title">crontab -e · the server checks in every morning</span><button class="copy">copy</button><pre><span class="c"># 07:30 daily — disk check that messages instead of emailing root</span>
+    <div class="codeblock titled"><span class="cb-title">crontab -e · the server checks in every morning</span><button class="copy">copy</button><pre><span class="c"># 07:30 daily: disk check that messages instead of emailing root</span>
 30 7 * * *  <span class="cy">MESSENGER_HOME</span>=/home/svc/deploy-bot <span class="g">npx</span> -y cli-chat-mcp send ops <span class="a">"$(df -h / | tail -1 | awk '{print "disk: " $5 " used"}')"</span></pre></div>
-    <p class="recipe-note">Anything that can produce a string can be a message body — command substitution, log tails, <em>jq</em> over a status endpoint.</p>
+    <p class="recipe-note">Anything that can produce a string can be a message body: command substitution, log tails, <em>jq</em> over a status endpoint.</p>
   </div>
 </section>
 
@@ -265,14 +292,14 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; margin-top: 14
   <h2 data-scramble>Anatomy of one send.</h2>
   <p class="lede">What actually happens in the ~2 seconds between the shell prompt and <em>exit 0</em>. No step waits on the recipient being online.</p>
   <div class="stages">
-    <div class="stage"><p class="n">[1/6]</p><div><h3>Dispatch</h3><p>The <code>send</code> argument short-circuits before any MCP server starts — this is a one-shot process, not a service.</p></div></div>
+    <div class="stage"><p class="n">[1/6]</p><div><h3>Dispatch</h3><p>The <code>send</code> argument short-circuits before any MCP server starts: this is a one-shot process, not a service.</p></div></div>
     <div class="stage"><p class="n">[2/6]</p><div><h3>Resolve the sender</h3><p>Which account? <code>$MESSENGER_USER</code> if set, else the state dir's default, else the only account present.</p><p class="fail">fails → <b>no account on this device</b> · exit 1</p></div></div>
-    <div class="stage"><p class="n">[3/6]</p><div><h3>Load the identity</h3><p>The bot's keypair comes off disk — this is what signs and seals the message as "Deploy Bot".</p></div></div>
+    <div class="stage"><p class="n">[3/6]</p><div><h3>Load the identity</h3><p>The bot's keypair comes off disk: this is what signs and seals the message as "Deploy Bot".</p></div></div>
     <div class="stage"><p class="n">[4/6]</p><div><h3>Resolve the recipient</h3><p>Name → the bot's own contact book (partial match, like <code>write niels</code>). With <code>--key</code>, the handle resolves online and the contact is saved for next time.</p><p class="fail">fails → <b>no_contact</b> / <b>ambiguous</b> (candidates listed) · exit 1</p></div></div>
     <div class="stage"><p class="n">[5/6]</p><div><h3>Seal &amp; deliver</h3><p>Body encrypted to the recipient's keys, posted to the mailbox. The server stores ciphertext only.</p><p class="fail">fails → reason on stderr · exit 1</p></div></div>
     <div class="stage"><p class="n">[6/6]</p><div><h3>Report &amp; exit</h3><p>Prints <code>sent &lt;id&gt; to &lt;name&gt;</code>, queues the message for the bot's own encrypted history, exit 0.</p></div></div>
   </div>
-  <p class="prose">On your side it's just a message: it surfaces in your next session, streams into live chat, and your assistant can even answer the bot in auto chat — a pipeline that asks <em>"tests red on main — rerun or page Sam?"</em> is having a conversation, not writing a log line.</p>
+  <p class="prose">On your side it's just a message: it surfaces in your next session, streams into live chat, and your assistant can even answer the bot in auto chat: a pipeline that asks <em>"tests red on main — rerun or page Sam?"</em> is having a conversation, not writing a log line.</p>
 </section>
 
 <section class="wrap" id="notes">
@@ -280,17 +307,17 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; margin-top: 14
   <h2 data-scramble>When it fails, it says so.</h2>
   <p class="lede">Never a prompt, never a hang: <em>exit 0 with a message id, or exit 1 with a reason</em> on stderr. The ones you'll actually meet:</p>
   <div class="notes">
-    <div class="note"><span class="k">no account on this device</span><p>The state dir wasn't found — <code>$MESSENGER_HOME</code> unset, secret not restored, or restored to the wrong path.</p></div>
+    <div class="note"><span class="k">no account on this device</span><p>The state dir wasn't found: <code>$MESSENGER_HOME</code> unset, secret not restored, or restored to the wrong path.</p></div>
     <div class="note"><span class="k">send failed: no_contact</span><p>The name isn't in the <em>bot's</em> book (yours doesn't count). Do the one-time <code>--key</code> send from § 03.</p></div>
     <div class="note"><span class="k">send failed: ambiguous</span><p>Two saved contacts match the name; candidates are listed. Use more of the name in the script.</p></div>
-    <div class="note"><span class="k">send failed: not_found</span><p>The handle in <code>--key</code> doesn't resolve — typo, rotated, or the owner switched their handle off (requests-only). Already-saved contacts keep working either way.</p></div>
+    <div class="note"><span class="k">send failed: not_found</span><p>The handle in <code>--key</code> doesn't resolve: typo, rotated, or the owner switched their handle off (requests-only). Already-saved contacts keep working either way.</p></div>
   </div>
   <div class="notes" style="margin-top: 22px;">
     <div class="note"><span class="k env">MESSENGER_HOME</span><p>Where the state lives (the dir <em>containing</em> <code>users/</code>). Default: <code>~/.cli-chat</code>. Set it everywhere in CI; never rely on the runner's home.</p></div>
-    <div class="note"><span class="k env">MESSENGER_USER</span><p>Pick the account when one state dir holds several — by handle or name. With one account, leave it unset.</p></div>
+    <div class="note"><span class="k env">MESSENGER_USER</span><p>Pick the account when one state dir holds several, by handle or name. With one account, leave it unset.</p></div>
     <div class="note"><span class="k env">--as-assistant</span><p>Marks the send as coming from an assistant rather than the account's human. Good manners for bots that share an account with a person.</p></div>
   </div>
-  <p class="prose" style="margin-top: 28px;"><em>Treat the state directory like a deploy key.</em> Whoever holds those files can send as the bot — keep the tarball in a masked secret, not in the repo. And give the bot its own account rather than shipping your personal one into CI: contacts scope what it can reach, and you can retire it without touching your own identity.</p>
+  <p class="prose" style="margin-top: 28px;"><em>Treat the state directory like a deploy key.</em> Whoever holds those files can send as the bot, so keep the tarball in a masked secret, not in the repo. And give the bot its own account rather than shipping your personal one into CI: contacts scope what it can reach, and you can retire it without touching your own identity.</p>
 </section>
 
 <footer>

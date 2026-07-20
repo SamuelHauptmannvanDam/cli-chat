@@ -42,6 +42,10 @@ export interface MailboxClient {
   drain(): Promise<WireMessage[]>;
   registerHandle(handle: string, name?: string): Promise<"ok" | "taken">;
   resolveHandle(handle: string): Promise<{ signPub: string; boxPub: string } | null>;
+  // EMAIL-SEND.md: resolve an email address → keys, provisioning server-side on
+  // demand (every address resolves — no membership signal). Null ONLY when the
+  // owner closed out-of-band reach (requests-only), mirroring resolveHandle.
+  resolveEmail(email: string): Promise<{ signPub: string; boxPub: string } | null>;
   // Contacts of contacts: push the edges you save, drop them on delete, and pull
   // your own second-degree network. Signed like every mailbox route.
   pushEdges(contacts: string[]): Promise<void>;
@@ -142,6 +146,18 @@ export function createMailboxClient(
       const res = await fetch(`${base}${path}`, { headers: headers("GET", path, "") });
       if (res.status === 404) return null;
       if (!res.ok) await fail(res, "resolve");
+      return (await res.json()) as { signPub: string; boxPub: string };
+    },
+
+    async resolveEmail(email) {
+      const body = JSON.stringify({ email });
+      const res = await fetch(`${base}/email/resolve`, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...headers("POST", "/email/resolve", body) },
+        body,
+      });
+      if (res.status === 404) return null;
+      if (!res.ok) await fail(res, "email resolve");
       return (await res.json()) as { signPub: string; boxPub: string };
     },
 

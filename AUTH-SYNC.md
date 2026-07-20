@@ -233,7 +233,7 @@ The vault blob is the account's full state, assembled client-side (`src/vault.ts
 **"Sync everything" = the keypair is escrowed too**, so a new device is fully
 restored (can open sealed mail and sign as you). Consequence to surface in UX:
 **email is the master key** to the whole identity. And since v2, the messenger's
-memory rides along: thread digests and `remember` notes are **no longer
+memory rides along: thread digests and `memory_add` notes are **no longer
 local-only** — they restore with the account like everything else (reads remain
 local).
 
@@ -320,7 +320,7 @@ gets one); everything else returns `no_account` until it succeeds. There is
 |---|---|---|
 | `login` | `{ email?, poll_id?, name? }` | **Two-step.** With `email`: sends the magic link, returns `{ reason:"sent", poll_id }`. With `poll_id`: waits for the click and finishes — restore (`action:"restored"`), bind, or relogin-converge as per §1; `pending`/`expired` as expected. A brand-new email on a fresh device returns `need_name`; call again with the **same `poll_id`** plus `name` to create the account (→ `action:"created"`, with the new handle). Called with **no arguments while logged in**, it converges this device with the server (vault + history round-trip) and reports status (`already_logged_in`: email, pending changes, reachability) — the "am I logged in?" / "sync now" answer. There is no separate sync or status tool: syncing is automatic (session start, debounced pushes after edits/messages, real-time wakes), and this is the manual check-in. |
 | `logout` | — | Final vault + history sync, **verified**; any failure aborts with nothing deleted (`sync_failed`). Then `DELETE /auth/session` revokes the bearer token (best-effort), the user dir is wiped, and the device returns to `no_account`. |
-| `set_name` | `{ name }` | Update the user's own display name ("call me X") — rewrites `identity.json`, republishes to the handle directory, and dirties the vault. Account, handle, and keys unchanged. |
+| `update_name` | `{ name }` | Update the user's own display name ("call me X") — rewrites `identity.json`, republishes to the handle directory, and dirties the vault. Account, handle, and keys unchanged. |
 
 ---
 

@@ -57,7 +57,7 @@ list; it is not displayed.
 - `POST /edges/hidden` — quiet opt-out.
 
 ## Client
-- `add_contact` → fire-and-forget `POST /edges`; `delete_contact` → `DELETE /edges`.
+- `update_contact` add → fire-and-forget `POST /edges`; delete → `DELETE /edges`.
   Best-effort, like the push warmer — never blocks the user.
 - **One-time backfill** on upgrade: push existing local contacts as one batch so
   nobody starts empty.

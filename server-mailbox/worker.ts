@@ -30,6 +30,11 @@ export interface Env {
   // boots; the account routes just 503 until these secrets are set. ----------
   RESEND_API_KEY?: string; // `wrangler secret put RESEND_API_KEY`
   EMAIL_FROM?: string; // verified Resend sender, e.g. "cli-chat <login@your.dev>"
+  // Sender identity for the once-ever invite emails (EMAIL-SEND.md). Keep it on
+  // its own subdomain — magic-link deliverability (EMAIL_FROM) is load-bearing
+  // and invite bounces must not poison it. Unset → invites don't send (stubs
+  // still provision; notified_at stays null so a later deploy sends the one).
+  INVITE_EMAIL_FROM?: string;
   APP_BASE_URL?: string; // public origin for the magic-link verify URL
   CHECKOUT_URL?: string; // Stripe Payment Link for the one-time unlock
   STRIPE_WEBHOOK_SECRET?: string; // `wrangler secret put STRIPE_WEBHOOK_SECRET`
@@ -58,6 +63,9 @@ function makeRateLimit(env: Env) {
 // than a month is dropped, which also bounds never-drained spam.
 const READ_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const UNREAD_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+// Unclaimed email stubs (EMAIL-SEND.md) lose their keys after this long with no
+// mail waiting; the row (and its once-ever notified_at) stays forever.
+const EMAIL_STUB_TTL_MS = 60 * 24 * 60 * 60 * 1000;
 
 export default {
   fetch(request: Request, env: Env, ctx: any): Response | Promise<Response> {
@@ -87,6 +95,10 @@ export default {
         env.RESEND_API_KEY && env.EMAIL_FROM
           ? resendSender(env.RESEND_API_KEY, env.EMAIL_FROM)
           : undefined,
+      sendInviteEmail:
+        env.RESEND_API_KEY && env.INVITE_EMAIL_FROM
+          ? resendSender(env.RESEND_API_KEY, env.INVITE_EMAIL_FROM)
+          : undefined,
       appBaseUrl: env.APP_BASE_URL,
       checkoutUrl: env.CHECKOUT_URL,
       verifyPayment: env.STRIPE_WEBHOOK_SECRET
@@ -106,6 +118,9 @@ export default {
     await store.purge(now - READ_TTL_MS, now - UNREAD_TTL_MS);
     // Also sweep the account layer: expired magic-link tokens and dead sessions.
     await store.purgeAuth(now);
+    // And drop the keys of old unclaimed email stubs (their once-ever invite
+    // marker survives, so a re-provisioned address is never emailed again).
+    await store.purgeEmailStubs(now - EMAIL_STUB_TTL_MS);
   },
 };
 

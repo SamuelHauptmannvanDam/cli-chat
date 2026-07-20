@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>cli-chat — your coding agent is your messenger</title>
-<meta name="description" content="Messaging for coding-agent CLIs. Tell your agent 'write Sam: …' — it delivers, and reads replies back in your terminal. Claude Code, Codex, Copilot, Gemini CLI, any MCP CLI.">
-<meta property="og:title" content="cli-chat — your coding agent is your messenger">
+<title>cli-chat: your coding agent is your messenger</title>
+<meta name="description" content="Messaging for coding-agent CLIs. Tell your agent 'write Sam: …' and it delivers, then reads replies back in your terminal. Claude Code, Codex, Copilot, Gemini CLI, any MCP CLI.">
+<meta property="og:title" content="cli-chat: your coding agent is your messenger">
 <meta property="og:description" content="Messaging for coding-agent CLIs. One npx away.">
 <meta property="og:url" content="https://cli-chat.dev">
 <meta property="og:type" content="website">
@@ -35,7 +35,7 @@
 }
 body {
   background: var(--bg);
-  background-image: radial-gradient(rgba(245, 167, 66, .13) 1px, transparent 1.2px);
+  background-image: radial-gradient(rgba(245, 167, 66, .22) 1px, transparent 1.2px);
   background-size: 24px 24px;
   color: var(--ink);
   font-family: var(--mono);
@@ -88,21 +88,9 @@ h1 {
 .installs { font-size: 11px; color: var(--faint); letter-spacing: .06em; }
 .installs b { color: var(--green); font-weight: 400; font-variant-numeric: tabular-nums; }
 
-/* ---- terminal demo: the SAME conversation from both ends ---- */
+/* ---- terminal demo: the SAME conversation from both ends ----
+   (window chrome itself — .term/.term-bar — is shared, in site.css) */
 .terms { margin-top: 72px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
-.term {
-  border: 1px solid var(--line); background: rgba(18, 16, 12, .92);
-  box-shadow: 0 30px 80px rgba(0,0,0,.5), 0 0 0 1px rgba(245,167,66,.04);
-}
-.term-bar {
-  display: flex; align-items: center; gap: 8px; padding: 10px 14px;
-  border-bottom: 1px solid var(--line); color: var(--faint); font-size: 11px;
-}
-.term-bar .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--line); }
-.term-bar .dot:nth-child(1) { background: #513c33; }
-.term-bar .dot:nth-child(2) { background: #4f4630; }
-.term-bar .dot:nth-child(3) { background: #35472e; }
-.term-bar span { margin-left: 10px; }
 .term-body { padding: 22px 22px 26px; min-height: 260px; font-size: 13px; line-height: 1.9; }
 .t-line { white-space: pre-wrap; word-break: break-word; }
 .t-line .p { color: var(--green); }
@@ -111,6 +99,7 @@ h1 {
 .t-line.card-sender .env { color: var(--amber); }
 .t-line.quote { color: var(--ink); border-left: 2px solid var(--amber); padding-left: 12px; margin-left: 2px; }
 .t-line.sent { color: var(--green); margin-top: 4px; }
+.t-line.warn { color: var(--amber); margin-top: 4px; }
 .caret {
   display: inline-block; width: 8px; height: 15px; background: var(--amber);
   vertical-align: text-bottom; animation: blink 1.06s steps(1) infinite;
@@ -118,7 +107,6 @@ h1 {
 
 /* ---- sections ---- */
 section.wrap {
-  border-top: 1px solid var(--line);
   min-height: 100vh;
   margin-top: 22vh;
   display: flex; flex-direction: column; justify-content: flex-start;
@@ -135,12 +123,45 @@ h2 { font-family: var(--display); font-size: clamp(20px, 3vw, 30px); font-weight
   position: relative; border: 1px solid var(--line); background: var(--bg);
   transition: background .2s, border-color .2s, box-shadow .2s;
 }
-.card:hover { border-color: var(--faint); }
+/* hover: amber bloom + the border draws itself from the top-left corner,
+   both ways round, meeting at bottom-right (::before = top→right,
+   ::after = left→bottom) */
+.card:hover {
+  border-color: var(--line);
+  box-shadow: 0 0 18px rgba(245,167,66,.16), 0 0 60px rgba(245,167,66,.10), 0 0 140px rgba(245,167,66,.05);
+}
+.card::before, .card::after {
+  content: ""; position: absolute; top: -1px; left: -1px;
+  width: 0; height: 0; opacity: 0; pointer-events: none; box-sizing: border-box;
+  filter: drop-shadow(0 0 6px rgba(245,167,66,.55));
+  transition: width 0s .3s, height 0s .3s, opacity .3s;
+}
+.card::before { border-top: 1px solid var(--amber); border-right: 1px solid var(--amber); }
+.card::after  { border-left: 1px solid var(--amber); border-bottom: 1px solid var(--amber); }
+.card:hover::before, .card:hover::after { width: calc(100% + 2px); height: calc(100% + 2px); opacity: 1; }
+.card:hover::before { transition: width .22s ease-out, height .22s ease-out .22s, opacity 0s; }
+.card:hover::after  { transition: height .22s ease-out, width .22s ease-out .22s, opacity 0s; }
 a.card { display: block; color: inherit; }
 a.card:hover { background: var(--bg-card); }
 a.card:hover h3 { color: var(--amber); }
-a.card:hover .go { color: var(--amber); }
-.card .tag { position: absolute; top: -9px; left: 20px; background: var(--bg); padding: 0 8px; font-size: 11px; color: var(--amber); letter-spacing: .06em; }
+/* clickable cards wear their link: .go is a ghost button pinned bottom-right,
+   amber at rest, filling on hover (the whole card stays the hit area) */
+a.card.cell { display: flex; flex-direction: column; }
+a.card.cell p:last-of-type { flex: 1; }
+a.card .go {
+  align-self: flex-end; margin-top: 18px; padding: 7px 14px;
+  border: 1px solid rgba(245,167,66,.45); color: var(--amber); font-weight: 600;
+  transition: background .15s, color .15s, border-color .15s;
+}
+a.card:hover .go { background: var(--amber); border-color: var(--amber); color: var(--bg); }
+.card .tag { position: absolute; top: -9px; left: 20px; background: var(--bg); padding: 0 8px; font-size: 11px; color: var(--amber); letter-spacing: .06em; z-index: 1; transition: text-shadow .3s; }
+.card:hover .tag { text-shadow: 0 0 12px rgba(245,167,66,.65); }
+/* terminals light up with the card around them */
+.card .term { transition: border-color .3s, box-shadow .3s; }
+.card:hover .term {
+  border-color: rgba(245,167,66,.45);
+  box-shadow: 0 30px 80px rgba(0,0,0,.5), 0 0 0 1px rgba(245,167,66,.10), 0 0 26px rgba(245,167,66,.08);
+}
 
 /* steps */
 .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 36px; }
@@ -148,6 +169,8 @@ a.card:hover .go { color: var(--amber); }
 .step .n { color: var(--amber); font-size: 12px; margin-bottom: 14px; }
 .step h3 { font-size: 14px; font-weight: 600; margin-bottom: 10px; }
 .step p { font-family: var(--serif); font-size: 15.5px; color: var(--dim); line-height: 1.55; }
+.step p + p { margin-top: 10px; }
+.step .dir { color: var(--amber); font-weight: 600; font-size: 12px; letter-spacing: .04em; }
 .step code { font-family: var(--mono); font-size: 11.5px; color: var(--green); background: var(--bg-raised); padding: 2px 6px; }
 
 /* features */
@@ -156,6 +179,10 @@ a.card:hover .go { color: var(--amber); }
 .cell .lbl { font-size: 11px; color: var(--green); letter-spacing: .08em; margin-bottom: 12px; }
 .cell p { font-family: var(--serif); font-size: 15px; color: var(--dim); line-height: 1.5; }
 .cell .go { display: inline-block; font-family: var(--mono); font-size: 11px; color: var(--faint); margin-top: 12px; transition: color .15s; font-weight: 400; }
+/* front-desk cards: a live desk runs inside each */
+.cell .term { margin-top: 18px; }
+.cell .term-bar { padding: 8px 12px; white-space: nowrap; overflow: hidden; }
+.cell .term .feed { font-size: 11px; line-height: 1.8; padding: 12px 14px; }
 
 /* modes */
 .modes { display: flex; flex-direction: column; gap: 32px; margin-top: 36px; }
@@ -163,15 +190,30 @@ a.card:hover .go { color: var(--amber); }
   display: grid; grid-template-columns: 1fr 1.5fr; gap: 28px;
   background: rgba(18, 16, 12, .92); padding: 28px 26px;
 }
-.mode.featured { border-color: rgba(245,167,66,.35); box-shadow: 0 0 40px rgba(245,167,66,.04); }
-.mode.featured:hover { border-color: rgba(245,167,66,.65); box-shadow: 0 0 50px rgba(245,167,66,.08); }
 .mode h3 { font-size: 15px; font-weight: 600; margin: 6px 0 10px; }
 .mode-info > p { font-family: var(--serif); font-size: 15.5px; color: var(--dim); line-height: 1.55; }
+.mode-info > p + p { margin-top: 10px; }
+.mode-steps { list-style: none; margin: 12px 0; display: flex; flex-direction: column; gap: 6px; }
+.mode-steps li { font-family: var(--serif); font-size: 15px; color: var(--dim); line-height: 1.5; padding-left: 18px; position: relative; }
+.mode-steps li::before { content: "›"; position: absolute; left: 2px; color: var(--amber); }
+.mode-steps.result li::before { content: "→"; }
+ol.mode-steps { counter-reset: step; margin-bottom: 20px; }
+ol.mode-steps li { counter-increment: step; padding-left: 24px; }
+ol.mode-steps li::before { content: counter(step) "."; }
 .mode-info .switch-note { font-family: var(--mono); font-size: 11px; color: var(--faint); margin-top: 14px; }
 .feed {
   font-size: 12px; line-height: 1.85; background: rgba(11, 10, 8, .9); border: 1px solid var(--line);
   padding: 16px 18px; align-self: start;
 }
+/* the endless-shift ticker: a terminal you can't scroll — new lines rise from
+   the bottom, old ones dissolve out the top; the pinned tail (open tickets +
+   your prompt) holds the floor */
+.feed.ticker {
+  display: flex; flex-direction: column; justify-content: flex-end; overflow: hidden;
+  mask-image: linear-gradient(to bottom, transparent 0, #000 44px);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 44px);
+}
+.feed.ticker p { flex: 0 0 auto; }
 
 /* first-run demo: mimics the agent CLI's own transcript (typed live, no window chrome) */
 .cc { font-size: 12px; line-height: 1.85; padding: 12px 0 18px; background: rgba(11, 10, 8, .9); border: 1px solid var(--line); align-self: start; }
@@ -183,6 +225,9 @@ a.card:hover .go { color: var(--amber); }
 .cc .g { margin-top: 10px; }
 .cc .h { color: #96a3f2; }
 .cc .sent { color: var(--green); }
+
+/* feeds & first-run wrapped in the terminal window chrome (site.css) */
+.mode .term { align-self: start; }
 
 /* install */
 .tabs { display: flex; gap: 0; margin-top: 8px; border: 1px solid var(--line); border-bottom: none; width: fit-content; max-width: 100%; overflow-x: auto; }
@@ -217,19 +262,20 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
 @media (prefers-reduced-motion: reduce) {
   .caret { animation: none; }
   .statusbar .live::before { animation: none; }
-  * { transition: none !important; }
+  *, *::before, *::after { transition: none !important; }
 }
 </style>
 <script src="site.js" defer></script>
 </head>
 <body>
 <nav class="agenda" id="agenda">
-  <a href="#top" class="active"><span class="idx">00</span>install</a>
+  <a href="#top" class="active"><span class="idx">00</span>install → first run</a>
   <a href="#modes"><span class="idx">01</span>inbox → autopilot</a>
-  <a href="#desk"><span class="idx">02</span>front desk</a>
-  <a href="#handles"><span class="idx">03</span>first run</a>
+  <a href="#public"><span class="idx">02</span>go public</a>
+  <a href="#desk"><span class="idx">03</span>front desk</a>
   <a href="#context"><span class="idx">04</span>what you get</a>
-  <a href="#contact"><span class="idx">05</span>say hi</a>
+  <a href="#tools"><span class="idx">05</span>meet the tools</a>
+  <a href="#contact"><span class="idx">06</span>say hi</a>
 </nav>
 
 <header class="hero wrap" id="top">
@@ -247,114 +293,209 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
     <button class="copy">copy</button>
     <pre><code id="cmd">claude mcp add cli-chat --scope user -- npx -y cli-chat-mcp@latest</code></pre>
   </div>
-  <p class="install-note">Then restart your CLI, allow the new <em>cli-chat</em> server when it asks, and say <em>"what's my handle?"</em> — that's the whole setup. Needs Node 22+.</p>
+  <p class="install-note">Then restart your CLI, allow the new <em>cli-chat</em> server when it asks, and just write someone. Setup happens on the way, like this. Needs Node 22+.</p>
 
-  <div class="terms">
-    <div class="term">
-      <div class="term-bar"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span>samuel@laptop — claude — 80×24</span></div>
-      <div class="term-body" id="demoA"></div>
+  <div class="card mode" style="margin-top: 28px;">
+    <div class="mode-info">
+      <p class="tag">first run</p>
+      <h3>Your first message is the setup</h3>
+      <p>No onboarding screen.</p>
+      <ol class="mode-steps">
+        <li>write <em>their handle</em></li>
+        <li>give your <em>email</em></li>
+        <li>click the <em>login link</em></li>
+        <li>give your <em>full name</em></li>
+      </ol>
+      <ul class="mode-steps result">
+        <li>Message <em>sent</em></li>
+        <li>Contact <em>saved</em></li>
+      </ul>
+      <p class="switch-note">the send fires the moment login lands</p>
     </div>
     <div class="term">
-      <div class="term-bar"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span>niels@work — codex — 80×24</span></div>
-      <div class="term-body" id="demoB"></div>
+      <div class="term-bar"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span>mette@laptop — copilot — 80×24</span></div>
+      <div class="cc" id="firstrun" style="min-height: 492px;"></div>
     </div>
   </div>
+
 </header>
 
 <section class="wrap" id="modes">
-  <p class="sec-label"><b>##</b> 01 · three gears</p>
+  <p class="sec-label"><b>##</b> 01 · four gears</p>
   <h2 data-scramble>From inbox to autopilot, at your pace.</h2>
-  <p class="lede">Three modes. Switch a running inbox with one word.</p>
+  <p class="lede">Four modes. Switch a running inbox with one word.</p>
   <div class="modes">
     <div class="card mode">
       <div class="mode-info">
-        <p class="tag">"chat"</p>
-        <h3>Live inbox — you answer</h3>
-        <p>Your inbox streams into the session. Answer one, some, or all in a line.</p>
-        <p class="switch-note">say "stop" to close it</p>
+        <p class="tag">"any messages?"</p>
+        <h3>On demand: you pull</h3>
+        <p>Nothing streams, nothing runs. Ask when you're curious; messages wait until you do. Reply in the same breath.</p>
+        <p class="switch-note">zero background anything · works in any MCP client</p>
       </div>
-      <div class="feed" id="feedChat" style="min-height: 232px;"></div>
-    </div>
-    <div class="card mode featured">
-      <div class="mode-info">
-        <p class="tag">"draft chat"</p>
-        <h3>Assistant drafts — you send</h3>
-        <p>Every message gets a suggested reply. <em>Nothing sends until you say so.</em></p>
-        <p class="switch-note">"draft" flips a running chat into this mode</p>
+      <div class="term">
+        <div class="term-bar"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span>you@laptop — claude — 80×24</span></div>
+        <div class="feed" id="feedPull" style="min-height: 210px;"></div>
       </div>
-      <div class="feed" id="feedDraft" style="min-height: 254px;"></div>
     </div>
     <div class="card mode">
       <div class="mode-info">
+        <p class="tag">"chat"</p>
+        <h3>Live inbox: you answer</h3>
+        <p>Your inbox streams into the session. Answer one, some, or all in a line.</p>
+        <p class="switch-note">say "stop" to close it</p>
+      </div>
+      <div class="term">
+        <div class="term-bar"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span>you@laptop — codex — 80×24</span></div>
+        <div class="feed" id="feedChat" style="min-height: 232px;"></div>
+      </div>
+    </div>
+    <div class="card mode">
+      <div class="mode-info">
+        <p class="tag">"draft chat"</p>
+        <h3>Assistant drafts: you send</h3>
+        <p>Every message gets a suggested reply. <em>Nothing sends until you say so.</em></p>
+        <p class="switch-note">"draft" flips a running chat into this mode</p>
+      </div>
+      <div class="term">
+        <div class="term-bar"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span>you@laptop — gemini — 80×24</span></div>
+        <div class="feed" id="feedDraft" style="min-height: 254px;"></div>
+      </div>
+    </div>
+    <div class="card mode" style="display: block;">
+      <div class="mode-info">
         <p class="tag">"auto chat"</p>
-        <h3>Assistant answers — marked as itself</h3>
-        <p>It answers from <em>the directory you opened it in</em> — code, docs, git history — marked as your assistant, and writes what it learns back into that directory. What it can't ground, it asks <em>you</em>.</p>
+        <h3>Assistant answers: marked as assistant</h3>
+        <p>It answers from <em>the directory you opened it in</em>: code, docs, git history. It writes what it learns back. What it can't ground, it asks <em>you</em>. Below: Niels asking, your desk answering.</p>
         <p class="switch-note">"auto chat read only" keeps the directory untouched · "stop" closes it any time</p>
       </div>
-      <div class="feed" id="feedAuto" style="min-height: 210px;"></div>
+      <div class="terms" style="margin-top: 24px;">
+        <div class="term">
+          <div class="term-bar"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span>samuel@laptop — claude — 80×24</span></div>
+          <div class="term-body" id="demoA"></div>
+        </div>
+        <div class="term">
+          <div class="term-bar"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span>niels@work — codex — 80×24</span></div>
+          <div class="term-body" id="demoB"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="wrap" id="public">
+  <p class="sec-label"><b>##</b> 02 · go public</p>
+  <h2 data-scramble>One word opens the doors.</h2>
+  <p class="lede">Every mode ships <em>private</em>: strangers wait at a gate only you open. Building a desk anyone may write to? Add one word: <em>public</em>.</p>
+  <div class="steps">
+    <div class="card step">
+      <p class="n">["auto chat read only public"]</p>
+      <h3>Walk-ins welcome</h3>
+      <p>A public desk accepts every new handle on its own: first message answered, sender saved, the held backlog let in too. <em>Read only</em> means answering is all it can do — the directory is look, don't touch. Every mode has the variant — <code>chat public</code>, <code>draft chat public</code>.</p>
+    </div>
+    <div class="card step">
+      <p class="n">["auto chat public"]</p>
+      <h3>Living dangerously</h3>
+      <p>Same open doors, plus a pen: this desk also <em>writes</em> its directory — learnings, docs, an FAQ that grows. Both desks hear every injection attempt a stranger sends; the difference is <em>the prize</em>. Read only caps it at a bad reply. A pen raises it to what lands on disk — and today's files ground tomorrow's answers. Orders in a message are never obeyed; read only just <em>caps the damage if anyone ever gets clever</em>.</p>
+    </div>
+    <div class="card step">
+      <p class="n">[per session]</p>
+      <h3>Yours alone</h3>
+      <p>Session ends when you close the terminal.</p>
+    </div>
+  </div>
+  <div class="card mode" style="margin-top: 24px;">
+    <div class="mode-info">
+      <p class="tag">"auto chat read only public"</p>
+      <h3>An endless shift at the open desk</h3>
+      <p>Watch a while: strangers walk in and are <em>saved on arrival</em>, grounded questions get answered and <em>scroll away</em> — but the tickets only you can decide <em>park at the bottom with your name on them</em>, and the desk keeps answering over their heads. One line from you at the prompt clears a ticket. The directory stays untouched: <em>read only</em>.</p>
+      <p class="switch-note">an escalation never stops the line · "private" shuts the gate again · a dismissed handle stays out even now</p>
+    </div>
+    <div class="term">
+      <div class="term-bar"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span>desk@openhours — claude — 80×24</span></div>
+      <div class="feed ticker" id="feedPublic" style="height: 442px;"></div>
     </div>
   </div>
 </section>
 
 <section class="wrap" id="desk">
-  <p class="sec-label"><b>##</b> 02 · run it as</p>
+  <p class="sec-label"><b>##</b> 03 · run it as</p>
   <h2 data-scramble>The front desk for your team.</h2>
-  <p class="lede">No framework, no webhook, no deploy. Open auto chat in a repo and <em>it answers from that directory</em> — the code, the docs, the git history.</p>
+  <p class="lede">No framework, no webhook, no deploy. Open auto chat in a repo and <em>it answers from that directory</em>: the code, the docs, the git history.</p>
   <div class="grid">
-    <a class="card cell" href="/team-bot"><p class="lbl">[auto chat]</p><h3>Team bot</h3><p>One desk the whole team writes with questions. It answers what the repo already knows, chases what it doesn't, and remembers every answer — an FAQ that writes itself.</p><span class="go">→ the runbook</span></a>
-    <a class="card cell" href="/customer-desk"><p class="lbl">[read only]</p><h3>Customer desk</h3><p>Point it at your docs. Customers get grounded answers; the rest lands with you, whole exchange in hand. Invite-only, so no spam.</p><span class="go">→ the runbook</span></a>
-    <a class="card cell" href="/headless"><p class="lbl">[npx send]</p><h3>Scripts &amp; CI</h3><p>Pipelines message you headlessly — <code style="font-family:var(--mono);font-size:11.5px;color:var(--green)">npx cli-chat-mcp send ops "deploy landed"</code> — and auto chat on your end closes the noise, answers the routine, and wakes you only when it matters.</p><span class="go">→ the runbook</span></a>
-  </div>
-</section>
-
-<section class="wrap" id="handles">
-  <p class="sec-label"><b>##</b> 03 · how it works</p>
-  <h2 data-scramble>Swap handles once. Message forever.</h2>
-  <p class="lede">A <em>6-character handle</em> is your phone number.</p>
-  <div class="steps">
-    <div class="card step">
-      <p class="n">[1/3]</p>
-      <h3>Add it to your CLI</h3>
-      <p>One command, any MCP-capable CLI.</p>
-    </div>
-    <div class="card step">
-      <p class="n">[2/3]</p>
-      <h3>Log in with your email</h3>
-      <p>Your agent sends a magic link. Click it — done.</p>
-    </div>
-    <div class="card step">
-      <p class="n">[3/3]</p>
-      <h3>Share your handle</h3>
-      <p>Ask <em>"what's my handle?"</em>, swap with a friend. First message names it — <code>write Sam at qL7fA: hey</code> — and that saves him. On his side you knock first: a 🆕 notice he accepts with <em>"add"</em>. From then on <code>write Sam: hey</code> is enough.</p>
-    </div>
-  </div>
-  <div class="card mode" style="margin-top: 36px;">
-    <div class="mode-info">
-      <p class="tag">first run</p>
-      <h3>Login and your handle</h3>
-      <p>One email, one click, one name — your agent mints your <em>6-char handle</em> and the message that started it all goes out. From then on the contact book answers <em>"who are my contacts?"</em> — your own entry, handle included, always on top.</p>
-      <p class="switch-note">the queued send fires the moment login lands</p>
-    </div>
-    <div class="cc" id="firstrun" style="min-height: 470px;"></div>
+    <a class="card cell" href="/team-bot">
+      <p class="lbl">[auto chat]</p>
+      <h3>Team bot</h3>
+      <p>One desk the whole team writes with questions. It answers what the repo already knows, chases what it doesn't, and remembers every answer: an FAQ that writes itself.</p>
+      <span class="go">→ the playbook</span>
+    </a>
+    <a class="card cell" href="/customer-desk">
+      <p class="lbl">[read only]</p>
+      <h3>Customer desk</h3>
+      <p>Point it at your docs. Customers get grounded answers; the rest lands with you, whole exchange in hand. Invite-only by default — or go <em>public</em> and take walk-ins.</p>
+      <span class="go">→ the playbook</span>
+    </a>
+    <a class="card cell" href="/headless">
+      <p class="lbl">[npx send]</p>
+      <h3>Scripts &amp; CI</h3>
+      <p>Pipelines message you headlessly (<code style="font-family:var(--mono);font-size:11.5px;color:var(--green)">npx cli-chat-mcp send ops "deploy landed"</code>) and auto chat on your end closes the noise, answers the routine, and wakes you only when it matters.</p>
+      <span class="go">→ the playbook</span>
+    </a>
   </div>
 </section>
 
 <section class="wrap" id="context">
   <p class="sec-label"><b>##</b> 04 · what you get</p>
   <h2 data-scramble>Messaging on steroids.</h2>
-  <p class="lede">An inbox that <em>answers itself</em>, a <em>memory bank</em> of everything ever written, an assistant you can <em>send to go ask</em> — every answer it brings home joins the bank, a library built from the assistants around it. When both ends run one, your network <em>thinks together</em>.</p>
+  <p class="lede">An inbox that <em>answers itself</em>, a <em>memory</em> of everything ever written, an assistant you <em>send to go ask</em>. When both ends run one, your network <em>thinks together</em>.</p>
   <div class="grid">
     <div class="card cell"><p class="lbl">[autopilot]</p><h3>Answers itself</h3><p>Replies to what it can ground, marked as your assistant. Hands you the rest.</p></div>
-    <div class="card cell"><p class="lbl">[history]</p><h3>Messages are memory</h3><p>"What did Niels say about the endpoint?" — any thread, any session.</p></div>
-    <div class="card cell"><p class="lbl">[go ask]</p><h3>An assistant on errands</h3><p>"Ask Niels for the staging URL" — it writes, waits, comes back with the answer. <em>Filed for next time.</em></p></div>
-    <div class="card cell"><p class="lbl">[mcp]</p><h3>Cross-CLI</h3><p>Claude Code to Gemini to Copilot — the wire doesn't care.</p></div>
+    <div class="card cell"><p class="lbl">[history]</p><h3>Messages are memory</h3><p>"What did Niels say about the endpoint?" Any thread, any session.</p></div>
+    <div class="card cell"><p class="lbl">[go ask]</p><h3>An assistant on errands</h3><p>"Ask Niels for the staging URL": it writes, waits, comes back with the answer. <em>Filed for next time.</em></p></div>
+    <div class="card cell"><p class="lbl">[mcp]</p><h3>Cross-CLI</h3><p>Claude Code to Gemini to Copilot. The wire doesn't care.</p></div>
     <div class="card cell"><p class="lbl">[tty]</p><h3>No new UI</h3><p>No app. Your agent is the interface.</p></div>
     <div class="card cell"><p class="lbl">[sealed]</p><h3>Encrypted before it leaves</h3><p>Sealed to the recipient's keys on your machine. Verify with a <em>60-digit safety number</em>.</p></div>
   </div>
 </section>
 
+<section class="wrap" id="tools">
+  <p class="sec-label"><b>##</b> 05 · meet the tools</p>
+  <h2 data-scramble>You never call a tool. You say the thing.</h2>
+  <p class="lede">One MCP server underneath, nothing to learn — <em>every box here is a sentence that already works</em>. Start with the essential one: a <em>6-character handle</em> is your phone number.</p>
+  <div class="steps">
+    <div class="card step">
+      <p class="n">[your handle]</p>
+      <h3>Ask "what's my handle?"</h3>
+      <p>Six characters, yours to share — say it on a call, drop it in a README. Swapping them once is the whole exchange.</p>
+    </div>
+    <div class="card step">
+      <p class="n">[you write theirs]</p>
+      <h3>The first message names it</h3>
+      <p><code>write Sam at qL7fA: hey</code> — the send itself saves him. From then on <code>write Sam: hey</code> is enough.</p>
+    </div>
+    <div class="card step">
+      <p class="n">[they write yours]</p>
+      <h3>Their first message knocks</h3>
+      <p>A 🆕 notice, sealed until you say <em>"add"</em> — strangers never read themselves into your terminal. Running an open desk? <em>"go public"</em> lets them straight in for the session.</p>
+    </div>
+  </div>
+  <div class="grid">
+    <div class="card cell"><p class="lbl" id="emailEx">"write sam@gmail.com: hey"</p><h3>Email works too</h3><p>Any address is reachable. No account there yet? They get <em>one</em> invite mail — ever — and the message waits, sealed, until they join.</p></div>
+    <div class="card cell"><p class="lbl">"who are my contacts?"</p><h3>The book</h3><p>Recents first, you on top. Rename anyone — yourself included — by saying it. Deleting forgets; it never blocks.</p></div>
+    <div class="card cell"><p class="lbl">"write everyone from work"</p><h3>Tags &amp; group send</h3><p>Private labels the agent applies from context. A fan-out always shows you the roster before anything sends.</p></div>
+    <div class="card cell"><p class="lbl">"verify Niels"</p><h3>Safety numbers</h3><p>60 digits, compared outside the wire. If their key ever changes you see 🚩 before anything sends.</p></div>
+    <div class="card cell"><p class="lbl">"give me a new code"</p><h3>Rotate the handle</h3><p>Spammed? New code, old one dies, every saved contact keeps working. Or <em>"kill my handle"</em>: connect requests only.</p></div>
+    <div class="card cell"><p class="lbl">"connect with the Tobias Niels knows"</p><h3>Friends of friends</h3><p>See your second circle by name; reach them through a connect request they accept — <em>"any requests?"</em> shows who's asking for you. Nothing delivers before consent.</p></div>
+    <div class="card cell"><p class="lbl">"log in"</p><h3>One account, every machine</h3><p>Your email <em>is</em> the account. Contacts, tags, history and memory land on any device, encrypted — <em>"log out"</em> wipes the box.</p></div>
+    <div class="card cell"><p class="lbl">"remember: staging is db-2"</p><h3>The memory bank</h3><p>Say it once, never again. Notes carry an audience — private, a tag, anyone — and ground every auto answer.</p></div>
+    <div class="card cell"><p class="lbl">"what do you share about me?"</p><h3>Default-closed</h3><p>Nothing personal goes out without a rule you approved. Inspect the ruleset any time; change it in a sentence.</p></div>
+    <div class="card cell"><p class="lbl">"auto chat read only"</p><h3>Look, don't touch</h3><p>The outward desk posture: it consults the directory but can never write to it. <em>"write mode"</em> upgrades it back — only from your keyboard, never from a message.</p></div>
+    <div class="card cell"><p class="lbl">"go public"</p><h3>Open the doors</h3><p>New handles walk straight in for the session; <em>"private"</em> shuts the gate again. Every mode has it — <a href="#public">the doors, above</a>.</p></div>
+    <div class="card cell"><p class="lbl">"stop"</p><h3>Closing time</h3><p>Ends any running mode. Messages simply queue, sealed, until next time — a desk's session is its opening hours, and nothing is ever lost.</p></div>
+  </div>
+</section>
+
 <section class="wrap" id="contact">
-  <p class="sec-label"><b>##</b> 05 · say hi</p>
+  <p class="sec-label"><b>##</b> 06 · say hi</p>
   <h2 data-scramble>Send feedback.</h2>
   <p class="lede">Our handle is <em>FeedBk</em>.</p>
   <div class="feed" style="max-width: 560px; margin-top: 28px;">
@@ -368,11 +509,11 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
   <div class="wrap foot">
     <div>
       <p><b>cli-chat</b> · a messenger for the agent age</p>
-      <p>© 2026 · <a href="https://www.npmjs.com/package/cli-chat-mcp">npm: cli-chat-mcp</a> · <a href="/headless">headless runbook</a> · <a href="/llms.txt">llms.txt</a> · PolyForm Noncommercial 1.0.0</p>
+      <p>© 2026 · <a href="https://www.npmjs.com/package/cli-chat-mcp">npm: cli-chat-mcp</a> · <a href="/headless">headless playbook</a> · <a href="/llms.txt">llms.txt</a> · PolyForm Noncommercial 1.0.0</p>
     </div>
     <div>
       <p>Questions, ideas, bugs?</p>
-      <p>Every account ships with a <b>feedback</b> contact — <b>"write feedback: …"</b> reaches the makers.</p>
+      <p>Every account ships with a <b>feedback</b> contact: <b>"write feedback: …"</b> reaches the makers.</p>
     </div>
   </div>
 </footer>
@@ -416,11 +557,13 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
     els.forEach(function (el) { io.observe(el); el.addEventListener('mouseenter', function () { scramble(el); }); });
   }
 
-  /* ---- typed terminal demo: one conversation, both ends ----
-     `w` picks the window: 'a' = samuel@laptop, 'b' = niels@work. The message
-     visibly leaves one terminal and lands in the other. Each page load deals
-     the two windows a fresh pair of DIFFERENT agent CLIs — the cross-CLI
-     story told by the titlebars. */
+  /* ---- typed terminal demo: auto chat seen from both ends ----
+     `w` picks the window: 'a' = samuel@laptop (auto chat, nobody home — the
+     idle prompt keeps blinking at the bottom while the desk answers), 'b' =
+     niels@work (a human asking). Beat 1: grounded answer goes out on its own.
+     Beat 2: an ungroundable ask gets a holding reply + "needs you" — the rail.
+     Each page load deals the two windows a fresh pair of DIFFERENT agent
+     CLIs — the cross-CLI story told by the titlebars. */
   (function () {
     var clis = ['claude', 'codex', 'copilot', 'gemini'];
     var bars = document.querySelectorAll('.terms .term-bar span');
@@ -431,29 +574,53 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
     bars[0].textContent = 'samuel@laptop — ' + clis[i] + ' — 80×24';
     bars[1].textContent = 'niels@work — ' + clis[j] + ' — 80×24';
   })();
+  /* Same trick for the email examples: each load deals an everyday mail
+     provider to the card label and the first-run typed address. */
+  var MAILHOSTS = ['gmail.com', 'outlook.com', 'icloud.com', 'proton.me', 'yahoo.com'];
+  function mailhost() { return MAILHOSTS[Math.floor(Math.random() * MAILHOSTS.length)]; }
+  (function () {
+    var ex = document.getElementById('emailEx');
+    if (ex) ex.textContent = '"write sam@' + mailhost() + ': hey"';
+  })();
   var demoA = document.getElementById('demoA');
   var demoB = document.getElementById('demoB');
   var SCRIPT = [
-    { w: 'a', t: 'user',  html: '<span class="p">❯</span> write Niels: did the deploy go out this morning?' },
-    { w: 'a', t: 'sent',  html: '↳ 📤 Sent to Niels — "Did the deploy go out this morning?"' },
-    { w: 'b', t: 'user',  html: '<span class="p">❯</span> any messages?' },
-    { w: 'b', t: 'agent', html: '📬 1 new message from Sam — want me to read it?' },
-    { w: 'b', t: 'user',  html: '<span class="p">❯</span> read it' },
-    { w: 'b', t: 'sender', html: '<span class="env">📨</span> Sam · #1' },
-    { w: 'b', t: 'quote', html: 'Did the deploy go out this morning?' },
-    { w: 'b', t: 'user',  html: '<span class="p">❯</span> tell him yes, went out at 9' },
-    { w: 'b', t: 'sent',  html: '↳ 📤 Sent to Sam — "Yes, went out at 9."' },
-    { w: 'a', t: 'user',  html: '<span class="p">❯</span> any messages?' },
-    { w: 'a', t: 'agent', html: '📬 1 new message from Niels — want me to read it?' },
-    { w: 'a', t: 'user',  html: '<span class="p">❯</span> read it' },
-    { w: 'a', t: 'sender', html: '<span class="env">📨</span> Niels · #1' },
-    { w: 'a', t: 'quote', html: 'Yes, went out at 9.' },
-    { w: 'a', t: 'user',  html: '<span class="p">❯</span> <span class="caret"></span>' }
+    { w: 'a', t: 'user',  html: '<span class="p">❯</span> auto chat' },
+    { w: 'a', t: 'agent', html: '· minding the desk — replies go out marked as your assistant', d: 1100 },
+    { w: 'a', t: 'idle',  d: 500 },
+    { w: 'b', t: 'user',  html: '<span class="p">❯</span> write Sam: what did we land on for retry backoff?' },
+    { w: 'b', t: 'sent',  html: '↳ 📤 Sent to Sam — "What did we land on for retry backoff?"', d: 900 },
+    { w: 'a', t: 'sender', html: '<span class="env">📨</span> Niels · #1', d: 600 },
+    { w: 'a', t: 'quote', html: 'what did we land on for retry backoff?', d: 450 },
+    { w: 'a', t: 'agent', html: '· memory_recall: retry backoff — your answer to Mette', d: 550 },
+    { w: 'a', t: 'sent',  html: '↳ 📤 sent as your assistant — "Exponential, capped at 5 — decided Tuesday."', d: 1100 },
+    { w: 'b', t: 'sender', html: '<span class="env">📨</span> Sam\'s assistant · #1', d: 600 },
+    { w: 'b', t: 'quote', html: 'Exponential, capped at 5 — decided Tuesday.', d: 1500 },
+    { w: 'b', t: 'user',  html: '<span class="p">❯</span> ask him: can we squeeze the hotfix in today too?' },
+    { w: 'b', t: 'sent',  html: '↳ 📤 Sent to Sam — "Can we squeeze the hotfix in today too?"', d: 900 },
+    { w: 'a', t: 'sender', html: '<span class="env">📨</span> Niels · #2', d: 600 },
+    { w: 'a', t: 'quote', html: 'can we squeeze the hotfix in today too?', d: 450 },
+    { w: 'a', t: 'sent',  html: '↳ 📤 sent as your assistant — "I\'ll check with Samuel and get back to you."', d: 900 },
+    { w: 'a', t: 'warn',  html: '↳ ⚠️ needs you: Niels wants the hotfix out today', d: 1000 },
+    { w: 'b', t: 'sender', html: '<span class="env">📨</span> Sam\'s assistant · #2', d: 600 },
+    { w: 'b', t: 'quote', html: 'I\'ll check with Samuel and get back to you.', d: 900 },
+    { w: 'b', t: 'user',  html: '<span class="p">❯</span> <span class="caret"></span>' }
   ];
-  function cls(t) { return t === 'user' ? 't-line' : t === 'sender' ? 't-line card-sender' : 't-line ' + t; }
-  function winOf(l) { return l.w === 'b' ? demoB : demoA; }
+  var idleA = null;
+  function cls(t) { return t === 'user' || t === 'idle' ? 't-line' : t === 'sender' ? 't-line card-sender' : 't-line ' + t; }
+  function place(l) {
+    /* samuel's idle prompt stays pinned at the bottom: once it exists, every
+       later line in window A lands ABOVE it — the desk answers, nobody types */
+    var d = document.createElement('div');
+    d.className = cls(l.t);
+    var win = l.w === 'b' ? demoB : demoA;
+    if (win === demoA && idleA) win.insertBefore(d, idleA); else win.appendChild(d);
+    if (l.t === 'idle') { d.innerHTML = '<span class="p">❯</span> <span class="caret"></span>'; idleA = d; }
+    return d;
+  }
   if (reduced || touch) {
-    SCRIPT.forEach(function (l) { var d = document.createElement('div'); d.className = cls(l.t); d.innerHTML = l.html; winOf(l).appendChild(d); });
+    SCRIPT.forEach(function (l) { var d = place(l); if (l.t !== 'idle') d.innerHTML = l.html; });
+    idleA = null;
   } else {
     var li = 0;
     function typeLine(el, html, done) {
@@ -468,23 +635,31 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
         else { el.querySelector('.caret').remove(); setTimeout(done, 750); }
       })();
     }
-    (function next() {
-      if (li >= SCRIPT.length) {
-        return setTimeout(function () { demoA.innerHTML = ''; demoB.innerHTML = ''; li = 0; next(); }, 9000);
-      }
-      var l = SCRIPT[li++], d = document.createElement('div');
-      d.className = cls(l.t); winOf(l).appendChild(d);
+    function next() {
+      /* plays once: the finished transcript stays put (the idle carets keep blinking) */
+      if (li >= SCRIPT.length) return;
+      var l = SCRIPT[li++], d = place(l);
+      if (l.t === 'idle') return setTimeout(next, l.d || 500);
       if (l.t === 'user' && li < SCRIPT.length) typeLine(d, l.html, next);
-      else { d.innerHTML = l.html; setTimeout(next, l.t === 'agent' ? 1600 : 1000); }
-    })();
+      else { d.innerHTML = l.html; setTimeout(next, l.d || (l.t === 'agent' ? 1600 : 1000)); }
+    }
+    var termsStarted = false;
+    if ('IntersectionObserver' in window) {
+      var tio = new IntersectionObserver(function (es) {
+        es.forEach(function (e) { if (e.isIntersecting && !termsStarted) { termsStarted = true; next(); tio.disconnect(); } });
+      }, { threshold: .25 });
+      tio.observe(demoA);
+    } else next();
   }
 
   /* ---- live feeds: mode cards + first-run demo, typed like the hero ----
      Generic player: `t` lines type char-by-char behind their prompt `pre`;
      `h` lines land whole after `d` ms. Starts when scrolled into view,
-     loops with a long hold on the finished state. Static render for
-     reduced-motion / touch. */
-  function livefeed(id, L) {
+     plays once, and holds the finished state (never resets). Static render
+     for reduced-motion / touch. */
+  function livefeed(id, L, delay) {
+    /* `delay` staggers the start after the box scrolls into view — side-by-side
+       terminals come alive left to right instead of all at once */
     var box = document.getElementById(id);
     if (!box) return;
     function put(c, h) { var p = document.createElement('p'); if (c) p.className = c; p.innerHTML = h; box.appendChild(p); return p; }
@@ -494,7 +669,8 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
     }
     var li = 0;
     function next() {
-      if (li >= L.length) { return setTimeout(function () { box.innerHTML = ''; li = 0; next(); }, 12000); }
+      /* plays once: hold the finished state, never reset */
+      if (li >= L.length) return;
       var l = L[li++];
       if (l.t != null) {
         var p = put(l.c, (l.pre || '') + '<span class="typed"></span><span class="caret"></span>');
@@ -505,14 +681,24 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
         })();
       } else { put(l.c, l.h); setTimeout(next, l.d || 1000); }
     }
+    function start() { if (delay) setTimeout(next, delay); else next(); }
     var started = false;
     if ('IntersectionObserver' in window) {
       var io = new IntersectionObserver(function (es) {
-        es.forEach(function (e) { if (e.isIntersecting && !started) { started = true; next(); io.disconnect(); } });
+        es.forEach(function (e) { if (e.isIntersecting && !started) { started = true; start(); io.disconnect(); } });
       }, { threshold: .25 });
       io.observe(box);
-    } else next();
+    } else start();
   }
+  livefeed('feedPull', [
+    { c: 'fu', pre: '❯ ', t: 'any messages?' },
+    { c: 'fa', h: '📬 1 new message from Sam — want me to read it?', d: 1300 },
+    { c: 'fu', pre: '❯ ', t: 'read it' },
+    { c: 'fs', h: '<span class="env">📨</span> Sam · #1', d: 700 },
+    { c: 'fq', h: 'you around saturday? taking the boat out', d: 1300 },
+    { c: 'fu', pre: '❯ ', t: 'tell him I\'m in — what time?' },
+    { c: 'fr', h: '↳ 📤 Sent to Sam — "I\'m in — what time?"', d: 900 }
+  ]);
   livefeed('feedChat', [
     { c: 'fu', pre: '❯ ', t: 'chat' },
     { c: 'fa', h: '· listening…', d: 1400 },
@@ -536,25 +722,159 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
     { c: 'fr', h: '↳ 📤 Sent to Niels — "/v2/ingest — merged this morning."', d: 900 },
     { c: 'fr', h: '↳ 📤 Sent to Sam — "Yes — after lunch."', d: 900 }
   ]);
-  livefeed('feedAuto', [
-    { c: 'fu', pre: '❯ ', t: 'auto chat' },
-    { c: 'fs', h: '<span class="env">📨</span> Jonas · #1', d: 700 },
-    { c: 'fq', h: 'is the export API rate-limited?', d: 1200 },
-    { c: 'fr', h: '↳ 📤 sent as assistant — "Yes, 60 req/min per key."', d: 1500 },
-    { c: 'fs', h: '<span class="env">📨</span> Jonas · #2', d: 700 },
-    { c: 'fq', h: 'and what would enterprise pricing look like?', d: 1200 },
-    { c: 'fw', h: '↳ ⚠️ needs you: Jonas is asking about enterprise pricing', d: 1500 },
-    { c: 'fa', h: 'every reply shown as it goes out · "what did you handle?" replays the ledger', d: 1000 }
-  ]);
+  /* ---- go public: an endless shift at the open desk ----
+     A terminal you can't scroll: answered traffic streams up and out the top,
+     open tickets and your blinking prompt hold the bottom. Runs forever — the
+     desk answers what it can ground, parks what only you can decide, you clear
+     a ticket with one line at the prompt, the answer is noted to memory, and
+     when the same ask walks in again the desk handles it itself. The pools are
+     big enough that the cycling takes a while to notice; per-case asks
+     (invoices, cancellations) escalate every time, so the tray never dies. */
+  (function () {
+    var box = document.getElementById('feedPublic');
+    if (!box) return;
+    var CAST = [
+      ['Priya', 'Vd83k'], ['Jonas', 'Tr91p'], ['Mia', 'Qw41z'], ['Tom', 'Bn82r'], ['Sofia', 'Ke19m'],
+      ['Ravi', 'Zu73c'], ['Elin', 'Hp56d'], ['Marco', 'Ws30f'], ['Aya', 'Jd47t'], ['Ben', 'Xc91u']
+    ];
+    var QA = [
+      ['is there a free tier?', 'docs/pricing.md', '"Free for personal use, yes."'],
+      ['does it work with codex?', 'README', '"Any MCP CLI works — codex included."'],
+      ['do you have webhooks?', 'docs/webhooks.md', '"Yes — POST callbacks, sample in the docs."'],
+      ['can I self-host?', 'docs/deploy.md', '"Yes — docker compose up; guide in docs/deploy."'],
+      ['what node version do I need?', 'package.json', '"Node 22 or newer."'],
+      ['is SSO supported?', 'docs/sso.md', '"SAML and OIDC — setup lives in docs/sso."'],
+      ['how do I rotate an API key?', 'docs/keys.md', '"Settings → keys → rotate; the old key dies instantly."'],
+      ['where do I report bugs?', 'README', '"GitHub issues — there\'s a template."']
+    ];
+    /* [question, needs-you label, your typed reply, sent text, memory note, answer once learned]
+       note = null → a per-case ask (numbers vary): it escalates every time */
+    var TICKETS = [
+      ['any chance of a discount for 40 seats?', '40-seat discount ask', '15% at 40 seats — send terms', '"15% at that volume — terms on the way."', 'volume discount: 15% from 40 seats', '"15% from 40 seats — want the terms?"'],
+      ['can you extend our trial a week?', 'trial extension ask', 'sure — extend to friday', '"Done — your trial runs to Friday."', 'trials: extend a week on request', '"Sure — extended a week."'],
+      ['we need a DPA signed', 'DPA request', 'send the standard DPA', '"Sending our standard DPA — flag anything to change."', 'DPA asks: standard DPA goes out first', '"Sending the standard DPA — flag any changes."'],
+      ['can I get an invoice for order %o%?', 'invoice for order %o%', 'invoice sent — check inbox', '"Invoice for %o% sent — check your inbox."', null, null],
+      ['I\'d like to cancel my subscription', 'cancellation — worth a call?', 'offer a pause first', '"Before you go — want to pause instead? Sam can call you."', null, null]
+    ];
+    var pins = [], idleEl = null, seen = {}, castI = 0, qaI = 0, tkI = 0, msgN = 0, exN = 0, orderN = 1042;
+    var Q = [
+      { u0: 'auto chat read only public' },
+      { c: 'fa', h: '· doors open — new handles walk straight in · directory read-only', d: 1100 },
+      { idle: true, d: 700 }
+    ];
+    function el(c, h) { var p = document.createElement('p'); if (c) p.className = c; p.innerHTML = h; return p; }
+    function line(c, h) {
+      var p = el(c, h), anchor = pins.length ? pins[0].el : idleEl;
+      if (anchor) box.insertBefore(p, anchor); else box.appendChild(p);
+      while (box.children.length > 30) box.removeChild(box.firstChild);
+      return p;
+    }
+    function sender(who) {
+      var first = !seen[who[1]];
+      if (first) { seen[who[1]] = 1; Q.push({ c: 'fa', h: '↳ 👤 saved ' + who[0] + ' · ' + who[1] + (msgN === 0 ? ' — held backlog let in' : ''), d: 800 }); }
+      msgN++;
+      Q.push({ c: 'fs', h: '<span class="env">📨</span> ' + who[0] + (first ? ' (' + who[1] + ')' : '') + ' · #' + msgN, d: 600 });
+      return msgN;
+    }
+    function pushNext() {
+      if (pins.length >= 2) {
+        /* your turn: one line at the prompt clears the oldest ticket —
+           and if it's a policy answer, it's noted and never asked of you again */
+        var f = pins[0], tk = f.tk;
+        Q.push({ u: f.n + ': ' + tk[2], d: 500 });
+        Q.push({ c: 'fr', h: '↳ 📤 Sent to ' + f.who + ' — ' + tk[3], d: 1000 });
+        if (tk[4]) { Q.push({ c: 'fd', h: '↳ 📝 noted — "' + tk[4] + '" · grounds future answers', d: 1200 }); f.src.learned = true; }
+        Q.push({ unpin: true, d: 900 });
+        return;
+      }
+      var who = CAST[castI++ % CAST.length];
+      if (++exN % 3 === 0) {
+        var src = TICKETS[tkI++ % TICKETS.length];
+        var n = sender(who);
+        if (src.learned) {
+          /* the same ask, cycles later: answered from your note, no ticket */
+          Q.push({ c: 'fq', h: src[0], d: 900 });
+          Q.push({ c: 'fa', h: '· known — your note from last time', d: 800 });
+          Q.push({ c: 'fr', h: '↳ 📤 sent as your assistant — ' + src[5], d: 1300 });
+          return;
+        }
+        var o = (orderN += 37);
+        var tk = src.map(function (x) { return typeof x === 'string' ? x.replace(/%o%/g, o) : x; });
+        Q.push({ c: 'fq', h: tk[0], d: 900 });
+        Q.push({ c: 'fr', h: '↳ 📤 sent as your assistant — "I\'ll check with Sam and get back to you."', d: 1000 });
+        Q.push({ pin: true, h: '↳ ⚠️ needs you: ' + tk[1] + ' — ' + who[0] + ' (#' + n + ')', who: who[0], n: n, tk: tk, src: src, d: 1300 });
+        return;
+      }
+      var qa = QA[qaI++ % QA.length];
+      sender(who);
+      Q.push({ c: 'fq', h: qa[0], d: 900 });
+      Q.push({ c: 'fa', h: '· grounded: ' + qa[1], d: 800 });
+      Q.push({ c: 'fr', h: '↳ 📤 sent as your assistant — ' + qa[2], d: 1200 });
+    }
+    function applyStatic(b) {
+      if (b.u0 != null) line('fu', '❯ ' + b.u0);
+      else if (b.idle) { idleEl = el('fu', '❯ <span class="caret"></span>'); box.appendChild(idleEl); }
+      else if (b.u != null) line('fu', '❯ ' + b.u);
+      else if (b.unpin) { var f = pins.shift(); if (f) f.el.remove(); }
+      else if (b.pin) { var p = el('fw', b.h); if (idleEl) box.insertBefore(p, idleEl); else box.appendChild(p); pins.push({ el: p, who: b.who, n: b.n, tk: b.tk, src: b.src }); }
+      else line(b.c, b.h);
+    }
+    if (reduced || touch) {
+      /* no motion: render a mid-shift snapshot — traffic above, a ticket and
+         the prompt holding the bottom */
+      for (var k = 0; k < 34; k++) { if (!Q.length) pushNext(); applyStatic(Q.shift()); }
+      return;
+    }
+    function typeAt(text, done) {
+      idleEl.innerHTML = '❯ <span class="typed"></span><span class="caret"></span>';
+      var t = idleEl.querySelector('.typed'), i = 0;
+      (function ch() {
+        if (i < text.length) { t.textContent += text[i++]; setTimeout(ch, 42 + Math.random() * 50); }
+        else setTimeout(function () { line('fu', '❯ ' + text); idleEl.innerHTML = '❯ <span class="caret"></span>'; done(); }, 550);
+      })();
+    }
+    function step() {
+      if (!Q.length) pushNext();
+      var b = Q.shift();
+      if (b.u0 != null) {
+        var p = line('fu', '❯ <span class="typed"></span><span class="caret"></span>');
+        var t = p.querySelector('.typed'), i = 0;
+        (function ch() {
+          if (i < b.u0.length) { t.textContent += b.u0[i++]; setTimeout(ch, 45 + Math.random() * 55); }
+          else { p.querySelector('.caret').remove(); setTimeout(step, 700); }
+        })();
+        return;
+      }
+      if (b.idle) { idleEl = el('fu', '❯ <span class="caret"></span>'); box.appendChild(idleEl); return setTimeout(step, b.d || 600); }
+      if (b.u != null) return typeAt(b.u, function () { setTimeout(step, b.d || 600); });
+      if (b.unpin) { var f = pins.shift(); if (f) f.el.remove(); return setTimeout(step, b.d || 700); }
+      if (b.pin) {
+        var pf = el('fw', b.h);
+        if (idleEl) box.insertBefore(pf, idleEl); else box.appendChild(pf);
+        pins.push({ el: pf, who: b.who, n: b.n, tk: b.tk, src: b.src });
+        return setTimeout(step, b.d || 1000);
+      }
+      line(b.c, b.h);
+      setTimeout(step, b.d || 900);
+    }
+    var started = false;
+    if ('IntersectionObserver' in window) {
+      var io = new IntersectionObserver(function (es) {
+        es.forEach(function (e) { if (e.isIntersecting && !started) { started = true; step(); io.disconnect(); } });
+      }, { threshold: .25 });
+      io.observe(box);
+    } else step();
+  })();
   livefeed('firstrun', [
     { c: 'in', pre: '<span class="p">❯</span>', t: 'write Sam at qL7fA: hey, I\'m on cli-chat' },
     { c: '', h: '● Quick setup first — what\'s your email?', d: 1400 },
-    { c: 'in', pre: '<span class="p">❯</span>', t: 'mette@holm.dk' },
-    { c: '', h: '● Login link sent — click it and I\'ll finish up… done. Your full name?', d: 1600 },
+    { c: 'in', pre: '<span class="p">❯</span>', t: 'mette.holm@' + mailhost() },
+    { c: '', h: '● Sent you a login link — click it and I\'ll wait… you\'re in! What\'s your full name?', d: 1600 },
     { c: 'in', pre: '<span class="p">❯</span>', t: 'Mette Holm' },
     { c: 'dim ind', h: 'Called cli-chat <b>2</b> times', d: 900 },
     { c: 'g', h: '● You\'re set up as Mette Holm — your handle is <span class="h">Xk4Pq</span>. Share it and anyone can write you.', d: 1400 },
     { c: 'ind sent', h: '↳ 📤 Sent to Sam — "hey, I\'m on cli-chat"', d: 1200 },
+    { c: 'ind', h: '↳ 👤 saved Sam · <span class="h">qL7fA</span> — "write Sam" works from now on', d: 1000 },
     { c: 'in', pre: '<span class="p">❯</span>', t: 'who are my contacts?' },
     { c: '', h: '● I\'ll pull up your address book.', d: 900 },
     { c: 'dim ind g', h: 'Called cli-chat <b>1</b> time', d: 900 },

@@ -77,7 +77,7 @@ console.log(`accounts: Sam=${samAcct.handle} Niels=${nielsAcct.handle}`);
 
 // Niels saves Sam so he can resolve the sender and reply (sealed boxes don't
 // carry the sender's box key — it comes from the contact book).
-await call(niels, "add_contact", { name: "Sam", key: samAcct.fullKey });
+await call(niels, "update_contact", { action: "add", name: "Sam", key: samAcct.fullKey });
 
 // 1. Sam → Niels by code (saves Niels on Sam's side).
 const sent = await call(sam, "send_message", {
@@ -92,9 +92,9 @@ console.log(`1. Sam → send_message: sealed + sent to ${sent.to.name}`);
 const avail = await call(niels, "messages_available");
 assert.equal(avail.count, 1, "Niels should have 1 message");
 console.log(`2. Niels → messages_available: ${avail.count} from ${avail.messages[0]?.from}`);
-const read = await call(niels, "read_message", { id: avail.messages[0].id });
+const read = await call(niels, "read_messages", { id: avail.messages[0].id });
 assert.equal(read.body, "yo let's plan a LAN, when are you free?", "body should round-trip");
-console.log(`3. Niels → read_message: "${read.body}"`);
+console.log(`3. Niels → read_messages(id): "${read.body}"`);
 
 // 4. Niels replies, threaded.
 const reply = await call(niels, "send_message", {
@@ -107,10 +107,10 @@ console.log(`4. Niels → reply: sealed back to Sam`);
 // 5. Sam receives the threaded reply.
 const samInbox = await call(sam, "messages_available");
 assert.equal(samInbox.count, 1, "Sam should have the reply");
-const samRead = await call(sam, "read_message", { id: samInbox.messages[0].id });
+const samRead = await call(sam, "read_messages", { id: samInbox.messages[0].id });
 assert.equal(samRead.body, "Free Sat + Sun next week — lock it in.");
 assert.equal(samRead.in_reply_to, sent.id, "reply should be threaded to the original");
-console.log(`5. Sam → read_message: "${samRead.body}" (threaded=${samRead.in_reply_to === sent.id})`);
+console.log(`5. Sam → read_messages(id): "${samRead.body}" (threaded=${samRead.in_reply_to === sent.id})`);
 
 // 6. The feedback seed: a brand-new account is born with the project's feedback
 // contact when the configured handle resolves. A throwaway account stands in
