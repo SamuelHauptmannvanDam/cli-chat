@@ -91,7 +91,10 @@ h1 {
 /* ---- terminal demo: the SAME conversation from both ends ----
    (window chrome itself — .term/.term-bar — is shared, in site.css) */
 .terms { margin-top: 72px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
-.term-body { padding: 22px 22px 26px; min-height: 260px; font-size: 13px; line-height: 1.9; }
+.term-body { padding: 22px 22px 26px; height: 400px; font-size: 13px; line-height: 1.9; }
+/* terminals never grow: fixed to their finished size, scrolling inside like a
+   real terminal (players keep them pinned to the bottom) */
+.feed, .cc, .term-body { overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
 .t-line { white-space: pre-wrap; word-break: break-word; }
 .t-line .p { color: var(--green); }
 .t-line.agent { color: var(--dim); }
@@ -271,7 +274,9 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
 @media (max-width: 800px) {
   .steps, .steps.four, .grid, .modes, .terms { grid-template-columns: 1fr; }
   .mode { grid-template-columns: 1fr; }
-  .term-body { min-height: 0; }
+  /* phones render transcripts statically — let the boxes fit their content */
+  .feed, .cc, .term-body { height: auto !important; }
+  .feed.ticker { height: 442px !important; }
   .hero { padding-top: 64px; }
   section.wrap { min-height: auto; margin-top: 10vh; padding: 120px 24px 70px; scroll-margin-top: -56px; }
   /* Tight space: version, task count and "● Bash" all keep their place;
@@ -323,7 +328,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
     </div>
     <div class="term">
       <div class="term-bar"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span>you@laptop — claude — 80×24</span></div>
-      <div class="feed" id="reel" style="min-height: 300px;"></div>
+      <div class="feed" id="reel" style="height: 300px;"></div>
     </div>
   </div>
 </header>
@@ -362,7 +367,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
     </div>
     <div class="term">
       <div class="term-bar"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span>mette@laptop — copilot — 80×24</span></div>
-      <div class="cc" id="firstrun" style="min-height: 492px;"></div>
+      <div class="cc" id="firstrun" style="height: 564px;"></div>
     </div>
   </div>
 </section>
@@ -381,7 +386,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
       </div>
       <div class="term">
         <div class="term-bar"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span>you@laptop — claude — 80×24</span></div>
-        <div class="feed" id="feedPull" style="min-height: 210px;"></div>
+        <div class="feed" id="feedPull" style="height: 210px;"></div>
       </div>
     </div>
     <div class="card mode">
@@ -393,7 +398,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
       </div>
       <div class="term">
         <div class="term-bar"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span>you@laptop — codex — 80×24</span></div>
-        <div class="feed" id="feedChat" style="min-height: 232px;"></div>
+        <div class="feed" id="feedChat" style="height: 254px;"></div>
       </div>
     </div>
     <div class="card mode">
@@ -405,7 +410,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
       </div>
       <div class="term">
         <div class="term-bar"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span>you@laptop — gemini — 80×24</span></div>
-        <div class="feed" id="feedDraft" style="min-height: 254px;"></div>
+        <div class="feed" id="feedDraft" style="height: 280px;"></div>
       </div>
     </div>
     <div class="card mode" style="display: block;">
@@ -668,6 +673,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
     var win = l.w === 'b' ? demoB : demoA;
     if (win === demoA && idleA) win.insertBefore(d, idleA); else win.appendChild(d);
     if (l.t === 'idle') { d.innerHTML = '<span class="p">❯</span> <span class="caret"></span>'; idleA = d; }
+    win.scrollTop = win.scrollHeight;
     return d;
   }
   if (reduced || touch) {
@@ -682,6 +688,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
       demoA.innerHTML = ''; demoB.innerHTML = ''; idleA = null;
       SCRIPT.forEach(function (l) { var d = place(l); if (l.t !== 'idle') d.innerHTML = l.html; });
       idleA = null;
+      demoA.scrollTop = demoA.scrollHeight; demoB.scrollTop = demoB.scrollHeight;
     }
     function typeLine(el, html, done) {
       /* type only plain-text lines char-by-char; html lines land whole */
@@ -692,7 +699,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
       var t = el.querySelector('.typed');
       (function ch() {
         if (demoDone) return;
-        if (i < text.length) { t.textContent += text[i++]; setTimeout(ch, 26 + Math.random() * 30); }
+        if (i < text.length) { t.textContent += text[i++]; el.parentNode.scrollTop = el.parentNode.scrollHeight; setTimeout(ch, 26 + Math.random() * 30); }
         else { el.querySelector('.caret').remove(); setTimeout(done, 750); }
       })();
     }
@@ -726,7 +733,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
        terminals come alive left to right instead of all at once */
     var box = document.getElementById(id);
     if (!box) return;
-    function put(c, h) { var p = document.createElement('p'); if (c) p.className = c; p.innerHTML = h; box.appendChild(p); return p; }
+    function put(c, h) { var p = document.createElement('p'); if (c) p.className = c; p.innerHTML = h; box.appendChild(p); box.scrollTop = box.scrollHeight; return p; }
     if (reduced || touch) {
       L.forEach(function (l) { put(l.c, l.t != null ? (l.pre || '') + l.t : l.h); });
       return;
@@ -748,7 +755,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
         var tt = p.querySelector('.typed'), i = 0;
         (function ch() {
           if (done) return;
-          if (i < l.t.length) { tt.textContent += l.t[i++]; setTimeout(ch, 22 + Math.random() * 26); }
+          if (i < l.t.length) { tt.textContent += l.t[i++]; box.scrollTop = box.scrollHeight; setTimeout(ch, 22 + Math.random() * 26); }
           else { p.querySelector('.caret').remove(); setTimeout(next, 750); }
         })();
       } else { put(l.c, l.h); setTimeout(next, l.d || 1000); }
@@ -811,7 +818,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
     if (!box) return;
     var lis = steps ? [].slice.call(steps.children) : [];
     function light(i) { lis.forEach(function (el, k) { el.classList.toggle('live', k === i); }); }
-    function put(c, h) { var p = document.createElement('p'); if (c) p.className = c; p.innerHTML = h; box.appendChild(p); return p; }
+    function put(c, h) { var p = document.createElement('p'); if (c) p.className = c; p.innerHTML = h; box.appendChild(p); box.scrollTop = box.scrollHeight; return p; }
     function render(i) {
       box.innerHTML = '';
       REEL[i].forEach(function (l) { put(l.c, l.t != null ? (l.pre || '') + l.t : l.h); });
@@ -838,7 +845,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
           var tt = p.querySelector('.typed'), ci = 0;
           (function ch() {
             if (token !== run) return;
-            if (ci < l.t.length) { tt.textContent += l.t[ci++]; setTimeout(ch, 22 + Math.random() * 26); }
+            if (ci < l.t.length) { tt.textContent += l.t[ci++]; box.scrollTop = box.scrollHeight; setTimeout(ch, 22 + Math.random() * 26); }
             else { p.querySelector('.caret').remove(); setTimeout(next, 750); }
           })();
         } else { put(l.c, l.h); setTimeout(next, l.d || 1000); }
