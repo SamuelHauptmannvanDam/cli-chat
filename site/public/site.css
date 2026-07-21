@@ -15,31 +15,13 @@ body::after {
 .agenda {
   position: fixed; left: 28px; top: 50%; transform: translateY(-50%);
   z-index: 40; display: none; flex-direction: column; gap: 15px;
-  font-size: 11.5px; letter-spacing: .05em;
+  font-size: 16px; letter-spacing: .02em;
 }
 @media (min-width: 1280px) { .agenda { display: flex; } }
-/* Hovering the nav blurs the whole page behind it, so zoomed links can
-   overlap the content column and stay readable — the nav becomes the focus,
-   everything else recedes. */
-.agenda::before {
-  content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
-  -webkit-backdrop-filter: blur(16px) brightness(.75);
-  backdrop-filter: blur(16px) brightness(.75);
-  opacity: 0; transition: opacity .45s ease;
-}
-/* slow bloom in (hover state's transition governs entry), quicker fade out */
-.agenda:hover::before { opacity: 1; transition: opacity 1.3s ease; }
-.agenda a:hover { opacity: .7; }
+.agenda a:hover { opacity: 1; }
 .agenda a.active { opacity: 1; color: var(--amber); }
 .agenda a .idx { color: var(--faint); margin-right: 9px; }
 .agenda a.active .idx { color: var(--amber); }
-/* Dock zoom: site.js sets per-link transform/opacity from cursor distance.
-   Id selector so the later-loading page rules (same class specificity) can't
-   drop the transform out of the transition list. */
-#agenda a {
-  transform-origin: left center; will-change: transform;
-  transition: transform .16s ease-out, opacity .25s, color .25s;
-}
 .kicker b { color: var(--green); font-weight: 400; }
 h1 .prompt { color: var(--green); }
 h1 .cmd { color: var(--ink); }
@@ -61,7 +43,7 @@ h1 .arg { color: var(--amber); }
 /* terminal window chrome — shared by every terminal-style animation/transcript
    (landing dual demo, mode feeds, first-run, playbook feeds) */
 .term {
-  border: 1px solid var(--line); background: rgba(18, 16, 12, .92);
+  border: 1px solid var(--line); background: rgba(26, 23, 18, .92);
   box-shadow: 0 30px 80px rgba(0,0,0,.5), 0 0 0 1px rgba(245,167,66,.04);
 }
 .term-bar {

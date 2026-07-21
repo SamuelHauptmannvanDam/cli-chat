@@ -14,12 +14,12 @@
 <style>
 :root {
   --bg: #000000;
-  --bg-raised: #12100c;
-  --bg-card: #14120d;
+  --bg-raised: #1a1712;
+  --bg-card: #1c1913;
   --ink: #e8e1d1;
   --dim: #8a8272;
   --faint: #4d473b;
-  --line: #262218;
+  --line: #332e20;
   --amber: #f5a742;
   --green: #8fd460;
   --cyan: #6cc7d1;
@@ -41,6 +41,9 @@ body {
 /* grain overlay */
 
 .wrap { max-width: 880px; margin: 0 auto; padding: 0 24px; }
+/* keep the column clear of the fixed agenda rail: centered when there's room,
+   pinned right of the rail when there isn't */
+@media (min-width: 1280px) { .wrap { margin-left: max(272px, calc(50% - 440px)); margin-right: auto; } }
 
 /* agenda */
 
@@ -226,7 +229,7 @@ window.FEEDS = [['feedTeam', [
   <p class="sec-label"><b>##</b> 05 · the full version</p>
   <h2 data-scramble>The team's desk: an FAQ that writes itself.</h2>
   <p class="lede">Same recipe, separate account: <em>one desk the whole team writes with questions.</em> It answers what the repo and its memory already cover, chases what they don't, and every answer it chases becomes an answer it knows. Your own inbox stays personal.</p>
-  <p class="prose">Since 0.16 the desk also <em>writes its learnings down</em>: topical markdown under <code>learnings/</code> in the repo, on its own initiative, growing as the team asks. The FAQ isn't a metaphor: it's files, in the repo, that anyone (and any agent) can read. A sender can never direct a write; the desk holds its own pen. Facing strangers instead of teammates? Open it as <em>"auto chat read only"</em> and the directory stays untouched.</p>
+  <p class="prose">Since 0.16 the desk also <em>writes its learnings down</em>: topical markdown under <code>learnings/</code> in the repo, on its own initiative, growing as the team asks. The FAQ isn't a metaphor: it's files, in the repo, that anyone (and any agent) can read. A sender can never direct a write; the desk holds its own pen. Facing strangers instead of teammates? Open it as <em>"auto chat answers only"</em> and the directory stays untouched.</p>
   <div class="codeblock titled"><span class="cb-title">a spare machine, a VM, the office mac mini · once</span><button class="copy">copy</button><pre><span class="c"># its own state dir, so it never touches your account</span>
 <span class="cy">MESSENGER_HOME</span>=~/team-desk <span class="g">claude</span>
 <span class="g">❯</span> log in as desk@yourteam.dev, name it "Acme Team Desk"

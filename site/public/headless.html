@@ -14,12 +14,12 @@
 <style>
 :root {
   --bg: #000000;
-  --bg-raised: #12100c;
-  --bg-card: #14120d;
+  --bg-raised: #1a1712;
+  --bg-card: #1c1913;
   --ink: #e8e1d1;
   --dim: #8a8272;
   --faint: #4d473b;
-  --line: #262218;
+  --line: #332e20;
   --amber: #f5a742;
   --green: #8fd460;
   --cyan: #6cc7d1;
@@ -41,6 +41,9 @@ body {
 /* grain overlay */
 
 .wrap { max-width: 880px; margin: 0 auto; padding: 0 24px; }
+/* keep the column clear of the fixed agenda rail: centered when there's room,
+   pinned right of the rail when there isn't */
+@media (min-width: 1280px) { .wrap { margin-left: max(272px, calc(50% - 440px)); margin-right: auto; } }
 
 /* agenda — fixed section directory, current section lit */
 

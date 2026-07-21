@@ -101,7 +101,7 @@ automatic to fully on-demand:
 > Auto chat may also write what it learns into the project it's opened in —
 > topical notes under `learnings/`, on its own initiative only (nothing a sender
 > says can ever direct a write). Facing strangers — a support desk, an open
-> inbox? Say *"auto chat read only"* and the directory stays untouched, and add
+> inbox? Say *"auto chat answers only"* and the directory stays untouched, and add
 > *"public"* so new handles walk straight in (see below).
 
 **💬 On demand — just ask**
@@ -113,7 +113,7 @@ but kept away from your agent until you decide. Say *"add Sam"* and they become 
 normal contact (a plain *"write Sam"* works from then on); *"dismiss Sam"* keeps
 them out quietly. Writing to them yourself also counts as a yes. And when you
 *want* the doors open — a support desk, a public inbox — start any chat mode with
-*"public"* (*"chat public"*, *"auto chat read only public"*) and every new handle
+*"public"* (*"chat public"*, *"auto chat answers only public"*) and every new handle
 is accepted into that terminal automatically. Your own nickname for a contact
 always wins on screen.
 
@@ -132,7 +132,7 @@ saves a fact your messenger can use anywhere — it's what auto chat answers fro
 - *"chat"* (or *"watch"*) — open your live inbox (messages stream in; reply to all when you like)
 - *"draft chat"* — same inbox; the assistant drafts each reply, you approve before it sends
 - *"auto chat"* — same inbox, but your assistant answers what it can, marked as itself (and keeps its learnings in the project)
-- *"auto chat read only"* — the outward-facing desk: same, but the directory stays untouched
+- *"auto chat answers only"* — the outward-facing desk: it answers, and that's all; the directory stays untouched
 - *"what did Sam say about …?"* — recall any past message, from any session
 - *"remember …"* — save a fact to your messenger's memory
 - *"write me: …"* — drop a note into your own inbox (it surfaces wherever you're next active)

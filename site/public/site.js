@@ -20,42 +20,6 @@
   });
 })();
 
-/* Dock zoom on the agenda nav: links swell as the cursor nears them and
-   taper with distance, mac-Dock style. Positions come from offsetTop (layout,
-   unaffected by the transforms), so scaled neighbours don't shift the math. */
-(function () {
-  var nav = document.getElementById('agenda');
-  if (!nav) return;
-  if (!matchMedia('(hover: hover) and (pointer: fine)').matches ||
-      matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  var links = Array.prototype.slice.call(nav.querySelectorAll('a'));
-  if (!links.length) return;
-  var GROW = 0.65;  // extra scale at the cursor itself
-  // Influence field derived from the list's actual item spacing, LINEAR falloff:
-  // the hovered link gets the full effect, its immediate neighbours exactly half,
-  // and the second item out sits at the field's edge — no effect at all.
-  var spacing = links.length > 1
-    ? (links[links.length - 1].offsetTop - links[0].offsetTop) / (links.length - 1)
-    : 40;
-  var RADIUS = spacing * 2;
-  var probe = links.filter(function (a) { return !a.classList.contains('active'); })[0] || links[0];
-  var baseOp = parseFloat(getComputedStyle(probe).opacity) || 0.45;
-  nav.addEventListener('mousemove', function (e) {
-    var navTop = nav.getBoundingClientRect().top;
-    links.forEach(function (a) {
-      var mid = navTop + a.offsetTop + a.offsetHeight / 2;
-      var d = Math.abs(e.clientY - mid);
-      var f = d >= RADIUS ? 0 : 1 - d / RADIUS;
-      a.style.transform = f ? 'scale(' + (1 + GROW * f).toFixed(3) + ')' : '';
-      var base = a.classList.contains('active') ? 1 : baseOp;
-      a.style.opacity = f ? (base + (1 - base) * f).toFixed(3) : '';
-    });
-  });
-  nav.addEventListener('mouseleave', function () {
-    links.forEach(function (a) { a.style.transform = ''; a.style.opacity = ''; });
-  });
-})();
-
 /* ---- livefeed player for playbook pages ----
    A page declares its animated terminals inline, before this deferred file runs:
      window.FEEDS = [[boxId, lines, startDelayMs?], ...]
@@ -93,7 +57,7 @@
         var p = put(l, (l.pre || '') + '<span class="typed"></span><span class="caret"></span>');
         var tt = p.querySelector('.typed'), i = 0;
         (function ch() {
-          if (i < l.t.length) { tt.textContent += l.t[i++]; setTimeout(ch, 45 + Math.random() * 55); }
+          if (i < l.t.length) { tt.textContent += l.t[i++]; setTimeout(ch, 22 + Math.random() * 26); }
           else { p.querySelector('.caret').remove(); setTimeout(next, 750); }
         })();
       } else { put(l, l.h); setTimeout(next, l.d || 1000); }

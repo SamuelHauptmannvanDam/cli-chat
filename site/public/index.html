@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>cli-chat: your coding agent is your messenger</title>
-<meta name="description" content="Messaging for coding-agent CLIs. Tell your agent 'write Sam: …' and it delivers, then reads replies back in your terminal. Claude Code, Codex, Copilot, Gemini CLI, any MCP CLI.">
-<meta property="og:title" content="cli-chat: your coding agent is your messenger">
-<meta property="og:description" content="Messaging for coding-agent CLIs. One npx away.">
+<title>cli-chat: your coding agent is your secretary</title>
+<meta name="description" content="Messaging where the agent does the work: it writes anyone, answers what it can ground, runs errands through your network, and only interrupts when something needs you. Claude Code, Codex, Copilot, Gemini CLI, any MCP CLI.">
+<meta property="og:title" content="cli-chat: your coding agent is your secretary">
+<meta property="og:description" content="You just hired a secretary. One npx away.">
 <meta property="og:url" content="https://cli-chat.dev">
 <meta property="og:type" content="website">
 <meta property="og:image" content="https://cli-chat.dev/og.png">
@@ -19,12 +19,12 @@
 <style>
 :root {
   --bg: #000000;
-  --bg-raised: #12100c;
-  --bg-card: #14120d;
+  --bg-raised: #1a1712;
+  --bg-card: #1c1913;
   --ink: #e8e1d1;
   --dim: #8a8272;
-  --faint: #6e6555;
-  --line: #262218;
+  --faint: #877d6a;
+  --line: #332e20;
   --amber: #f5a742;
   --green: #8fd460;
   --cyan: #6cc7d1;
@@ -39,7 +39,7 @@ body {
   background-size: 24px 24px;
   color: var(--ink);
   font-family: var(--mono);
-  font-size: 14px;
+  font-size: 16px;
   line-height: 1.7;
   overflow-x: hidden;
   cursor: crosshair;
@@ -51,7 +51,7 @@ body {
 
 /* agenda — fixed section directory, current section lit */
 
-.agenda a { color: var(--ink); opacity: .45; border-bottom: none; transition: opacity .25s, color .25s; }
+.agenda a { color: var(--ink); opacity: .56; border-bottom: none; transition: opacity .25s, color .25s; }
 
 /* ---- hero ---- */
 .hero {
@@ -70,7 +70,7 @@ h1 {
 }
 .sub {
   font-family: var(--serif); font-size: 21px; font-weight: 400; line-height: 1.55;
-  color: var(--dim); max-width: 620px; margin-bottom: 40px;
+  color: var(--dim); margin-bottom: 40px;
 }
 .cta-row { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; }
 .btn {
@@ -113,14 +113,17 @@ section.wrap {
   padding: 110px 24px;
 }
 h2 { font-family: var(--display); font-size: clamp(20px, 3vw, 30px); font-weight: 700; line-height: 1.35; margin-bottom: 26px; }
-.lede { font-family: var(--serif); font-size: 18px; color: var(--dim); max-width: 640px; line-height: 1.6; }
+/* anchor landings: cancel the section's internal top padding (scroll rhythm),
+   leaving the same 70px of air the hero gives its kicker line */
+section.wrap { scroll-margin-top: -40px; }
+.lede { font-family: var(--serif); font-size: 19px; color: var(--dim); max-width: 680px; line-height: 1.6; }
 
 /* ---- card component: one system for every card on the page ----
    .card            bordered box; optional .tag = floating title chip on the border
    div .card:hover  border whisper (content, not clickable)
    a.card:hover     border + background light-up + amber title (clickable) */
 .card {
-  position: relative; border: 1px solid var(--line); background: var(--bg);
+  position: relative; border: 1px solid var(--line); background: var(--bg-card);
   transition: background .2s, border-color .2s, box-shadow .2s;
 }
 /* hover: amber bloom + the border draws itself from the top-left corner,
@@ -142,7 +145,7 @@ h2 { font-family: var(--display); font-size: clamp(20px, 3vw, 30px); font-weight
 .card:hover::before { transition: width .22s ease-out, height .22s ease-out .22s, opacity 0s; }
 .card:hover::after  { transition: height .22s ease-out, width .22s ease-out .22s, opacity 0s; }
 a.card { display: block; color: inherit; }
-a.card:hover { background: var(--bg-card); }
+a.card:hover { background: #1e1a13; }
 a.card:hover h3 { color: var(--amber); }
 /* clickable cards wear their link: .go is a ghost button pinned bottom-right,
    amber at rest, filling on hover (the whole card stays the hit area) */
@@ -165,10 +168,11 @@ a.card:hover .go { background: var(--amber); border-color: var(--amber); color: 
 
 /* steps */
 .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 36px; }
+.steps.four { grid-template-columns: repeat(2, 1fr); }
 .step { padding: 28px 24px; }
 .step .n { color: var(--amber); font-size: 12px; margin-bottom: 14px; }
-.step h3 { font-size: 14px; font-weight: 600; margin-bottom: 10px; }
-.step p { font-family: var(--serif); font-size: 15.5px; color: var(--dim); line-height: 1.55; }
+.step h3 { font-size: 15px; font-weight: 600; margin-bottom: 10px; }
+.step p { font-family: var(--serif); font-size: 16px; color: var(--dim); line-height: 1.55; }
 .step p + p { margin-top: 10px; }
 .step .dir { color: var(--amber); font-weight: 600; font-size: 12px; letter-spacing: .04em; }
 .step code { font-family: var(--mono); font-size: 11.5px; color: var(--green); background: var(--bg-raised); padding: 2px 6px; }
@@ -177,7 +181,8 @@ a.card:hover .go { background: var(--amber); border-color: var(--amber); color: 
 .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 36px; }
 .cell { padding: 26px 22px; }
 .cell .lbl { font-size: 11px; color: var(--green); letter-spacing: .08em; margin-bottom: 12px; }
-.cell p { font-family: var(--serif); font-size: 15px; color: var(--dim); line-height: 1.5; }
+.cell h3 { font-size: 15px; }
+.cell p { font-family: var(--serif); font-size: 16px; color: var(--dim); line-height: 1.5; }
 .cell .go { display: inline-block; font-family: var(--mono); font-size: 11px; color: var(--faint); margin-top: 12px; transition: color .15s; font-weight: 400; }
 /* front-desk cards: a live desk runs inside each */
 .cell .term { margin-top: 18px; }
@@ -188,19 +193,24 @@ a.card:hover .go { background: var(--amber); border-color: var(--amber); color: 
 .modes { display: flex; flex-direction: column; gap: 32px; margin-top: 36px; }
 .mode {
   display: grid; grid-template-columns: 1fr 1.5fr; gap: 28px;
-  background: rgba(18, 16, 12, .92); padding: 28px 26px;
+  background: rgba(26, 23, 18, .92); padding: 28px 26px;
 }
-.mode h3 { font-size: 15px; font-weight: 600; margin: 6px 0 10px; }
-.mode-info > p { font-family: var(--serif); font-size: 15.5px; color: var(--dim); line-height: 1.55; }
+.mode h3 { font-size: 16px; font-weight: 600; margin: 6px 0 10px; }
+.mode-info > p { font-family: var(--serif); font-size: 16px; color: var(--dim); line-height: 1.55; }
 .mode-info > p + p { margin-top: 10px; }
 .mode-steps { list-style: none; margin: 12px 0; display: flex; flex-direction: column; gap: 6px; }
-.mode-steps li { font-family: var(--serif); font-size: 15px; color: var(--dim); line-height: 1.5; padding-left: 18px; position: relative; }
+.mode-steps li { font-family: var(--serif); font-size: 16px; color: var(--dim); line-height: 1.5; padding-left: 18px; position: relative; }
 .mode-steps li::before { content: "›"; position: absolute; left: 2px; color: var(--amber); }
 .mode-steps.result li::before { content: "→"; }
 ol.mode-steps { counter-reset: step; margin-bottom: 20px; }
 ol.mode-steps li { counter-increment: step; padding-left: 24px; }
 ol.mode-steps li::before { content: counter(step) "."; }
 .mode-info .switch-note { font-family: var(--mono); font-size: 11px; color: var(--faint); margin-top: 14px; }
+/* the reel: the vignette currently playing lights its line; the lines are
+   hoverable — hover plays that beat and pins the finished transcript */
+.reel-steps li { transition: color .35s; cursor: pointer; }
+.reel-steps li:hover { color: var(--ink); }
+.reel-steps li.live { color: var(--amber); }
 .feed {
   font-size: 12px; line-height: 1.85; background: rgba(11, 10, 8, .9); border: 1px solid var(--line);
   padding: 16px 18px; align-self: start;
@@ -234,7 +244,7 @@ ol.mode-steps li::before { content: counter(step) "."; }
 .installbox { margin-top: 0; max-width: none; }
 .installbox pre { font-size: 13px; }
 .installbox code { color: var(--green); }
-.after-note { font-family: var(--serif); font-size: 16px; color: var(--dim); margin-top: 26px; max-width: 620px; line-height: 1.6; }
+.after-note { font-family: var(--serif); font-size: 16px; color: var(--dim); margin-top: 26px; max-width: 660px; line-height: 1.6; }
 .after-note em { color: var(--ink); }
 
 /* footer */
@@ -244,12 +254,26 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
 
 .statusbar .ver { color: var(--green); }
 
+/* ---- wide layout (the rail is visible): fixed gutter left for the agenda,
+   prose stays on its measure, product fills the rest of the glass ---- */
+@media (min-width: 1280px) {
+  .wrap, section.wrap, header.hero { max-width: 2000px; margin: 0; }
+  .wrap { padding-left: 272px; padding-right: 56px; }
+  section.wrap { padding: 110px 56px 110px 272px; }
+  header.hero { padding: 70px 56px 70px 272px; }
+  /* four public cards in one row when there's room */
+  .steps.four { grid-template-columns: repeat(4, 1fr); }
+  /* feeds may breathe a little at this size; the mini desks stay tiny */
+  .feed, .cc { font-size: 13px; }
+  .cell .term .feed { font-size: 11px; }
+}
+
 @media (max-width: 800px) {
-  .steps, .grid, .modes, .terms { grid-template-columns: 1fr; }
+  .steps, .steps.four, .grid, .modes, .terms { grid-template-columns: 1fr; }
   .mode { grid-template-columns: 1fr; }
   .term-body { min-height: 0; }
   .hero { padding-top: 64px; }
-  section.wrap { min-height: auto; margin-top: 10vh; padding: 120px 24px 70px; }
+  section.wrap { min-height: auto; margin-top: 10vh; padding: 120px 24px 70px; scroll-margin-top: -56px; }
   /* Tight space: version, task count and "● Bash" all keep their place;
      only the "(Listening for new messages)" parenthetical gives way. */
   .statusbar .seg-l { display: flex; align-items: baseline; min-width: 0; white-space: nowrap; }
@@ -269,19 +293,43 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
 </head>
 <body>
 <nav class="agenda" id="agenda">
-  <a href="#top" class="active"><span class="idx">00</span>install → first run</a>
-  <a href="#modes"><span class="idx">01</span>inbox → autopilot</a>
-  <a href="#public"><span class="idx">02</span>go public</a>
-  <a href="#desk"><span class="idx">03</span>front desk</a>
-  <a href="#context"><span class="idx">04</span>what you get</a>
-  <a href="#tools"><span class="idx">05</span>meet the tools</a>
-  <a href="#contact"><span class="idx">06</span>say hi</a>
+  <a href="#top" class="active"><span class="idx">00</span>your assistant</a>
+  <a href="#install"><span class="idx">01</span>install → first run</a>
+  <a href="#modes"><span class="idx">02</span>inbox → autopilot</a>
+  <a href="#public"><span class="idx">03</span>go public</a>
+  <a href="#desk"><span class="idx">04</span>front desk</a>
+  <a href="#context"><span class="idx">05</span>what you get</a>
+  <a href="#tools"><span class="idx">06</span>meet the tools</a>
+  <a href="#contact"><span class="idx">07</span>say hi</a>
 </nav>
 
 <header class="hero wrap" id="top">
   <p class="kicker"><span>// cli-chat <b>·</b> lives in your coding CLI</span><span class="installs" id="installs" hidden><b id="installsN"></b> installs</span></p>
-  <h1><span class="prompt">❯ </span><span class="cmd" data-scramble>write Sam:</span> <span class="arg" data-scramble>the deploy landed</span></h1>
-  <p class="sub">Your coding agent is now your messenger. <em>Never leave your terminal.</em></p>
+  <h1><span class="prompt">❯ </span><span class="cmd" data-scramble>auto</span> <span class="arg" data-scramble>chat</span></h1>
+  <p class="sub">You just hired a secretary. Your coding agent answers your messages for you — grounded in the directory you open it in and the notes it keeps, marked as your assistant, and <em>it only interrupts when something truly needs you.</em></p>
+
+  <div class="card mode" id="job" style="margin-top: 28px;">
+    <div class="mode-info">
+      <p class="tag">your assistant</p>
+      <h3>Say it — it's handled</h3>
+      <p>One line of intent. <em>Your secretary does the logistics.</em></p>
+      <ul class="mode-steps reel-steps" id="reelSteps">
+        <li><em>the desk</em> — your inbox answers itself, marked as your assistant</li>
+        <li><em>the errand</em> — sent, answered, filed for next time</li>
+        <li><em>the route</em> — it finds the person through your network</li>
+        <li><em>the rally</em> — one ask fans out, replies converge</li>
+      </ul>
+      <p class="switch-note">hover a beat to watch it · every beat ships today</p>
+    </div>
+    <div class="term">
+      <div class="term-bar"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span>you@laptop — claude — 80×24</span></div>
+      <div class="feed" id="reel" style="min-height: 300px;"></div>
+    </div>
+  </div>
+</header>
+
+<section class="wrap" id="install">
+  <p class="sec-label"><b>##</b> 01 · install → first run</p>
   <div class="tabs" id="tabs">
     <button class="tab active" data-cmd="claude mcp add cli-chat --scope user -- npx -y cli-chat-mcp@latest">Claude Code</button>
     <button class="tab" data-cmd="codex mcp add cli-chat -- npx -y cli-chat-mcp@latest">Codex CLI</button>
@@ -317,11 +365,10 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
       <div class="cc" id="firstrun" style="min-height: 492px;"></div>
     </div>
   </div>
-
-</header>
+</section>
 
 <section class="wrap" id="modes">
-  <p class="sec-label"><b>##</b> 01 · four gears</p>
+  <p class="sec-label"><b>##</b> 02 · four gears</p>
   <h2 data-scramble>From inbox to autopilot, at your pace.</h2>
   <p class="lede">Four modes. Switch a running inbox with one word.</p>
   <div class="modes">
@@ -366,7 +413,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
         <p class="tag">"auto chat"</p>
         <h3>Assistant answers: marked as assistant</h3>
         <p>It answers from <em>the directory you opened it in</em>: code, docs, git history. It writes what it learns back. What it can't ground, it asks <em>you</em>. Below: Niels asking, your desk answering.</p>
-        <p class="switch-note">"auto chat read only" keeps the directory untouched · "stop" closes it any time</p>
+        <p class="switch-note">"auto chat answers only" keeps the directory untouched · "stop" closes it any time</p>
       </div>
       <div class="terms" style="margin-top: 24px;">
         <div class="term">
@@ -383,31 +430,36 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
 </section>
 
 <section class="wrap" id="public">
-  <p class="sec-label"><b>##</b> 02 · go public</p>
-  <h2 data-scramble>One word opens the doors.</h2>
-  <p class="lede">Every mode ships <em>private</em>: strangers wait at a gate only you open. Building a desk anyone may write to? Add one word: <em>public</em>.</p>
-  <div class="steps">
+  <p class="sec-label"><b>##</b> 03 · go public</p>
+  <h2 data-scramble>Public — One word opens the doors.</h2>
+  <p class="lede">Every mode ships <em>private</em>: only your contacts reach your chat modes. Building a desk anyone may write to? Add one word: <em>public</em>.</p>
+  <div class="steps four">
     <div class="card step">
-      <p class="n">["auto chat read only public"]</p>
+      <p class="n">["public"]</p>
       <h3>Walk-ins welcome</h3>
-      <p>A public desk accepts every new handle on its own: first message answered, sender saved, the held backlog let in too. <em>Read only</em> means answering is all it can do — the directory is look, don't touch. Every mode has the variant — <code>chat public</code>, <code>draft chat public</code>.</p>
+      <p>One word on any mode — <code>chat public</code>, <code>draft chat public</code> — and the desk accepts every new handle on its own: first message answered, sender saved, the held backlog let in too.</p>
     </div>
     <div class="card step">
       <p class="n">["auto chat public"]</p>
-      <h3>Living dangerously</h3>
-      <p>Same open doors, plus a pen: this desk also <em>writes</em> its directory — learnings, docs, an FAQ that grows. Both desks hear every injection attempt a stranger sends; the difference is <em>the prize</em>. Read only caps it at a bad reply. A pen raises it to what lands on disk — and today's files ground tomorrow's answers. Orders in a message are never obeyed; read only just <em>caps the damage if anyone ever gets clever</em>.</p>
+      <h3>The desk takes notes</h3>
+      <p>Plain auto chat keeps its pen: the desk takes notes for the documentation in its directory as it sees fit — learnings, docs, an FAQ that grows — and today's files ground tomorrow's answers. A sender can never order a write; what's worth keeping is always the desk's own call.</p>
+    </div>
+    <div class="card step">
+      <p class="n">["answers only"]</p>
+      <h3>Look, don't touch</h3>
+      <p>The outward-facing setting: answering is all the desk can do — the directory stays read-only. The cleverest injection a stranger sends wins nothing but a bad reply.</p>
     </div>
     <div class="card step">
       <p class="n">[per session]</p>
       <h3>Yours alone</h3>
-      <p>Session ends when you close the terminal.</p>
+      <p>Public lasts exactly one session — it ends when you close the terminal. "private" shuts the gate mid-session, and a dismissed handle stays out even now.</p>
     </div>
   </div>
   <div class="card mode" style="margin-top: 24px;">
     <div class="mode-info">
-      <p class="tag">"auto chat read only public"</p>
+      <p class="tag">"auto chat answers only public"</p>
       <h3>An endless shift at the open desk</h3>
-      <p>Watch a while: strangers walk in and are <em>saved on arrival</em>, grounded questions get answered and <em>scroll away</em> — but the tickets only you can decide <em>park at the bottom with your name on them</em>, and the desk keeps answering over their heads. One line from you at the prompt clears a ticket. The directory stays untouched: <em>read only</em>.</p>
+      <p>Watch a while: strangers walk in and are <em>saved on arrival</em>, grounded questions get answered and <em>scroll away</em> — but the tickets only you can decide <em>park at the bottom with your name on them</em>, and the desk keeps answering over their heads. One line from you at the prompt clears a ticket. The directory stays untouched: <em>answers only</em>.</p>
       <p class="switch-note">an escalation never stops the line · "private" shuts the gate again · a dismissed handle stays out even now</p>
     </div>
     <div class="term">
@@ -418,7 +470,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
 </section>
 
 <section class="wrap" id="desk">
-  <p class="sec-label"><b>##</b> 03 · run it as</p>
+  <p class="sec-label"><b>##</b> 04 · run it as</p>
   <h2 data-scramble>The front desk for your team.</h2>
   <p class="lede">No framework, no webhook, no deploy. Open auto chat in a repo and <em>it answers from that directory</em>: the code, the docs, the git history.</p>
   <div class="grid">
@@ -429,7 +481,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
       <span class="go">→ the playbook</span>
     </a>
     <a class="card cell" href="/customer-desk">
-      <p class="lbl">[read only]</p>
+      <p class="lbl">[answers only]</p>
       <h3>Customer desk</h3>
       <p>Point it at your docs. Customers get grounded answers; the rest lands with you, whole exchange in hand. Invite-only by default — or go <em>public</em> and take walk-ins.</p>
       <span class="go">→ the playbook</span>
@@ -444,7 +496,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
 </section>
 
 <section class="wrap" id="context">
-  <p class="sec-label"><b>##</b> 04 · what you get</p>
+  <p class="sec-label"><b>##</b> 05 · what you get</p>
   <h2 data-scramble>Messaging on steroids.</h2>
   <p class="lede">An inbox that <em>answers itself</em>, a <em>memory</em> of everything ever written, an assistant you <em>send to go ask</em>. When both ends run one, your network <em>thinks together</em>.</p>
   <div class="grid">
@@ -458,7 +510,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
 </section>
 
 <section class="wrap" id="tools">
-  <p class="sec-label"><b>##</b> 05 · meet the tools</p>
+  <p class="sec-label"><b>##</b> 06 · meet the tools</p>
   <h2 data-scramble>You never call a tool. You say the thing.</h2>
   <p class="lede">One MCP server underneath, nothing to learn — <em>every box here is a sentence that already works</em>. Start with the essential one: a <em>6-character handle</em> is your phone number.</p>
   <div class="steps">
@@ -488,14 +540,14 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
     <div class="card cell"><p class="lbl">"log in"</p><h3>One account, every machine</h3><p>Your email <em>is</em> the account. Contacts, tags, history and memory land on any device, encrypted — <em>"log out"</em> wipes the box.</p></div>
     <div class="card cell"><p class="lbl">"remember: staging is db-2"</p><h3>The memory bank</h3><p>Say it once, never again. Notes carry an audience — private, a tag, anyone — and ground every auto answer.</p></div>
     <div class="card cell"><p class="lbl">"what do you share about me?"</p><h3>Default-closed</h3><p>Nothing personal goes out without a rule you approved. Inspect the ruleset any time; change it in a sentence.</p></div>
-    <div class="card cell"><p class="lbl">"auto chat read only"</p><h3>Look, don't touch</h3><p>The outward desk posture: it consults the directory but can never write to it. <em>"write mode"</em> upgrades it back — only from your keyboard, never from a message.</p></div>
+    <div class="card cell"><p class="lbl">"auto chat answers only"</p><h3>Look, don't touch</h3><p>The outward desk posture: it answers from the directory but can never write to it. <em>"write mode"</em> upgrades it back — only from your keyboard, never from a message.</p></div>
     <div class="card cell"><p class="lbl">"go public"</p><h3>Open the doors</h3><p>New handles walk straight in for the session; <em>"private"</em> shuts the gate again. Every mode has it — <a href="#public">the doors, above</a>.</p></div>
     <div class="card cell"><p class="lbl">"stop"</p><h3>Closing time</h3><p>Ends any running mode. Messages simply queue, sealed, until next time — a desk's session is its opening hours, and nothing is ever lost.</p></div>
   </div>
 </section>
 
 <section class="wrap" id="contact">
-  <p class="sec-label"><b>##</b> 06 · say hi</p>
+  <p class="sec-label"><b>##</b> 07 · say hi</p>
   <h2 data-scramble>Send feedback.</h2>
   <p class="lede">Our handle is <em>FeedBk</em>.</p>
   <div class="feed" style="max-width: 560px; margin-top: 28px;">
@@ -520,7 +572,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
 
 <div class="statusbar">
   <span class="seg-l"><b>●</b>Bash<span class="task">(Listening for new messages)</span></span>
-  <span class="seg-r"><span class="ver">v0.18.0</span><span class="live">1 background task</span></span>
+  <span class="seg-r"><span class="ver" id="ver">v0.21.1</span><span class="live">1 background task</span></span>
 </div>
 
 <script>
@@ -622,7 +674,15 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
     SCRIPT.forEach(function (l) { var d = place(l); if (l.t !== 'idle') d.innerHTML = l.html; });
     idleA = null;
   } else {
-    var li = 0;
+    var li = 0, demoDone = false;
+    function finishDemo() {
+      /* hover on either window: the whole exchange lands instantly and holds */
+      if (demoDone) return;
+      demoDone = true;
+      demoA.innerHTML = ''; demoB.innerHTML = ''; idleA = null;
+      SCRIPT.forEach(function (l) { var d = place(l); if (l.t !== 'idle') d.innerHTML = l.html; });
+      idleA = null;
+    }
     function typeLine(el, html, done) {
       /* type only plain-text lines char-by-char; html lines land whole */
       var m = html.match(/^<span class="p">❯<\/span> (.*)$/);
@@ -631,18 +691,22 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
       el.innerHTML = '<span class="p">❯</span> <span class="typed"></span><span class="caret"></span>';
       var t = el.querySelector('.typed');
       (function ch() {
-        if (i < text.length) { t.textContent += text[i++]; setTimeout(ch, 55 + Math.random() * 65); }
+        if (demoDone) return;
+        if (i < text.length) { t.textContent += text[i++]; setTimeout(ch, 26 + Math.random() * 30); }
         else { el.querySelector('.caret').remove(); setTimeout(done, 750); }
       })();
     }
     function next() {
       /* plays once: the finished transcript stays put (the idle carets keep blinking) */
-      if (li >= SCRIPT.length) return;
+      if (demoDone || li >= SCRIPT.length) return;
       var l = SCRIPT[li++], d = place(l);
       if (l.t === 'idle') return setTimeout(next, l.d || 500);
       if (l.t === 'user' && li < SCRIPT.length) typeLine(d, l.html, next);
       else { d.innerHTML = l.html; setTimeout(next, l.d || (l.t === 'agent' ? 1600 : 1000)); }
     }
+    [demoA, demoB].forEach(function (w) {
+      (w.closest('.term') || w).addEventListener('mouseenter', finishDemo);
+    });
     var termsStarted = false;
     if ('IntersectionObserver' in window) {
       var tio = new IntersectionObserver(function (es) {
@@ -667,20 +731,29 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
       L.forEach(function (l) { put(l.c, l.t != null ? (l.pre || '') + l.t : l.h); });
       return;
     }
-    var li = 0;
+    var li = 0, done = false;
+    function finish() {
+      /* hover on the window: the full transcript, instantly, held */
+      if (done) return;
+      done = true;
+      box.innerHTML = '';
+      L.forEach(function (l) { put(l.c, l.t != null ? (l.pre || '') + l.t : l.h); });
+    }
     function next() {
       /* plays once: hold the finished state, never reset */
-      if (li >= L.length) return;
+      if (done || li >= L.length) return;
       var l = L[li++];
       if (l.t != null) {
         var p = put(l.c, (l.pre || '') + '<span class="typed"></span><span class="caret"></span>');
         var tt = p.querySelector('.typed'), i = 0;
         (function ch() {
-          if (i < l.t.length) { tt.textContent += l.t[i++]; setTimeout(ch, 45 + Math.random() * 55); }
+          if (done) return;
+          if (i < l.t.length) { tt.textContent += l.t[i++]; setTimeout(ch, 22 + Math.random() * 26); }
           else { p.querySelector('.caret').remove(); setTimeout(next, 750); }
         })();
       } else { put(l.c, l.h); setTimeout(next, l.d || 1000); }
     }
+    (box.closest('.term') || box).addEventListener('mouseenter', finish);
     function start() { if (delay) setTimeout(next, delay); else next(); }
     var started = false;
     if ('IntersectionObserver' in window) {
@@ -690,6 +763,121 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
       io.observe(box);
     } else start();
   }
+  /* ---- the reel: one terminal looping single-beat vignettes ----
+     Each scenario plays like a livefeed, holds, fades, and the next starts
+     clean; the matching line in the card's list lights up. Static first
+     scenario for reduced-motion / touch. */
+  var REEL = [
+    [
+      { c: 'fu', pre: '❯ ', t: 'auto chat' },
+      { c: 'fa', h: '· the desk is open — you get back to work', d: 1500 },
+      { c: 'fs', h: '<span class="env">📨</span> Niels · #1', d: 1000 },
+      { c: 'fq', h: 'did the deploy go out this morning?', d: 1200 },
+      { c: 'fa', h: '· git log — v2.3.1 tagged 09:02', d: 900 },
+      { c: 'fr', h: '↳ 📤 Sent to Niels — "Yes — v2.3.1 went out at 9." · your assistant', d: 1200 }
+    ],
+    [
+      { c: 'fu', pre: '❯ ', t: 'ask Niels for the staging URL' },
+      { c: 'fr', h: '↳ 📤 Sent to Niels — "What\'s the staging URL?"', d: 1300 },
+      { c: 'fs', h: '<span class="env">📨</span> Niels · #1', d: 1000 },
+      { c: 'fq', h: 'staging.acme.dev — creds are in the vault', d: 1200 },
+      { c: 'fd', h: '↳ 📝 noted', d: 1100 },
+      { c: 'fa', h: '· · · days later', d: 900 },
+      { c: 'fu', pre: '❯ ', t: 'what\'s the staging URL?' },
+      { c: 'fd', h: '→ staging.acme.dev — from the note. Niels isn\'t asked twice.', d: 1200 }
+    ],
+    [
+      { c: 'fu', pre: '❯ ', t: 'get the changelog to whoever runs ingest — Niels will know' },
+      { c: 'fr', h: '↳ 📤 Sent to Niels — "Who runs ingest these days?"', d: 1300 },
+      { c: 'fs', h: '<span class="env">📨</span> Niels · #1', d: 1000 },
+      { c: 'fq', h: 'that\'s Sam', d: 1100 },
+      { c: 'fa', h: '🤝 found Sam via Niels · request sent — accepted', d: 1200 },
+      { c: 'fr', h: '↳ 📤 Sent to Sam — the changelog. Delivered.', d: 1000 }
+    ],
+    [
+      { c: 'fu', pre: '❯ ', t: 'find a dinner date that works for Niels, Mette and Sam' },
+      { c: 'fr', h: '↳ 📤 Asked all three — "which nights work?"', d: 1300 },
+      { c: 'fs', h: '<span class="env">📨</span> Mette · #1', d: 900 },
+      { c: 'fq', h: 'thu or fri!', d: 1000 },
+      { c: 'fs', h: '<span class="env">📨</span> Niels · #2', d: 900 },
+      { c: 'fq', h: 'thursday', d: 1000 },
+      { c: 'fs', h: '<span class="env">📨</span> Sam · #3', d: 900 },
+      { c: 'fq', h: 'any night works', d: 1000 },
+      { c: 'fr', h: '↳ 📤 Sent to all — "Thursday it is. 19:00?"', d: 1000 }
+    ]
+  ];
+  (function reel() {
+    var box = document.getElementById('reel'), steps = document.getElementById('reelSteps');
+    if (!box) return;
+    var lis = steps ? [].slice.call(steps.children) : [];
+    function light(i) { lis.forEach(function (el, k) { el.classList.toggle('live', k === i); }); }
+    function put(c, h) { var p = document.createElement('p'); if (c) p.className = c; p.innerHTML = h; box.appendChild(p); return p; }
+    function render(i) {
+      box.innerHTML = '';
+      REEL[i].forEach(function (l) { put(l.c, l.t != null ? (l.pre || '') + l.t : l.h); });
+      light(i);
+    }
+    if (reduced || touch) {
+      /* no hover here: tapping a line shows its finished transcript */
+      render(0);
+      lis.forEach(function (el, k) { el.addEventListener('click', function () { render(k); }); });
+      return;
+    }
+    var si = 0, run = 0, pinned = false;
+    box.style.transition = 'opacity .4s';
+    function play(i) {
+      var token = ++run;
+      si = i; box.innerHTML = ''; box.style.opacity = 1; light(i);
+      var L = REEL[i], li = 0;
+      function next() {
+        if (token !== run) return;
+        if (li >= L.length) { setTimeout(function () { if (token === run) swap(); }, 3400); return; }
+        var l = L[li++];
+        if (l.t != null) {
+          var p = put(l.c, (l.pre || '') + '<span class="typed"></span><span class="caret"></span>');
+          var tt = p.querySelector('.typed'), ci = 0;
+          (function ch() {
+            if (token !== run) return;
+            if (ci < l.t.length) { tt.textContent += l.t[ci++]; setTimeout(ch, 22 + Math.random() * 26); }
+            else { p.querySelector('.caret').remove(); setTimeout(next, 750); }
+          })();
+        } else { put(l.c, l.h); setTimeout(next, l.d || 1000); }
+      }
+      next();
+    }
+    function swap() {
+      /* a hover pins the reel: the finished transcript stays put */
+      if (pinned) return;
+      box.style.opacity = 0;
+      setTimeout(function () { if (!pinned) play((si + 1) % REEL.length); }, 450);
+    }
+    /* hover a card line to watch that beat; a short intent delay keeps a
+       mouse passing through from restarting the reel */
+    var hoverT;
+    lis.forEach(function (el, k) {
+      el.addEventListener('mouseenter', function () {
+        hoverT = setTimeout(function () {
+          pinned = true;
+          if (k !== si || box.style.opacity === '0') play(k);
+        }, 150);
+      });
+      el.addEventListener('mouseleave', function () { clearTimeout(hoverT); });
+    });
+    var started = false;
+    /* hover the terminal itself: the current beat completes instantly and holds */
+    (box.closest('.term') || box).addEventListener('mouseenter', function () {
+      pinned = true; started = true;
+      ++run;               /* kills any in-flight typing or pending swap */
+      box.style.opacity = 1;
+      render(si);
+    });
+    if ('IntersectionObserver' in window) {
+      var io = new IntersectionObserver(function (es) {
+        es.forEach(function (e) { if (e.isIntersecting && !started) { started = true; play(0); io.disconnect(); } });
+      }, { threshold: .25 });
+      io.observe(box);
+    } else play(0);
+  })();
   livefeed('feedPull', [
     { c: 'fu', pre: '❯ ', t: 'any messages?' },
     { c: 'fa', h: '📬 1 new message from Sam — want me to read it?', d: 1300 },
@@ -758,8 +946,8 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
     ];
     var pins = [], idleEl = null, seen = {}, castI = 0, qaI = 0, tkI = 0, msgN = 0, exN = 0, orderN = 1042;
     var Q = [
-      { u0: 'auto chat read only public' },
-      { c: 'fa', h: '· doors open — new handles walk straight in · directory read-only', d: 1100 },
+      { u0: 'auto chat answers only public' },
+      { c: 'fa', h: '· doors open — new handles walk straight in · answers only', d: 1100 },
       { idle: true, d: 700 }
     ];
     function el(c, h) { var p = document.createElement('p'); if (c) p.className = c; p.innerHTML = h; return p; }
@@ -829,7 +1017,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
       idleEl.innerHTML = '❯ <span class="typed"></span><span class="caret"></span>';
       var t = idleEl.querySelector('.typed'), i = 0;
       (function ch() {
-        if (i < text.length) { t.textContent += text[i++]; setTimeout(ch, 42 + Math.random() * 50); }
+        if (i < text.length) { t.textContent += text[i++]; setTimeout(ch, 20 + Math.random() * 24); }
         else setTimeout(function () { line('fu', '❯ ' + text); idleEl.innerHTML = '❯ <span class="caret"></span>'; done(); }, 550);
       })();
     }
@@ -840,7 +1028,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
         var p = line('fu', '❯ <span class="typed"></span><span class="caret"></span>');
         var t = p.querySelector('.typed'), i = 0;
         (function ch() {
-          if (i < b.u0.length) { t.textContent += b.u0[i++]; setTimeout(ch, 45 + Math.random() * 55); }
+          if (i < b.u0.length) { t.textContent += b.u0[i++]; setTimeout(ch, 22 + Math.random() * 26); }
           else { p.querySelector('.caret').remove(); setTimeout(step, 700); }
         })();
         return;
@@ -886,6 +1074,17 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
     { c: 'dim g', h: '✳ Cogitated for 4s', d: 1000 }
   ]);
 
+  /* ---- statusbar version: whatever npm actually serves; the baked-in
+     number only stands in until the registry answers ---- */
+  (function () {
+    var el = document.getElementById('ver');
+    if (!el) return;
+    fetch('https://registry.npmjs.org/cli-chat-mcp/latest')
+      .then(function (r) { return r.json(); })
+      .then(function (d) { if (d && d.version) el.textContent = 'v' + d.version; })
+      .catch(function () {});
+  })();
+
   /* ---- npm installs ticker (real count on load, resumes from localStorage) ---- */
   (function () {
     var KEY = 'cc_installs';
@@ -918,23 +1117,34 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
       .catch(function () { if (stored) start(stored); });
   })();
 
-  /* ---- agenda scroll-spy ---- */
+  /* ---- agenda scroll-spy ----
+     Position-based, not IntersectionObserver: light the LAST nav target whose
+     top sits above a line at 30% of the viewport. Works for short anchor
+     targets (the #job card) as well as full sections — a clicked target lands
+     at the viewport top, which is always above the line, so it locks in. */
   (function () {
     var links = document.querySelectorAll('.agenda a');
-    var byId = {};
-    links.forEach(function (a) { byId[a.getAttribute('href').slice(1)] = a; });
-    var spy = new IntersectionObserver(function (entries) {
-      entries.forEach(function (en) {
-        if (en.isIntersecting && byId[en.target.id]) {
-          links.forEach(function (a) { a.classList.remove('active'); });
-          byId[en.target.id].classList.add('active');
-        }
-      });
-    }, { rootMargin: '-40% 0px -55% 0px' });
-    Object.keys(byId).forEach(function (id) {
-      var el = document.getElementById(id);
-      if (el) spy.observe(el);
+    var pairs = [];
+    links.forEach(function (a) {
+      var el = document.getElementById(a.getAttribute('href').slice(1));
+      if (el) pairs.push([el, a]);
     });
+    if (!pairs.length) return;
+    function spy() {
+      ticking = false;
+      var line = innerHeight * 0.3;
+      var cur = pairs[0][1];
+      pairs.forEach(function (p) {
+        if (p[0].getBoundingClientRect().top <= line) cur = p[1];
+      });
+      links.forEach(function (a) { a.classList.remove('active'); });
+      cur.classList.add('active');
+    }
+    var ticking = false;
+    addEventListener('scroll', function () {
+      if (!ticking) { ticking = true; requestAnimationFrame(spy); }
+    }, { passive: true });
+    spy();
   })();
 
   /* ---- install tabs ---- */
