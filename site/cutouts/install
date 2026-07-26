@@ -1,0 +1,120 @@
+#!/bin/sh
+# cli-chat installer — https://cli-chat.dev
+#
+#   curl -fsSL https://cli-chat.dev/install | sh
+#
+# Registers the cli-chat MCP server with every coding CLI found on this
+# machine (Claude Code, Codex, Copilot, Gemini, Cursor). Safe to re-run —
+# already-registered CLIs are left alone. Setup itself (your email + name)
+# happens in your first conversation after restarting the CLI.
+set -u
+
+PKG="cli-chat-mcp@latest"
+NAME="cli-chat"
+RESULTS=""
+FOUND=0
+
+say() { printf '%s\n' "$*"; }
+have() { command -v "$1" >/dev/null 2>&1; }
+note() { RESULTS="${RESULTS}  $1
+"; }
+
+# --- Node 22+ is the one prerequisite (the server runs on it via npx) --------
+if ! have node; then
+  say "cli-chat needs Node 22+ and none was found."
+  say "Install it from https://nodejs.org (or: brew install node), then re-run."
+  exit 1
+fi
+NODE_MAJOR=$(node -p 'parseInt(process.versions.node,10)' 2>/dev/null || echo 0)
+if [ "${NODE_MAJOR}" -lt 22 ]; then
+  say "cli-chat needs Node 22+ (found $(node -v))."
+  say "Upgrade from https://nodejs.org (or: brew upgrade node), then re-run."
+  exit 1
+fi
+
+# --- Claude Code -------------------------------------------------------------
+if have claude; then
+  FOUND=1
+  if claude mcp get "$NAME" >/dev/null 2>&1; then
+    note "= Claude Code: already registered"
+  elif claude mcp add "$NAME" --scope user -- npx -y "$PKG" >/dev/null 2>&1; then
+    note "+ Claude Code: registered (user scope)"
+  else
+    note "! Claude Code: failed — run: claude mcp add $NAME --scope user -- npx -y $PKG"
+  fi
+fi
+
+# --- Codex CLI ---------------------------------------------------------------
+if have codex; then
+  FOUND=1
+  if codex mcp get "$NAME" >/dev/null 2>&1; then
+    note "= Codex CLI: already registered"
+  elif codex mcp add "$NAME" -- npx -y "$PKG" >/dev/null 2>&1; then
+    note "+ Codex CLI: registered"
+  else
+    note "! Codex CLI: failed — run: codex mcp add $NAME -- npx -y $PKG"
+  fi
+fi
+
+# --- Copilot CLI -------------------------------------------------------------
+if have copilot; then
+  FOUND=1
+  if copilot mcp add "$NAME" -- npx -y "$PKG" >/dev/null 2>&1; then
+    note "+ Copilot CLI: registered"
+  else
+    note "! Copilot CLI: failed — run: copilot mcp add $NAME -- npx -y $PKG"
+  fi
+fi
+
+# --- Gemini CLI --------------------------------------------------------------
+if have gemini; then
+  FOUND=1
+  if gemini mcp add -s user "$NAME" npx -y "$PKG" >/dev/null 2>&1; then
+    note "+ Gemini CLI: registered (user scope)"
+  else
+    note "! Gemini CLI: failed — run: gemini mcp add -s user $NAME npx -y $PKG"
+  fi
+fi
+
+# --- Cursor (no mcp subcommand — merge ~/.cursor/mcp.json) -------------------
+if have cursor || [ -d "${HOME}/.cursor" ]; then
+  FOUND=1
+  if node -e '
+    const fs = require("fs"), path = require("path");
+    const p = path.join(process.env.HOME, ".cursor", "mcp.json");
+    let cfg = {};
+    if (fs.existsSync(p)) {
+      try { cfg = JSON.parse(fs.readFileSync(p, "utf8")); }
+      catch { process.exit(2); }
+    }
+    cfg.mcpServers = cfg.mcpServers || {};
+    if (cfg.mcpServers["'"$NAME"'"]) process.exit(3);
+    cfg.mcpServers["'"$NAME"'"] = { command: "npx", args: ["-y", "'"$PKG"'"] };
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    fs.writeFileSync(p, JSON.stringify(cfg, null, 2) + "\n");
+  ' >/dev/null 2>&1; then
+    note "+ Cursor: wrote ~/.cursor/mcp.json"
+  else
+    case $? in
+      2) note "! Cursor: ~/.cursor/mcp.json is not valid JSON — left untouched" ;;
+      3) note "= Cursor: already registered" ;;
+      *) note "! Cursor: couldn't write ~/.cursor/mcp.json" ;;
+    esac
+  fi
+fi
+
+# --- Report ------------------------------------------------------------------
+say ""
+say "cli-chat install"
+if [ "$FOUND" -eq 1 ]; then
+  printf '%s' "$RESULTS"
+  say ""
+  say "Restart your CLI, allow the new cli-chat server when it asks, and just"
+  say "write someone — setup (your email + name) happens in the conversation."
+else
+  say "  no coding CLI detected."
+  say ""
+  say "Any MCP-capable client works — register a stdio server by hand:"
+  say "  command: npx"
+  say "  args:    [\"-y\", \"$PKG\"]"
+fi

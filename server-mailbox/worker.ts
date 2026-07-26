@@ -8,6 +8,7 @@ import { d1Store, type D1Like } from "./store-d1.ts";
 import { verifyRequest } from "./verify.ts";
 import { resendSender } from "./email.ts";
 import { makeStripeVerifier } from "./stripe.ts";
+import { sweepUnreadEmails } from "./unread-sweep.ts";
 
 // The Durable Object class must be exported from the Worker entry so the runtime
 // can instantiate it (see wrangler.toml [[durable_objects.bindings]]).
@@ -35,6 +36,10 @@ export interface Env {
   // and invite bounces must not poison it. Unset → invites don't send (stubs
   // still provision; notified_at stays null so a later deploy sends the one).
   INVITE_EMAIL_FROM?: string;
+  // Sender identity for the waiting-mail emails (NOTIFY-EMAIL.md) — same
+  // bounce-isolation rationale as INVITE_EMAIL_FROM. Falls back to
+  // INVITE_EMAIL_FROM so a not-yet-configured deploy still notifies.
+  NOTIFY_EMAIL_FROM?: string;
   APP_BASE_URL?: string; // public origin for the magic-link verify URL
   CHECKOUT_URL?: string; // Stripe Payment Link for the one-time unlock
   STRIPE_WEBHOOK_SECRET?: string; // `wrangler secret put STRIPE_WEBHOOK_SECRET`
@@ -66,6 +71,11 @@ const UNREAD_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 // Unclaimed email stubs (EMAIL-SEND.md) lose their keys after this long with no
 // mail waiting; the row (and its once-ever notified_at) stays forever.
 const EMAIL_STUB_TTL_MS = 60 * 24 * 60 * 60 * 1000;
+
+// Must match wrangler.toml [triggers] crons exactly — scheduled() branches on
+// the event's cron string to keep retention daily and the mail sweep hourly.
+const DAILY_CRON = "0 3 * * *";
+const HOURLY_CRON = "0 * * * *";
 
 export default {
   fetch(request: Request, env: Env, ctx: any): Response | Promise<Response> {
@@ -110,17 +120,27 @@ export default {
     return app.fetch(request, env as unknown as Record<string, unknown>, ctx);
   },
 
-  // Cloudflare Cron Trigger: prune old mail so the mailbox can't grow without
-  // bound. Idempotent and safe to run as often as the schedule fires.
-  async scheduled(_event: unknown, env: Env, _ctx: unknown): Promise<void> {
+  // Cloudflare Cron Triggers (wrangler.toml): the DAILY cron prunes old mail;
+  // the HOURLY cron sends the waiting-mail emails (NOTIFY-EMAIL.md). Each
+  // schedule fires as its own invocation with its cron string on the event; an
+  // unknown/absent cron (wrangler dev --test-scheduled) runs both. All sweeps
+  // are idempotent and safe to run as often as the schedules fire.
+  async scheduled(event: { cron?: string } | undefined, env: Env, _ctx: unknown): Promise<void> {
     const now = Date.now();
     const store = d1Store(env.DB);
-    await store.purge(now - READ_TTL_MS, now - UNREAD_TTL_MS);
-    // Also sweep the account layer: expired magic-link tokens and dead sessions.
-    await store.purgeAuth(now);
-    // And drop the keys of old unclaimed email stubs (their once-ever invite
-    // marker survives, so a re-provisioned address is never emailed again).
-    await store.purgeEmailStubs(now - EMAIL_STUB_TTL_MS);
+    if (event?.cron !== HOURLY_CRON) {
+      await store.purge(now - READ_TTL_MS, now - UNREAD_TTL_MS);
+      // Also sweep the account layer: expired magic-link tokens and dead sessions.
+      await store.purgeAuth(now);
+      // And drop the keys of old unclaimed email stubs (their once-ever invite
+      // marker survives, so a re-provisioned address is never emailed again).
+      await store.purgeEmailStubs(now - EMAIL_STUB_TTL_MS);
+    }
+    if (event?.cron !== DAILY_CRON) {
+      const from = env.NOTIFY_EMAIL_FROM ?? env.INVITE_EMAIL_FROM;
+      if (env.RESEND_API_KEY && from)
+        await sweepUnreadEmails(store, resendSender(env.RESEND_API_KEY, from), now);
+    }
   },
 };
 

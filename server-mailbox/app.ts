@@ -7,6 +7,7 @@
 // signature; it cannot read bodies.
 
 import { Hono } from "hono";
+import { cors } from "hono/cors";
 import { verifyRequest } from "./verify.ts";
 import type { WireMessage } from "../src/identity.ts";
 import type { AccountRecord, Store } from "./store.ts";
@@ -118,6 +119,24 @@ function envInt(name: string): number | undefined {
 export function createApp(deps: AppDeps): Hono {
   const app = new Hono();
   const { store, now, notify, notifyVault, notifyHistory, rateLimit, freeSync } = deps;
+
+  // CORS for the browser client (online.cli-chat.dev). Auth here is per-request
+  // Ed25519 signatures / bearer tokens, never cookies, so there is no ambient
+  // credential for a foreign origin to ride on — the allowlist is still kept to
+  // our own web client (prod, its workers.dev preview, and local dev) so random
+  // sites can't script the API from a visitor's browser. Preflights (OPTIONS)
+  // are answered by the middleware and never reach the signed routes.
+  const BROWSER_ORIGIN =
+    /^(https:\/\/online\.cli-chat\.dev|https:\/\/cli-chat-online\.[a-z0-9-]+\.workers\.dev|http:\/\/(localhost|127\.0\.0\.1)(:\d+)?)$/;
+  app.use(
+    "*",
+    cors({
+      origin: (origin) => (BROWSER_ORIGIN.test(origin) ? origin : ""),
+      allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+      allowHeaders: ["content-type", "authorization", "x-pubkey", "x-timestamp", "x-signature"],
+      maxAge: 86400,
+    }),
+  );
   const unknownPairHourly =
     deps.limits?.unknownPairHourly ??
     envInt("MAILBOX_UNKNOWN_PAIR_HOURLY") ??
@@ -246,6 +265,14 @@ export function createApp(deps: AppDeps): Hono {
     const auth = await verifyRequest((h) => c.req.header(h), "GET", "/messages", "", now());
     if (!auth.ok) return c.json({ error: auth.reason }, 401);
     const blobs = await store.drain(auth.pubkey, now());
+    // The user is online: re-arm the waiting-mail email for the next
+    // away-stretch (NOTIFY-EMAIL.md). Even an empty drain proves presence
+    // (another device may have drained first); never let it block a drain.
+    try {
+      await store.clearUnreadNotified(auth.pubkey);
+    } catch {
+      /* best-effort */
+    }
     return c.json({ messages: blobs });
   });
 
@@ -441,6 +468,23 @@ export function createApp(deps: AppDeps): Hono {
     }
     await store.setRequestsOnly(auth.pubkey, body.on !== false, now());
     return c.json({ ok: true, requestsOnly: body.on !== false });
+  });
+
+  // Waiting-mail email opt-out (NOTIFY-EMAIL.md): turn the "you have mail
+  // waiting" email off (or back on) for the caller's account. Signed = only for
+  // your own identity; silent no-op when the signPub has no account.
+  app.post("/account/unread-emails", async (c) => {
+    const raw = await c.req.text();
+    const auth = await verifyRequest((h) => c.req.header(h), "POST", "/account/unread-emails", raw, now());
+    if (!auth.ok) return c.json({ error: auth.reason }, 401);
+    let body: { on?: boolean };
+    try {
+      body = JSON.parse(raw);
+    } catch {
+      return c.json({ error: "invalid json" }, 400);
+    }
+    await store.setUnreadEmails(auth.pubkey, body.on !== false, now());
+    return c.json({ ok: true, unreadEmails: body.on !== false });
   });
 
   // Rotate your handle: claim a fresh code for your keys and strand the old one.

@@ -1,0 +1,10 @@
+{
+  // Browser project: the online.cli-chat.dev web client. DOM globals, no Node
+  // types — the reused src/ modules it imports (crypto, auth, canonical,
+  // mailbox/account clients, key-code) are runtime-agnostic by design.
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM", "DOM.Iterable"]
+  },
+  "include": ["src/**/*.ts"]
+}

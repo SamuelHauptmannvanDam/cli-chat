@@ -126,7 +126,12 @@ to receive at most N emails total, once each, forever. On top:
 
 ## What we deliberately do NOT build
 
-- No reminder or follow-up emails, ever (the rule above).
+- No reminder or follow-up emails, ever (the rule above). This promise is to
+  **non-users** — addresses that never joined (`email_stubs`). It is untouched
+  by the waiting-mail email (NOTIFY-EMAIL.md), which goes only to **account
+  holders** who signed up, defaults on for them, and carries its own opt-out;
+  the sweep draws candidates from `accounts` only, so a stub can never receive
+  a second email by construction.
 - No delivery/read status back to the sender — "sent" is all they ever see
   (also the no-enumeration guarantee).
 - No "has this email joined?" query in any form.

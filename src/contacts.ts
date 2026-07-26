@@ -272,9 +272,37 @@ export interface TagMeta {
   updatedAt?: number; // epoch ms of the last evidence merge, when it has changed since
 }
 
+// One member of a group chat, as stored locally and as carried in every group
+// envelope's roster. `name` is the member's SELF-name (what they broadcast),
+// never the local user's nick for them — rosters travel to every other member,
+// and a private nickname ("Mum", "Niels - bankdata") must not leak.
+export interface GroupMember {
+  name: string;
+  signPub: string;
+  boxPub: string;
+}
+
+// A group chat (GROUPS: 0.24). A group is a CLIENT-SIDE object — the server
+// never learns it exists: every group message is N individually-sealed 1:1
+// sends whose envelopes carry {id, name, roster}, and receivers cohere them
+// into one thread by id. `members` excludes the local user (the roster on the
+// wire includes everyone). `left` marks a group the user left or was removed
+// from — kept for history, refused for sends.
+export interface Group {
+  id: string; // "g" + hex — the stable thread key, minted at creation
+  name: string;
+  members: GroupMember[];
+  createdAt: number;
+  left?: boolean;
+}
+
+// Envelope rosters are bounded so a hostile sender can't balloon the book.
+export const GROUP_MAX_MEMBERS = 64;
+
 export interface ContactBook {
   me: string; // this user's own id
   contacts: Contact[];
+  groups?: Group[]; // group chats (absent until the first one exists)
 }
 
 export function loadContacts(path: string): ContactBook {
@@ -320,6 +348,31 @@ export function resolve(book: ContactBook, query: string): ResolveResult {
   if (fuzzy.length > 1) return { status: "ambiguous", query, candidates: fuzzy };
   if (fuzzy[0]) return { status: "resolved", contact: fuzzy[0] };
   return { status: "none", query };
+}
+
+export type ResolveGroupResult =
+  | { status: "resolved"; group: Group }
+  | { status: "none"; query: string }
+  | { status: "ambiguous"; query: string; candidates: Group[] };
+
+// Map a name → a group, with the same exact-first-then-substring behavior as
+// the contact resolver, so "project" finds a saved "project-x". Left groups
+// still resolve (history recall needs them); senders check `left` themselves.
+export function resolveGroup(book: ContactBook, query: string): ResolveGroupResult {
+  const q = query.trim().toLowerCase().replace(/^#/, ""); // "#project-x" works too
+  const groups = book.groups ?? [];
+  if (!q) return { status: "none", query };
+  const exact = groups.filter((g) => g.name.toLowerCase() === q);
+  if (exact.length > 1) return { status: "ambiguous", query, candidates: exact };
+  if (exact[0]) return { status: "resolved", group: exact[0] };
+  const fuzzy = groups.filter((g) => g.name.toLowerCase().includes(q));
+  if (fuzzy.length > 1) return { status: "ambiguous", query, candidates: fuzzy };
+  if (fuzzy[0]) return { status: "resolved", group: fuzzy[0] };
+  return { status: "none", query };
+}
+
+export function groupById(book: ContactBook, id: string): Group | undefined {
+  return book.groups?.find((g) => g.id === id);
 }
 
 // How recently you must have written someone for them to count as "active". Past

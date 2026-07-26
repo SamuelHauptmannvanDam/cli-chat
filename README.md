@@ -72,6 +72,13 @@ automatic to fully on-demand:
 > read — say *"read it"* and the agent reads it out. Nothing to turn on, no
 > background cost.
 
+**📢 Desktop notifications — the instant a message lands (default)**
+> Away from the terminal? A native notification pops on macOS, Linux, or Windows
+> the moment mail arrives — one message shows the sender and a short preview,
+> a burst collapses to "3 new messages from Niels, Sam", and a stranger held at
+> your door never shows their text. Say *"stop notifying me"* to turn them off
+> anywhere (it follows your account), *"notify me again"* to turn them back on.
+
 **🗨️ Live chat — say *"chat"* (your inbox, in the session)**
 > Say *"chat"* (or *"watch"* / *"keep an eye out"*) to open a live inbox: incoming
 > messages stream into the conversation and pile up as a list, so you can reply to
@@ -140,9 +147,12 @@ saves a fact your messenger can use anywhere — it's what auto chat answers fro
 - *"verify Niels"* — compare Signal-style safety numbers and mark a contact verified (🚩 warns if their key ever changes)
 - *"rename Sam to …"* / *"delete Sam"* — manage contacts
 - *"call me …"* — change the name others see
+- *"stop notifying me"* / *"notify me again"* — desktop notifications off / on
 - *"log in"* / *"log out"* — put your account on this device, or wipe it off
 
 Scripts and CI can send too, headlessly: `npx cli-chat-mcp send Niels "deploy landed"`.
+(On a headless or shared box, `MESSENGER_NOTIFY=0` keeps desktop notifications
+off for that machine no matter the account preference; `=1` forces them on.)
 
 ## Good to know
 - **Two-way chat needs both codes shared once.** A message can't safely carry a
@@ -170,7 +180,6 @@ Scripts and CI can send too, headlessly: `npx cli-chat-mcp send Niels "deploy la
   anyone with the URL could post to a known address. Fine for a small trusted group.
 
 ## License
-Source-available under the [PolyForm Noncommercial 1.0.0](./LICENSE) license: the
-code is public so anyone can audit the end-to-end encryption, and it's free for
-personal and other non-commercial use. Commercial use is reserved — reach out if
-you'd like a commercial license.
+Open source under the [MIT license](./LICENSE): the code is public so anyone
+can audit the end-to-end encryption, and it's free to use however you like —
+personal, commercial, anything.

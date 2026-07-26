@@ -71,6 +71,10 @@ h1 {
   color: var(--dim); max-width: 640px; margin-bottom: 12px;
 }
 
+/* feed transcripts, in the shared terminal window chrome (site.css) —
+   fixed heights, internal scroll, tail pinned by the player (site.js) */
+.feed { font-size: 12px; line-height: 1.85; background: rgba(11, 10, 8, .9); padding: 16px 18px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+
 /* ---- sections ---- */
 section.wrap {
   border-top: 1px solid var(--line);
@@ -128,6 +132,8 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; margin-top: 14
   .grid3 { grid-template-columns: 1fr; }
   .hero { padding-top: 64px; min-height: auto; }
   section.wrap { margin-top: 8vh; padding: 70px 24px 20px; }
+  /* phones render transcripts statically — let the box fit its content */
+  .feed { height: auto !important; }
   .statusbar .seg-r span:first-child { display: none; }
   .statusbar .seg-l { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .statusbar .live { white-space: nowrap; }
@@ -159,7 +165,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; margin-top: 14
   <p class="hero-note">This is the full setup, end to end. Fifteen minutes once, then it's one line in any script forever. Needs <em>Node 22+</em>, nothing else.</p>
   <div class="term" style="margin-top: 40px; max-width: 640px;">
     <div class="term-bar"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span>you@laptop — claude — 80×24</span></div>
-    <div class="feed" id="feedCI" style="min-height: 258px;"></div>
+    <div class="feed" id="feedCI" style="height: 258px;"></div>
   </div>
 </header>
 <script>

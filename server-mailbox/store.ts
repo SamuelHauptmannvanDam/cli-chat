@@ -314,6 +314,30 @@ export interface Store {
     newHandle: string,
     now: number,
   ): "ok" | "taken" | "no_identity" | Promise<"ok" | "taken" | "no_identity">;
+
+  // --- Waiting-mail email (NOTIFY-EMAIL.md) ---------------------------------
+  // Accounts due a "mail waiting" email: signPub bound, opted in, not yet
+  // notified this away-stretch, and >= 1 unfetched message received before
+  // `agedBefore`. count/senderNames cover ALL unfetched mail (not just aged).
+  unreadEmailCandidates(
+    agedBefore: number,
+    limit: number,
+  ): UnreadEmailCandidate[] | Promise<UnreadEmailCandidate[]>;
+  // Set the away-stretch marker after a successful send.
+  markUnreadNotified(signPub: string, now: number): void | Promise<void>;
+  // The recipient drained (came online): re-arm for the next away-stretch.
+  clearUnreadNotified(signPub: string): void | Promise<void>;
+  // User opt-out toggle. No-op when the signPub has no account.
+  setUnreadEmails(signPub: string, on: boolean, now: number): void | Promise<void>;
+}
+
+// One account due a waiting-mail email (NOTIFY-EMAIL.md). `senderNames` are
+// self-chosen display names from the handles directory — untrusted content.
+export interface UnreadEmailCandidate {
+  email: string;
+  signPub: string;
+  count: number;
+  senderNames: (string | null)[];
 }
 
 export function nodeSqliteStore(path: string): Store {
@@ -409,7 +433,9 @@ export function nodeSqliteStore(path: string): Store {
       paid        INTEGER NOT NULL DEFAULT 0,
       data_key    TEXT,
       created_at  INTEGER NOT NULL,
-      updated_at  INTEGER NOT NULL
+      updated_at  INTEGER NOT NULL,
+      unread_notified_at INTEGER,
+      unread_emails      INTEGER NOT NULL DEFAULT 1
     );
     CREATE INDEX IF NOT EXISTS idx_accounts_signpub ON accounts (signPub);
     CREATE TABLE IF NOT EXISTS login_tokens (
@@ -471,6 +497,17 @@ export function nodeSqliteStore(path: string): Store {
   // Same self-heal for the per-account data key (encrypted vault/history).
   try {
     db.exec(`ALTER TABLE accounts ADD COLUMN data_key TEXT`);
+  } catch {
+    /* column already present */
+  }
+  // Same self-heal for the waiting-mail email columns (NOTIFY-EMAIL.md).
+  try {
+    db.exec(`ALTER TABLE accounts ADD COLUMN unread_notified_at INTEGER`);
+  } catch {
+    /* column already present */
+  }
+  try {
+    db.exec(`ALTER TABLE accounts ADD COLUMN unread_emails INTEGER NOT NULL DEFAULT 1`);
   } catch {
     /* column already present */
   }
@@ -1088,6 +1125,59 @@ export function nodeSqliteStore(path: string): Store {
       ).run(newHandle, signPub, mine.boxPub, mine.name, mine.requests_only, now);
       db.prepare(`DELETE FROM handles WHERE signPub = ? AND handle <> ?`).run(signPub, newHandle);
       return "ok";
+    },
+
+    // --- Waiting-mail email (NOTIFY-EMAIL.md) ------------------------------
+    unreadEmailCandidates(agedBefore, limit) {
+      // Step 1: eligible accounts — one aged unfetched message is enough to
+      // qualify; self-mail (sender = recipient) never counts.
+      const candidates = db
+        .prepare(
+          `SELECT a.email, a.signPub FROM accounts a
+           WHERE a.signPub IS NOT NULL
+             AND a.unread_emails = 1
+             AND a.unread_notified_at IS NULL
+             AND EXISTS (SELECT 1 FROM messages m
+                         WHERE m.recipient = a.signPub AND m.fetched_at IS NULL
+                           AND m.sender <> a.signPub
+                           AND m.received_at IS NOT NULL AND m.received_at < ?)
+           LIMIT ?`,
+        )
+        .all(agedBefore, limit) as unknown as { email: string; signPub: string }[];
+      // Step 2: the email reports EVERYTHING waiting, not just what aged past
+      // the trigger — the user is away either way.
+      return candidates.map((c) => {
+        const { n } = db
+          .prepare(
+            `SELECT COUNT(*) AS n FROM messages
+             WHERE recipient = ? AND fetched_at IS NULL AND sender <> ?`,
+          )
+          .get(c.signPub, c.signPub) as unknown as { n: number };
+        const names = db
+          .prepare(
+            `SELECT DISTINCT h.name AS name FROM messages m
+             LEFT JOIN handles h ON h.signPub = m.sender
+             WHERE m.recipient = ? AND m.fetched_at IS NULL AND m.sender <> ?`,
+          )
+          .all(c.signPub, c.signPub) as unknown as { name: string | null }[];
+        return { email: c.email, signPub: c.signPub, count: n, senderNames: names.map((r) => r.name) };
+      });
+    },
+
+    markUnreadNotified(signPub, now) {
+      db.prepare(`UPDATE accounts SET unread_notified_at = ? WHERE signPub = ?`).run(now, signPub);
+    },
+
+    clearUnreadNotified(signPub) {
+      db.prepare(
+        `UPDATE accounts SET unread_notified_at = NULL
+         WHERE signPub = ? AND unread_notified_at IS NOT NULL`,
+      ).run(signPub);
+    },
+
+    setUnreadEmails(signPub, on, now) {
+      db.prepare(`UPDATE accounts SET unread_emails = ? WHERE signPub = ?`).run(on ? 1 : 0, signPub);
+      void now;
     },
   };
 }

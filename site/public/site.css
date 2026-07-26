@@ -32,13 +32,21 @@ h1 .arg { color: var(--amber); }
 .sec-label b { color: var(--amber); font-weight: 400; }
 .lede em { color: var(--ink); }
 .cell h3 { font-size: 13.5px; font-weight: 600; margin-bottom: 8px; }
-.feed .fu { color: var(--green); }
+/* ---- voice colors: the ONE standard every terminal demo follows ----
+   you typed it            → green  (.feed .fu · .cc .in — the ❯ lines)
+   the assistant, speaking
+   or acting for you       → cyan   (.feed .fr/.fd · .cc ● lines + .act ↳ lines)
+   meta / status           → dim    (.feed .fa · .cc .dim)
+   incoming message        → bold sender (.fs) + amber-barred quote (.fq)
+   needs you               → red    (.feed .fw)
+   New demo lines: pick the class by voice and the color is already right. */
+.cc p { color: var(--cyan); }
+.feed .fu, .cc .in { color: var(--green); }
 .feed .fa { color: var(--dim); }
 .feed .fs { font-weight: 600; }
 .feed .fs .env { color: var(--amber); }
 .feed .fq { border-left: 2px solid var(--amber); padding-left: 10px; color: var(--dim); }
-.feed .fr { color: var(--green); }
-.feed .fd { color: var(--cyan); }
+.feed .fr, .feed .fd, .cc .act { color: var(--cyan); }
 .feed .fw { color: var(--red); }
 /* terminal window chrome — shared by every terminal-style animation/transcript
    (landing dual demo, mode feeds, first-run, playbook feeds) */

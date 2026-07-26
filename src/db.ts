@@ -79,6 +79,8 @@ export interface MessageRow {
   read_at: number | null; // null until surfaced to the human
   in_reply_to: string | null; // threading: id of the message this answers
   answered_by?: string | null; // "assistant" when the sender's agent wrote it (AUTO-CHAT.md); absent/null = human
+  group_id?: string | null; // group chats (GROUPS): the group this message belongs to
+  group_name?: string | null; // the group's name as of this message (display convenience)
 }
 
 const SCHEMA = `
@@ -92,7 +94,9 @@ const SCHEMA = `
     fetched_at  INTEGER,
     read_at     INTEGER,
     in_reply_to TEXT,
-    answered_by TEXT
+    answered_by TEXT,
+    group_id    TEXT,
+    group_name  TEXT
   );
   CREATE INDEX IF NOT EXISTS idx_recipient ON messages (recipient, created_at);
 `;
@@ -100,7 +104,11 @@ const SCHEMA = `
 // Columns added after 0.10.0. CREATE TABLE IF NOT EXISTS never alters an existing
 // table, so a pre-upgrade inbox.db needs each new column bolted on; "duplicate
 // column" just means it's already there.
-const MIGRATIONS = [`ALTER TABLE messages ADD COLUMN answered_by TEXT`];
+const MIGRATIONS = [
+  `ALTER TABLE messages ADD COLUMN answered_by TEXT`,
+  `ALTER TABLE messages ADD COLUMN group_id TEXT`,
+  `ALTER TABLE messages ADD COLUMN group_name TEXT`,
+];
 function applyMigrations(exec: (sql: string) => void): void {
   for (const sql of MIGRATIONS) {
     try {
@@ -247,9 +255,9 @@ export function insertMessage(db: Mailbox, m: MessageRow): void {
   // atomic). A duplicate id is then a harmless no-op rather than a PRIMARY KEY throw.
   db.run(
     `INSERT OR IGNORE INTO messages
-       (id, recipient, sender, body, tags, created_at, fetched_at, read_at, in_reply_to, answered_by)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [m.id, m.recipient, m.sender, m.body, m.tags, m.created_at, m.fetched_at, m.read_at, m.in_reply_to, m.answered_by ?? null],
+       (id, recipient, sender, body, tags, created_at, fetched_at, read_at, in_reply_to, answered_by, group_id, group_name)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [m.id, m.recipient, m.sender, m.body, m.tags, m.created_at, m.fetched_at, m.read_at, m.in_reply_to, m.answered_by ?? null, m.group_id ?? null, m.group_name ?? null],
   );
 }
 
@@ -278,14 +286,22 @@ export function historyFor(
   db: Mailbox,
   me: string,
   other: string | null,
-  opts: { limit?: number; before?: number; q?: string } = {},
+  opts: { limit?: number; before?: number; q?: string; group?: string } = {},
 ): MessageRow[] {
   const limit = Math.max(1, Math.min(opts.limit ?? 20, 200));
   const where: string[] = [];
   const params: unknown[] = [];
-  if (other) {
+  if (opts.group) {
+    // A group thread: every row (both directions) carries the group id —
+    // outbound rows have recipient = the group id, inbound recipient = me.
+    where.push(`group_id = ?`);
+    params.push(opts.group);
+  } else if (other) {
     where.push(`((recipient = ? AND sender = ?) OR (recipient = ? AND sender = ?))`);
     params.push(me, other, other, me);
+    // A 1:1 thread never includes group traffic — a member's group messages
+    // would otherwise bleed into their personal thread (they match the pair).
+    where.push(`group_id IS NULL`);
   } else {
     where.push(`(recipient = ? OR sender = ?)`);
     params.push(me, me);

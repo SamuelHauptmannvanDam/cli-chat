@@ -95,11 +95,14 @@ console.log("\n[2] push delivery (warmer + /connect + wake)");
 // Clear Niels's existing unread so we detect only the NEW pushed message.
 for (const m of unreadFor(nielsCtx.cache, niels.signPub)) markRead(nielsCtx.cache, m.id, now());
 
+process.env.MESSENGER_NOTIFY = "0"; // keep the test run silent — no desktop popups
 const stop = startWarmer(nielsCtx, {
   mailboxUrl: URL,
   now,
   pendingPath: join(tmpdir(), `clim-live-pending-${process.pid}.json`),
   ackPath: join(tmpdir(), `clim-live-ack-${process.pid}.json`),
+  settingsPath: join(tmpdir(), `clim-live-settings-${process.pid}.json`),
+  chatLockPath: join(tmpdir(), `clim-live-chatlock-${process.pid}`),
 });
 await sleep(2500); // let the socket connect + the open catch-up drain settle
 console.log("  warmer connected; sending while NOT manually syncing...");

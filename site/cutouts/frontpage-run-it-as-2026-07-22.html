@@ -1,0 +1,69 @@
+<!--
+  CUTOUT — "run it as" section, 2026-07-22
+  =========================================
+  Removed from site/public/index.html when the playbook pages came off the
+  site: with the team-bot learning loop and the CI "wire" beat folded into the
+  hero reel, the link-card section pointed at pages that no longer ship. The
+  playbook pages themselves are preserved whole alongside this file
+  (team-bot.html, headless.html — moved out of site/public/, so they are no
+  longer deployed). The frontpage cuts from the day before live in
+  frontpage-trim-2026-07-21.html.
+
+  To restore: paste the section back between #install and #contact, re-add the
+  CSS below, put "run it as" back in the agenda nav, renumber, and move the
+  playbook pages back into site/public/.
+-->
+
+<!-- =================== SECTION "RUN IT AS" (#desk) ======================== -->
+<section class="wrap" id="desk">
+  <p class="sec-label"><b>##</b> 02 · run it as</p>
+  <h2 data-scramble>The front desk for your team.</h2>
+  <p class="lede">No framework, no webhook, no deploy. Open auto chat in a repo and <em>it answers from that directory</em>: the code, the docs, the git history.</p>
+  <div class="grid">
+    <a class="card cell" href="/team-bot">
+      <p class="lbl">[auto chat]</p>
+      <h3>Team bot</h3>
+      <p>One desk the whole team writes with questions. It answers what the repo already knows, chases what it doesn't, and remembers every answer: an FAQ that writes itself.</p>
+      <span class="go">→ the playbook</span>
+    </a>
+    <a class="card cell" href="/headless">
+      <p class="lbl">[npx send]</p>
+      <h3>Scripts &amp; CI</h3>
+      <p>Pipelines message you headlessly (<code style="font-family:var(--mono);font-size:11.5px;color:var(--green)">npx cli-chat-mcp send ops "deploy landed"</code>) and auto chat on your end closes the noise, answers the routine, and wakes you only when it matters.</p>
+      <span class="go">→ the playbook</span>
+    </a>
+  </div>
+</section>
+
+<!-- ==================== CSS ONLY THIS SECTION USED ======================== -->
+<style>
+/* link-card variant of the card system: whole card is the hit area, .go is a
+   ghost button pinned bottom-right that fills on hover */
+a.card { display: block; color: inherit; }
+a.card:hover { background: #1e1a13; }
+a.card:hover h3 { color: var(--amber); }
+a.card.cell { display: flex; flex-direction: column; }
+a.card.cell p:last-of-type { flex: 1; }
+a.card .go {
+  align-self: flex-end; margin-top: 18px; padding: 7px 14px;
+  border: 1px solid rgba(245,167,66,.45); color: var(--amber); font-weight: 600;
+  transition: background .15s, color .15s, border-color .15s;
+}
+a.card:hover .go { background: var(--amber); border-color: var(--amber); color: var(--bg); }
+
+/* use-case cards */
+.grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-top: 36px; }
+.cell { padding: 26px 22px; }
+.cell .lbl { font-size: 11px; color: var(--green); letter-spacing: .08em; margin-bottom: 12px; }
+.cell h3 { font-size: 15px; }
+.cell p { font-family: var(--serif); font-size: 16px; color: var(--dim); line-height: 1.5; }
+.cell .go { display: inline-block; font-family: var(--mono); font-size: 11px; color: var(--faint); margin-top: 12px; transition: color .15s; font-weight: 400; }
+
+/* media fragment: @media (max-width: 800px) had `.grid, .mode { grid-template-columns: 1fr; }` */
+</style>
+
+<!-- Also removed with this cut:
+  - agenda nav entry: <a href="#desk"><span class="idx">02</span>run it as</a>
+  - footer link: · <a href="/headless">headless playbook</a>
+  - llms.txt line: Full playbook: https://cli-chat.dev/headless
+-->

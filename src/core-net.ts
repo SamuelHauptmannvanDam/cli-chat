@@ -4,7 +4,7 @@
 // per-user inbox DB — so read_message / previews keep their Phase 0 feel while
 // the server only ever holds ciphertext.
 
-import { randomUUID } from "node:crypto";
+import { randomUUID, randomBytes } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
 import { writeSecretAtomic } from "./secure-fs.ts";
 import {
@@ -32,8 +32,13 @@ import {
   removeTagMeta,
   declineTag,
   suggestTagsFor,
+  resolveGroup,
+  groupById,
+  GROUP_MAX_MEMBERS,
   type Contact,
   type ContactBook,
+  type Group,
+  type GroupMember,
   type TagSource,
   type TagSuggestion,
 } from "./contacts.ts";
@@ -135,7 +140,39 @@ export function rememberContact(
 // a recipient SEE who an unknown sender is and reply without a prior contact.
 const ENVELOPE_V = 1;
 
-export function packBody(me: Identity, text: string, opts?: { assistant?: boolean }): string {
+// The group block a group message's envelope carries (GROUPS: 0.24). The server
+// never sees it — it rides INSIDE the sealed body. `mid` is the canonical
+// group-message id: the wire copies each get their own transport id (the server
+// keys on it), but every member stores the message under `mid`, so replies
+// thread identically on every device. `roster` is the full membership INCLUDING
+// the sender (names are members' self-names, never someone's private nick) —
+// carrying it in every message is what lets a receiver learn/heal the group
+// with zero server involvement. `op` marks membership control messages; the
+// roster itself is authoritative either way.
+export interface WireGroup {
+  id: string;
+  name: string;
+  mid: string;
+  roster: { name?: string; signPub: string; boxPub: string }[];
+  op?: GroupOp;
+}
+
+const GROUP_OPS = ["create", "add", "remove", "leave", "rename"] as const;
+export type GroupOp = (typeof GROUP_OPS)[number];
+
+const GROUP_ID_RE = /^g[0-9a-f]{8,32}$/;
+const MID_RE = /^[\w-]{8,80}$/;
+const BOXPUB_RE = /^[A-Za-z0-9+/=]{20,120}$/;
+
+export function newGroupId(): string {
+  return "g" + randomBytes(8).toString("hex");
+}
+
+export function packBody(
+  me: Identity,
+  text: string,
+  opts?: { assistant?: boolean; group?: WireGroup },
+): string {
   const env: {
     v: number;
     text: string;
@@ -143,6 +180,7 @@ export function packBody(me: Identity, text: string, opts?: { assistant?: boolea
     handle?: string;
     boxPub: string;
     answered_by?: string;
+    group?: WireGroup;
   } = {
     v: ENVELOPE_V,
     text,
@@ -153,6 +191,7 @@ export function packBody(me: Identity, text: string, opts?: { assistant?: boolea
   // Machine-readable assistant mark (AUTO-CHAT.md): packed INSIDE the sealed body
   // (invisible to the relay). Back-compat: absent = a human wrote it.
   if (opts?.assistant) env.answered_by = "assistant";
+  if (opts?.group) env.group = opts.group;
   return JSON.stringify(env);
 }
 
@@ -162,6 +201,33 @@ export interface Unpacked {
   handle?: string;
   boxPub?: string;
   answered_by?: "assistant";
+  group?: WireGroup;
+}
+
+// A sender-controlled group block is untrusted like everything else in the
+// body: validate every field's shape and bound the roster, or drop the block
+// entirely (the message still lands as a plain 1:1).
+function parseWireGroup(v: unknown): WireGroup | undefined {
+  if (!v || typeof v !== "object") return undefined;
+  const o = v as Record<string, unknown>;
+  if (typeof o.id !== "string" || !GROUP_ID_RE.test(o.id)) return undefined;
+  if (typeof o.mid !== "string" || !MID_RE.test(o.mid)) return undefined;
+  const name = cleanName(typeof o.name === "string" ? o.name : "") || "group";
+  if (!Array.isArray(o.roster)) return undefined;
+  const roster: WireGroup["roster"] = [];
+  for (const m of o.roster.slice(0, GROUP_MAX_MEMBERS)) {
+    if (!m || typeof m !== "object") continue;
+    const e = m as Record<string, unknown>;
+    if (typeof e.signPub !== "string" || !SIGNPUB_RE.test(e.signPub)) continue;
+    if (typeof e.boxPub !== "string" || !BOXPUB_RE.test(e.boxPub)) continue;
+    roster.push({
+      signPub: e.signPub,
+      boxPub: e.boxPub,
+      name: cleanName(typeof e.name === "string" ? e.name : "") || undefined,
+    });
+  }
+  const op = GROUP_OPS.includes(o.op as GroupOp) ? (o.op as GroupOp) : undefined;
+  return { id: o.id, name, mid: o.mid, roster, op };
 }
 
 // Inverse of packBody. Legacy/plain bodies aren't our JSON envelope, so they pass
@@ -179,6 +245,7 @@ export function unpackBody(plaintext: string): Unpacked {
         boxPub: str(o.boxPub),
         // Only the one recognised value — anything else a sender invents is ignored.
         answered_by: o.answered_by === "assistant" ? "assistant" : undefined,
+        group: parseWireGroup(o.group),
       };
     }
   } catch {
@@ -418,10 +485,23 @@ export function ingestWireMessage(ctx: NetContext, b: WireMessage, plain: string
     // Split the text from the sender's self-introduction. Only the text is cached;
     // the identity feeds the contact book.
     const env = unpackBody(plain);
+    // A group copy is stored under the shared mid (every member keys the message
+    // the same way, so replies thread identically everywhere) — dedupe on it too.
+    const g = env.group;
+    if (g && getMessage(ctx.cache, g.mid)) return false;
     // Self-mail (escalate-by-mail / note to self, AUTO-CHAT.md): never auto-save
     // the user as their own contact, and never auto-tag from it — it just lands
     // in the cache and surfaces as "your assistant" / "Me".
     const fromSelf = b.sender === ctx.me.signPub;
+    // Membership vouches (GROUPS): a sender the user doesn't know, writing into a
+    // group the user IS in (the group id is secret to its members) and listed in
+    // its stored roster, was introduced by whoever brought the group here — they
+    // come through ungated. Any other stranger is held as usual, group field or
+    // not (a made-up group id vouches for nothing).
+    const knownGroup = g && !fromSelf ? groupById(ctx.book, g.id) : undefined;
+    const viaGroup =
+      !!knownGroup && !knownGroup.left && !!b.sender &&
+      knownGroup.members.some((m) => m.signPub === b.sender);
     // A genuinely new sender: save the keys they introduced themselves with, so a
     // reply can be sealed — but GATED ("pending", the new-handle gate) unless a
     // public chat session is live (allowNewSenders). While gated their messages
@@ -439,7 +519,7 @@ export function ingestWireMessage(ctx: NetContext, b: WireMessage, plain: string
         handle: env.handle,
         auto: true,
         selfName: self || undefined,
-        gated: ctx.allowNewSenders?.() ? undefined : "pending",
+        gated: viaGroup || ctx.allowNewSenders?.() ? undefined : "pending",
       });
     } else if (known) {
       // Known contact: NEVER touch name/nick/auto ("your nick wins"), but keep the
@@ -459,8 +539,16 @@ export function ingestWireMessage(ctx: NetContext, b: WireMessage, plain: string
       if (changed && ctx.contactsPath) saveContacts(ctx.contactsPath, ctx.book);
       if (changed) ctx.onBookChange?.();
     }
+    // Learn / heal the group from the envelope's roster — but ONLY from a sender
+    // who is a saved, ungated contact by now (a held stranger's roster claims wait
+    // sealed with the rest of their message, and a keyless unknown sender — no
+    // boxPub, so never saved — vouches for nothing: nothing an unconsented sender
+    // asserts reshapes the book).
+    const senderContact = b.sender && !fromSelf ? contactByKey(ctx.book, b.sender) : undefined;
+    const senderTrusted = !!senderContact && !senderContact.gated;
+    const groupName = g && senderTrusted ? learnGroup(ctx, g, b.sender) : undefined;
     const row: MessageRow = {
-      id: b.id,
+      id: g ? g.mid : b.id,
       recipient: ctx.me.signPub,
       sender: b.sender,
       body: env.text,
@@ -470,6 +558,7 @@ export function ingestWireMessage(ctx: NetContext, b: WireMessage, plain: string
       read_at: null,
       in_reply_to: b.in_reply_to,
       answered_by: env.answered_by ?? null,
+      ...(g ? { group_id: g.id, group_name: groupName ?? (cleanName(g.name) || "group") } : {}),
     };
     insertMessage(ctx.cache, row);
     try {
@@ -477,7 +566,11 @@ export function ingestWireMessage(ctx: NetContext, b: WireMessage, plain: string
     } catch {
       /* history queueing must never break a drain */
     }
-    threadAppend(ctx, { name: senderLabel(ctx.book, b.sender), signPub: b.sender }, {
+    // A group message's thread entry goes to the GROUP's page, keyed by group id.
+    const threadKey = g
+      ? { name: row.group_name ?? "group", signPub: g.id }
+      : { name: senderLabel(ctx.book, b.sender), signPub: b.sender };
+    threadAppend(ctx, threadKey, {
       direction: "in",
       who: senderLabel(ctx.book, b.sender),
       body: env.text,
@@ -488,10 +581,49 @@ export function ingestWireMessage(ctx: NetContext, b: WireMessage, plain: string
   return true;
 }
 
+// Upsert a group from a received envelope's roster. The roster is authoritative
+// (it rides every message, so the newest send heals any divergence) — with two
+// sanity rules: the sender must themselves appear in the roster they assert
+// (except a leave, where their absence IS the assertion), and if the roster no
+// longer includes the user, the group flips to `left` (they were removed).
+// Returns the group's current display name for the row.
+function learnGroup(ctx: NetContext, g: WireGroup, sender: string): string | undefined {
+  if (sender === ctx.me.signPub) return groupById(ctx.book, g.id)?.name;
+  const senderInRoster = g.roster.some((m) => m.signPub === sender);
+  if (!senderInRoster && g.op !== "leave") return groupById(ctx.book, g.id)?.name;
+  const meIn = g.roster.some((m) => m.signPub === ctx.me.signPub);
+  const members: GroupMember[] = g.roster
+    .filter((m) => m.signPub !== ctx.me.signPub)
+    .map((m) => ({ name: m.name ?? `${m.signPub.slice(0, 8)}…`, signPub: m.signPub, boxPub: m.boxPub }));
+  // A leaver drops out of the roster they send; keep them out of members too.
+  const name = cleanName(g.name) || "group";
+  const existing = groupById(ctx.book, g.id);
+  if (existing) {
+    existing.name = name;
+    existing.members = members;
+    if (meIn) delete existing.left;
+    else existing.left = true;
+  } else {
+    (ctx.book.groups ??= []).push({
+      id: g.id,
+      name,
+      members,
+      createdAt: ctx.now(),
+      ...(meIn ? {} : { left: true }),
+    });
+  }
+  persistBook(ctx);
+  return name;
+}
+
 export type SendResult =
   // `email` rides along when the send addressed (and saved) someone by email —
   // it's the identifier the caller shows where a handle would go.
-  | { ok: true; id: string; to: { name: string; signPub: string; keyChanged?: boolean }; saved?: boolean; self?: boolean; acceptedHandle?: boolean; email?: string }
+  | { ok: true; id: string; to: { name: string; signPub: string; keyChanged?: boolean }; saved?: boolean; self?: boolean; acceptedHandle?: boolean; email?: string; group?: undefined }
+  // A group send (multi-recipient, a group name, or a group reply) — see GroupSendOk.
+  | GroupSendOk
+  // The user left (or was removed from) that group — sends to it are refused.
+  | { ok: false; reason: "left_group"; query: string }
   | {
       ok: false;
       reason: "no_contact" | "ambiguous" | "no_keys" | "bad_key";
@@ -570,6 +702,202 @@ async function sendSealed(
   return wire.id;
 }
 
+// ---- group chats (GROUPS: 0.24) -------------------------------------------
+// A group is client-side only: a group message is N individually-sealed 1:1
+// sends whose envelopes carry the same {id, name, mid, roster}; receivers
+// cohere the copies into one thread by group id and store each message under
+// the shared mid. The server never learns a group exists.
+
+// The name a person is called BY THE GROUP (rosters + control texts travel to
+// every member): their broadcast self-name when known, falling back to the
+// local label. Never presented as the user's private nick to others on purpose
+// — for auto-saved contacts the two are the same string anyway.
+function shareName(c: { selfName?: string; name: string }): string {
+  return cleanName(c.selfName) || c.name;
+}
+
+// How a group member is shown to the LOCAL user: their nick wins, as everywhere.
+function memberLabel(ctx: NetContext, m: GroupMember): string {
+  return contactByKey(ctx.book, m.signPub)?.name ?? m.name ?? `${m.signPub.slice(0, 8)}…`;
+}
+
+function persistBook(ctx: NetContext): void {
+  if (ctx.contactsPath) saveContacts(ctx.contactsPath, ctx.book);
+  ctx.onBookChange?.();
+}
+
+// "Niels, Tobias & Mette" — the default name for a group made by a
+// multi-recipient send. Built from the members' shareNames (it travels).
+function autoGroupName(members: GroupMember[]): string {
+  const firsts = members.map((m) => (m.name ?? "").split(/\s+/)[0] || m.signPub.slice(0, 6));
+  const name = firsts.length > 1
+    ? `${firsts.slice(0, -1).join(", ")} & ${firsts[firsts.length - 1]}`
+    : firsts[0] ?? "group";
+  return cleanName(name) || "group";
+}
+
+// Fan one sealed message out to every member (plus any extraRecipients — the
+// remove op's final notice to the removed person). One local row is stored
+// under the shared mid, born read, so the user's own group sends never surface
+// as inbox mail. Partial delivery is reported, not fatal: `failed` carries the
+// members whose POST failed; only a total failure throws.
+async function sendGroupSealed(
+  ctx: NetContext,
+  group: Group,
+  body: string,
+  opts: { in_reply_to?: string | null; asAssistant?: boolean; op?: GroupOp; extraRecipients?: GroupMember[] } = {},
+): Promise<{ mid: string; failed: string[] }> {
+  const asAssistant = opts.asAssistant === true;
+  const text = asAssistant ? body + assistantMark(ctx.me) : body;
+  const mid = randomUUID();
+  const createdAt = ctx.now();
+  // The wire roster: full membership including me — EXCEPT a leave, where my
+  // absence from the roster IS the message (receivers rebuild members from it).
+  const meEntry = { name: cleanName(ctx.me.name) || undefined, signPub: ctx.me.signPub, boxPub: ctx.me.boxPub };
+  const roster = [
+    ...(opts.op === "leave" ? [] : [meEntry]),
+    ...group.members.map((m) => ({ name: m.name || undefined, signPub: m.signPub, boxPub: m.boxPub })),
+  ];
+  const wireGroup: WireGroup = { id: group.id, name: group.name, mid, roster, ...(opts.op ? { op: opts.op } : {}) };
+  const sealedBody = packBody(ctx.me, text, { assistant: asAssistant, group: wireGroup });
+  const recipients = [...group.members, ...(opts.extraRecipients ?? [])];
+  const failed: string[] = [];
+  let firstError: unknown;
+  for (const m of recipients) {
+    try {
+      await ctx.client.send({
+        id: randomUUID(), // transport id — the server keys on it; the message IS `mid`
+        recipient: m.signPub,
+        sender: ctx.me.signPub,
+        body: seal(sealedBody, m.boxPub),
+        tags: null,
+        created_at: createdAt,
+        in_reply_to: opts.in_reply_to ?? null,
+      });
+    } catch (e) {
+      firstError ??= e;
+      failed.push(memberLabel(ctx, m));
+    }
+  }
+  if (recipients.length && failed.length === recipients.length) throw firstError;
+  try {
+    const row: MessageRow = {
+      id: mid,
+      recipient: group.id,
+      sender: ctx.me.signPub,
+      body: text,
+      tags: null,
+      created_at: createdAt,
+      fetched_at: createdAt,
+      read_at: createdAt,
+      in_reply_to: opts.in_reply_to ?? null,
+      answered_by: asAssistant ? "assistant" : null,
+      group_id: group.id,
+      group_name: group.name,
+    };
+    insertMessage(ctx.cache, row);
+    ctx.onHistoryAppend?.(row);
+  } catch {
+    /* cache hiccup — the sends already went */
+  }
+  threadAppend(ctx, { name: group.name, signPub: group.id }, { direction: "out", who: "me", body: text, at: createdAt, assistant: asAssistant });
+  return { mid, failed };
+}
+
+// The success shape every group send returns (multi-recipient send_message,
+// a send addressed to a group name, a group reply, and the group tool's ops).
+// `to` mirrors the 1:1 result shape (name = the group's name, signPub = its id)
+// so shared call sites keep working; `group` is the real signal.
+export interface GroupSendOk {
+  ok: true;
+  id: string;
+  to: { name: string; signPub: string; keyChanged?: boolean };
+  group: { id: string; name: string; members: string[]; created?: boolean };
+  failed?: string[];
+  saved?: undefined;
+  self?: undefined;
+  acceptedHandle?: undefined;
+  email?: undefined;
+}
+
+function groupSendOk(ctx: NetContext, group: Group, mid: string, failed: string[], created = false): GroupSendOk {
+  return {
+    ok: true,
+    id: mid,
+    to: { name: group.name, signPub: group.id },
+    group: {
+      id: group.id,
+      name: group.name,
+      members: group.members.map((m) => memberLabel(ctx, m)),
+      ...(created ? { created: true } : {}),
+    },
+    ...(failed.length ? { failed } : {}),
+  };
+}
+
+// Send to a saved group by name — the single-recipient send path consults this
+// when no contact matches, so "write project-x: shipped" just works.
+async function sendToGroup(
+  ctx: NetContext,
+  group: Group,
+  body: string,
+  asAssistant: boolean,
+): Promise<SendResult> {
+  if (group.left) return { ok: false, reason: "left_group", query: group.name };
+  const { mid, failed } = await sendGroupSealed(ctx, group, body, { asAssistant });
+  return groupSendOk(ctx, group, mid, failed);
+}
+
+// Multi-recipient send ("write Niels, Tobias and Mette: hey"): GROUP CHAT IS
+// THE DEFAULT — reuse the group with exactly this membership, or create one.
+// Every name must be a saved contact with keys; failures report per name.
+async function sendToNames(
+  ctx: NetContext,
+  names: string[],
+  body: string,
+  asAssistant: boolean,
+): Promise<SendResult> {
+  const picked: Contact[] = [];
+  for (const n of names) {
+    const r = resolve(ctx.book, n);
+    if (r.status === "none") return { ok: false, reason: "no_contact", query: n };
+    if (r.status === "ambiguous")
+      return { ok: false, reason: "ambiguous", query: n, candidates: r.candidates.map((c) => c.name) };
+    if (!r.contact.signPub || !r.contact.boxPub) return { ok: false, reason: "no_keys", query: n };
+    if (r.contact.signPub === ctx.me.signPub) continue; // the user in their own list — the group has them anyway
+    if (!picked.some((c) => c.signPub === r.contact.signPub)) picked.push(r.contact);
+  }
+  if (picked.length === 0) return { ok: false, reason: "need_recipient" };
+  if (picked.length === 1) {
+    // One distinct person after dedupe — an ordinary 1:1 send, no group.
+    const c = picked[0]!;
+    const accepted = !!c.gated;
+    if (c.gated) acceptGatedContact(ctx, c);
+    const id = await sendSealed(ctx, { name: c.name, signPub: c.signPub!, boxPub: c.boxPub! }, body, null, asAssistant);
+    return { ok: true, id, to: { name: c.name, signPub: c.signPub! }, ...(accepted ? { acceptedHandle: true } : {}) };
+  }
+  // Writing a held handle into a group counts as accepting, same as a 1:1 send.
+  for (const c of picked) if (c.gated) acceptGatedContact(ctx, c);
+  const keys = picked.map((c) => c.signPub!).sort();
+  const existing = (ctx.book.groups ?? []).find(
+    (g) =>
+      !g.left &&
+      g.members.length === keys.length &&
+      g.members.map((m) => m.signPub).sort().every((k, i) => k === keys[i]),
+  );
+  if (existing) {
+    const { mid, failed } = await sendGroupSealed(ctx, existing, body, { asAssistant });
+    return groupSendOk(ctx, existing, mid, failed);
+  }
+  const members: GroupMember[] = picked.map((c) => ({ name: shareName(c), signPub: c.signPub!, boxPub: c.boxPub! }));
+  const group: Group = { id: newGroupId(), name: autoGroupName(members), members, createdAt: ctx.now() };
+  (ctx.book.groups ??= []).push(group);
+  persistBook(ctx);
+  // The user's text IS the first message; op:"create" marks it as the birth.
+  const { mid, failed } = await sendGroupSealed(ctx, group, body, { asAssistant, op: "create" });
+  return groupSendOk(ctx, group, mid, failed, true);
+}
+
 // Best-effort: does this name match a single friend-of-friend? Returns a
 // `needs_request` steer if so, else null (offline / no match / ambiguous → let the
 // caller fall back to no_contact). Case-insensitive substring match on self-names.
@@ -626,9 +954,24 @@ export async function sendMessage(
   // "me"/"myself" always means the user, even if a contact shares the word.
   if (SELF_WORDS.has(to.toLowerCase())) return sendToSelf(ctx, args.body, asAssistant);
 
+  // SEVERAL comma-separated names (GROUPS) → their shared group chat, created on
+  // first use. Not when a key/email rides along — those are 1:1 onboarding sends.
+  if (!args.key && !args.email) {
+    const parts = to.split(",").map((p) => p.trim()).filter(Boolean);
+    if (parts.length > 1) return sendToNames(ctx, parts, args.body, asAssistant);
+  }
+
   const r = resolve(ctx.book, to);
 
   if (r.status === "none") {
+    // No contact by that name — a saved GROUP's name also addresses a send
+    // ("write project-x: shipped"). Contacts win a name clash; rename the group.
+    if (!args.key && !args.email) {
+      const g = resolveGroup(ctx.book, to);
+      if (g.status === "resolved") return sendToGroup(ctx, g.group, args.body, asAssistant);
+      if (g.status === "ambiguous")
+        return { ok: false, reason: "ambiguous", query: to, candidates: g.candidates.map((x) => x.name) };
+    }
     // No such contact. An EMAIL address reaches anyone (EMAIL-SEND.md): the
     // server answers with the account's keys or provisions an identity on the
     // spot — the sender can't tell which ("sent" either way), and the first-ever
@@ -711,6 +1054,10 @@ export interface InboxMessage {
   self?: boolean;
   // "assistant" when the sender's agent wrote it (renders as "<name>'s assistant").
   answered_by?: string;
+  // Group chats (GROUPS): present when the message belongs to a group — the
+  // feed renders the sender line as `📨 **<sender> → #<group>**`, and a reply
+  // to its id fans to the whole roster.
+  group?: { id: string; name: string };
   // Injection / privilege-overreach flags from the screen (screen.ts). Present →
   // NEVER auto-answer; surface to the human with the flag. A tripwire, not proof.
   warnings?: string[];
@@ -727,6 +1074,7 @@ function toInboxMessage(ctx: NetContext, m: MessageRow): InboxMessage {
     in_reply_to: m.in_reply_to,
     ...(m.sender === ctx.me.signPub ? { self: true } : {}),
     ...(m.answered_by ? { answered_by: m.answered_by } : {}),
+    ...(m.group_id ? { group: { id: m.group_id, name: m.group_name ?? "group" } } : {}),
     ...(warnings.length ? { warnings } : {}),
   };
 }
@@ -913,7 +1261,7 @@ export function refreshPending(
 
 export interface AvailableResult {
   count: number;
-  messages: { id: string; from: string; preview: string; at: number }[];
+  messages: { id: string; from: string; preview: string; at: number; group?: string }[];
   // Held new handles (gate pending): name + handle + message count, NO bodies —
   // those are shown to the user by the system, never through the model.
   new_handles?: NewHandle[];
@@ -930,6 +1278,7 @@ export async function messagesAvailable(ctx: NetContext): Promise<AvailableResul
       from: labelForRow(ctx, m),
       preview: m.body.length > 200 ? m.body.slice(0, 197) + "..." : m.body,
       at: m.created_at,
+      ...(m.group_id ? { group: m.group_name ?? "group" } : {}),
     })),
     ...(held.length ? { new_handles: held } : {}),
   };
@@ -945,6 +1294,7 @@ export type ReadResult =
       in_reply_to: string | null;
       self?: boolean;
       answered_by?: string;
+      group?: { id: string; name: string };
     }
   | { ok: false; reason: "empty" | "not_found" }
   // The message is from a gated new handle: the body stays held (shown to the
@@ -1033,8 +1383,12 @@ export function respondHandle(
 }
 
 export type ReplyResult =
-  | { ok: true; id: string; to: { name: string; signPub: string; keyChanged?: boolean }; self?: boolean; acceptedHandle?: boolean }
-  | { ok: false; reason: "not_found" | "no_keys" };
+  | { ok: true; id: string; to: { name: string; signPub: string; keyChanged?: boolean }; self?: boolean; acceptedHandle?: boolean; group?: undefined }
+  // Replying to a group message fans to the whole roster (reply-all is the
+  // group semantic) and reports the group, not a single recipient.
+  | GroupSendOk
+  | { ok: false; reason: "not_found" | "no_keys" }
+  | { ok: false; reason: "left_group"; query: string };
 
 // The reply half of sendMessage: recipient inferred from the replied-to message,
 // so a reply can never be misdirected by a name lookup. Internal — the public
@@ -1046,6 +1400,22 @@ async function sendReply(
   const original = getMessage(ctx.cache, args.in_reply_to);
   if (!original) return { ok: false, reason: "not_found" };
   const asAssistant = args.as_assistant === true;
+
+  // A group message: the reply goes to the WHOLE roster — reply-all is the
+  // group semantic (a private aside is a fresh 1:1 send, never a reply id).
+  if (original.group_id) {
+    const grp = groupById(ctx.book, original.group_id);
+    if (grp?.left) return { ok: false, reason: "left_group", query: grp.name };
+    if (grp) {
+      const { mid, failed } = await sendGroupSealed(ctx, grp, args.body, {
+        in_reply_to: original.id,
+        asAssistant,
+      });
+      return groupSendOk(ctx, grp, mid, failed);
+    }
+    // Group unknown locally (e.g. the message predates this device's book) —
+    // fall through to a plain 1:1 reply to the sender below.
+  }
 
   // Replying to an OUTBOUND row (a history slice includes both halves) goes to
   // its recipient; replying to inbound goes to its sender. A self-mail thread
@@ -1098,6 +1468,7 @@ export type HistoryResult =
         at: number;
         in_reply_to: string | null;
         answered_by?: string;
+        group?: string; // the group's name, when the row is group traffic
       }[];
     }
   | { ok: false; reason: "no_contact" | "ambiguous"; query: string; candidates?: string[] };
@@ -1116,9 +1487,9 @@ export async function messageHistory(
     /* offline — local history still answers */
   }
   let other: Contact | null = null;
+  let group: Group | null = null;
   if (args.with?.trim()) {
     const r = resolve(ctx.book, args.with);
-    if (r.status === "none") return { ok: false, reason: "no_contact", query: args.with };
     if (r.status === "ambiguous")
       return {
         ok: false,
@@ -1126,17 +1497,26 @@ export async function messageHistory(
         query: args.with,
         candidates: r.candidates.map((c) => c.name),
       };
-    if (!r.contact.signPub) return { ok: false, reason: "no_contact", query: args.with };
-    other = r.contact;
+    if (r.status === "resolved" && r.contact.signPub) {
+      other = r.contact;
+    } else {
+      // Not a (keyed) contact — a GROUP's name also names a thread.
+      const gr = resolveGroup(ctx.book, args.with);
+      if (gr.status === "resolved") group = gr.group;
+      else if (gr.status === "ambiguous")
+        return { ok: false, reason: "ambiguous", query: args.with, candidates: gr.candidates.map((g) => g.name) };
+      else return { ok: false, reason: "no_contact", query: args.with };
+    }
   }
   const rows = historyRows(ctx.cache, ctx.me.signPub, other?.signPub ?? null, {
     limit: args.limit,
     before: args.before,
     q: args.q,
+    ...(group ? { group: group.id } : {}),
   });
   return {
     ok: true,
-    with: other?.name ?? null,
+    with: group?.name ?? other?.name ?? null,
     messages: rows.map((r) => ({
       id: r.id,
       direction: r.sender === ctx.me.signPub ? ("out" as const) : ("in" as const),
@@ -1145,6 +1525,7 @@ export async function messageHistory(
       at: r.created_at,
       in_reply_to: r.in_reply_to,
       ...(r.answered_by ? { answered_by: r.answered_by } : {}),
+      ...(r.group_id ? { group: r.group_name ?? "group" } : {}),
     })),
   };
 }
@@ -1275,4 +1656,174 @@ export async function declineRequest(
   if (!SIGNPUB_RE.test(from)) return { ok: false, reason: "bad_target" };
   await ctx.client.declineRequest(from);
   return { ok: true };
+}
+
+// --- group management (GROUPS: 0.24) — the `group` tool's operations --------
+// Membership changes are ordinary group messages carrying an `op` + the updated
+// roster: every member (including a newcomer, including the person removed)
+// hears about the change as a message in the thread, and the roster it rides on
+// IS the update. No server involvement.
+
+export type GroupManageResult =
+  | (GroupSendOk & { action: string })
+  | { ok: true; action: "list"; groups: { id: string; name: string; members: string[]; left?: boolean }[] }
+  | { ok: true; action: "leave"; group: { id: string; name: string; members: string[] }; already?: boolean; failed?: string[] }
+  | {
+      ok: false;
+      reason:
+        | "no_group"
+        | "ambiguous"
+        | "no_contact"
+        | "ambiguous_member"
+        | "no_keys"
+        | "need_members"
+        | "need_name"
+        | "already_member"
+        | "not_member"
+        | "left_group"
+        | "too_many";
+      action: string;
+      query?: string;
+      candidates?: string[];
+    };
+
+function groupSummary(ctx: NetContext, g: Group): { id: string; name: string; members: string[]; left?: boolean } {
+  return {
+    id: g.id,
+    name: g.name,
+    members: g.members.map((m) => memberLabel(ctx, m)),
+    ...(g.left ? { left: true } : {}),
+  };
+}
+
+export function listGroups(ctx: NetContext): Extract<GroupManageResult, { action: "list" }> {
+  return { ok: true, action: "list", groups: (ctx.book.groups ?? []).map((g) => groupSummary(ctx, g)) };
+}
+
+// Create a group explicitly ("make a group with Niels and Tobias called
+// project-x"). `body` becomes the first message; without one, the birth notice
+// is the message. (The multi-recipient send path creates groups implicitly —
+// this is the door for a named creation.)
+export async function createGroup(
+  ctx: NetContext,
+  args: { members: string[]; name?: string; body?: string; as_assistant?: boolean },
+): Promise<GroupManageResult> {
+  const names = (args.members ?? []).map((n) => n.trim()).filter(Boolean);
+  if (!names.length) return { ok: false, reason: "need_members", action: "create" };
+  const picked: Contact[] = [];
+  for (const n of names) {
+    const r = resolve(ctx.book, n);
+    if (r.status === "none") return { ok: false, reason: "no_contact", action: "create", query: n };
+    if (r.status === "ambiguous")
+      return { ok: false, reason: "ambiguous", action: "create", query: n, candidates: r.candidates.map((c) => c.name) };
+    if (!r.contact.signPub || !r.contact.boxPub) return { ok: false, reason: "no_keys", action: "create", query: n };
+    if (r.contact.signPub === ctx.me.signPub) continue;
+    if (!picked.some((c) => c.signPub === r.contact.signPub)) picked.push(r.contact);
+  }
+  if (!picked.length) return { ok: false, reason: "need_members", action: "create" };
+  if (picked.length > GROUP_MAX_MEMBERS) return { ok: false, reason: "too_many", action: "create" };
+  for (const c of picked) if (c.gated) acceptGatedContact(ctx, c); // adding = consenting, like writing them
+  const members: GroupMember[] = picked.map((c) => ({ name: shareName(c), signPub: c.signPub!, boxPub: c.boxPub! }));
+  const group: Group = {
+    id: newGroupId(),
+    name: cleanName(args.name ?? "").replace(/^#/, "") || autoGroupName(members),
+    members,
+    createdAt: ctx.now(),
+  };
+  (ctx.book.groups ??= []).push(group);
+  persistBook(ctx);
+  const myName = cleanName(ctx.me.name) || "someone";
+  const text = args.body?.trim() || `${myName} started the group "${group.name}"`;
+  const { mid, failed } = await sendGroupSealed(ctx, group, text, { op: "create", asAssistant: args.as_assistant === true });
+  return { ...groupSendOk(ctx, group, mid, failed, true), action: "create" };
+}
+
+// Add / remove a member, rename the group, or leave it. Flat membership by
+// design (v1): any member may change the roster — like the chat itself, the
+// group runs on cooperation, and every change is announced in the thread.
+export async function manageGroup(
+  ctx: NetContext,
+  args: { group: string; action: "add" | "remove" | "rename" | "leave"; name?: string; as_assistant?: boolean },
+): Promise<GroupManageResult> {
+  const action = args.action;
+  const gr = resolveGroup(ctx.book, args.group ?? "");
+  if (gr.status === "none") return { ok: false, reason: "no_group", action, query: args.group };
+  if (gr.status === "ambiguous")
+    return { ok: false, reason: "ambiguous", action, query: args.group, candidates: gr.candidates.map((g) => g.name) };
+  const group = gr.group;
+  const myName = cleanName(ctx.me.name) || "someone";
+  const asAssistant = args.as_assistant === true;
+
+  if (action === "leave") {
+    if (group.left) return { ok: true, action: "leave", group: groupSummary(ctx, group), already: true };
+    // Announce first (the roster on the leave message excludes the leaver — that
+    // IS the update), then flip the local flag.
+    const { failed } = await sendGroupSealed(ctx, group, `${myName} left the group "${group.name}"`, {
+      op: "leave",
+      asAssistant,
+    });
+    group.left = true;
+    persistBook(ctx);
+    return { ok: true, action: "leave", group: groupSummary(ctx, group), ...(failed.length ? { failed } : {}) };
+  }
+
+  if (group.left) return { ok: false, reason: "left_group", action, query: group.name };
+
+  if (action === "rename") {
+    const name = cleanName(args.name ?? "").replace(/^#/, "");
+    if (!name) return { ok: false, reason: "need_name", action };
+    const old = group.name;
+    group.name = name;
+    persistBook(ctx);
+    const { mid, failed } = await sendGroupSealed(ctx, group, `${myName} renamed the group "${old}" to "${name}"`, {
+      op: "rename",
+      asAssistant,
+    });
+    return { ...groupSendOk(ctx, group, mid, failed), action };
+  }
+
+  if (action === "add") {
+    if (!args.name?.trim()) return { ok: false, reason: "need_name", action };
+    const r = resolve(ctx.book, args.name);
+    if (r.status === "none") return { ok: false, reason: "no_contact", action, query: args.name };
+    if (r.status === "ambiguous")
+      return { ok: false, reason: "ambiguous", action, query: args.name, candidates: r.candidates.map((c) => c.name) };
+    const c = r.contact;
+    if (!c.signPub || !c.boxPub) return { ok: false, reason: "no_keys", action, query: args.name };
+    if (group.members.some((m) => m.signPub === c.signPub))
+      return { ok: false, reason: "already_member", action, query: c.name };
+    if (group.members.length + 1 > GROUP_MAX_MEMBERS) return { ok: false, reason: "too_many", action };
+    if (c.gated) acceptGatedContact(ctx, c);
+    group.members.push({ name: shareName(c), signPub: c.signPub, boxPub: c.boxPub });
+    persistBook(ctx);
+    const { mid, failed } = await sendGroupSealed(
+      ctx,
+      group,
+      `${myName} added ${shareName(c)} to the group "${group.name}"`,
+      { op: "add", asAssistant },
+    );
+    return { ...groupSendOk(ctx, group, mid, failed), action };
+  }
+
+  // remove: match the member by the user's nick or their roster name; the
+  // removed person still gets the announcement as a final notice.
+  if (!args.name?.trim()) return { ok: false, reason: "need_name", action };
+  const q = args.name.trim().toLowerCase();
+  const labelsOf = (m: GroupMember) =>
+    [memberLabel(ctx, m), m.name].filter(Boolean).map((s) => s!.toLowerCase());
+  let hits = group.members.filter((m) => labelsOf(m).some((l) => l === q));
+  if (!hits.length) hits = group.members.filter((m) => labelsOf(m).some((l) => l.includes(q)));
+  if (!hits.length) return { ok: false, reason: "not_member", action, query: args.name };
+  if (hits.length > 1)
+    return { ok: false, reason: "ambiguous_member", action, query: args.name, candidates: hits.map((m) => memberLabel(ctx, m)) };
+  const removed = hits[0]!;
+  group.members = group.members.filter((m) => m.signPub !== removed.signPub);
+  persistBook(ctx);
+  const { mid, failed } = await sendGroupSealed(
+    ctx,
+    group,
+    `${myName} removed ${removed.name || memberLabel(ctx, removed)} from the group "${group.name}"`,
+    { op: "remove", asAssistant, extraRecipients: [removed] },
+  );
+  return { ...groupSendOk(ctx, group, mid, failed), action };
 }

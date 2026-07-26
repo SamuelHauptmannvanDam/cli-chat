@@ -132,6 +132,13 @@ CREATE INDEX IF NOT EXISTS idx_email_stubs_signpub ON email_stubs (sign_pub);
 -- it before pushing (encryption at rest, not E2E — the server stores both).
 -- On an existing D1 the CREATE is a no-op, so add the column once:
 --   wrangler d1 execute cli-chat --remote --command "ALTER TABLE accounts ADD COLUMN data_key TEXT"
+-- `unread_notified_at` / `unread_emails` (NOTIFY-EMAIL.md): the waiting-mail
+-- email. `unread_notified_at` is the once-per-away-stretch marker — set when the
+-- "mail waiting" email sends, cleared on every drain (the user came online), so
+-- one absence gets at most one email. `unread_emails` = 0 is the user's opt-out.
+-- On an existing D1 the CREATE is a no-op, so add the columns once:
+--   wrangler d1 execute cli-chat --remote --command "ALTER TABLE accounts ADD COLUMN unread_notified_at INTEGER"
+--   wrangler d1 execute cli-chat --remote --command "ALTER TABLE accounts ADD COLUMN unread_emails INTEGER NOT NULL DEFAULT 1"
 CREATE TABLE IF NOT EXISTS accounts (
   id          TEXT PRIMARY KEY,
   email       TEXT NOT NULL UNIQUE,   -- lowercased
@@ -139,7 +146,9 @@ CREATE TABLE IF NOT EXISTS accounts (
   paid        INTEGER NOT NULL DEFAULT 0,
   data_key    TEXT,                   -- minted on first login (hex, 32 bytes)
   created_at  INTEGER NOT NULL,
-  updated_at  INTEGER NOT NULL
+  updated_at  INTEGER NOT NULL,
+  unread_notified_at INTEGER,                    -- away-stretch marker (cleared on drain)
+  unread_emails      INTEGER NOT NULL DEFAULT 1  -- 0 = opted out of waiting-mail emails
 );
 CREATE INDEX IF NOT EXISTS idx_accounts_signpub ON accounts (signPub);
 

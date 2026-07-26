@@ -208,3 +208,36 @@ test("D1: purgeEmailStubs spares waiting mail and claimed stubs, keeps the tombs
   assert.equal(await store.purgeEmailStubs(99999), 0);
   assert.equal((await store.getEmailStub("old@example.com"))?.signPub, "new-sign");
 });
+
+test("D1: waiting-mail sweep — candidates, marker, drain re-arm, opt-out (NOTIFY-EMAIL.md)", async () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const store = freshStore();
+  await store.registerHandle("alice1", "alice", "alice-box", 1000, "Alice Ant");
+  const acc = await store.getOrCreateAccount("bob@example.com", 1000);
+  await store.bindAccountSignPub(acc.id, "bob", 1000);
+  await store.put(wire({ id: "n1", sender: "alice", recipient: "bob" }), 1000);
+  await store.put(wire({ id: "self", sender: "bob", recipient: "bob" }), 1000); // never counts
+
+  // Candidate carries the account email, the non-self count, and sender names.
+  const found = await store.unreadEmailCandidates(1000 + DAY, 50);
+  assert.equal(found.length, 1);
+  assert.equal(found[0]!.email, "bob@example.com");
+  assert.equal(found[0]!.signPub, "bob");
+  assert.equal(found[0]!.count, 1);
+  assert.deepEqual(found[0]!.senderNames, ["Alice Ant"]);
+
+  // Marker set → out of the candidate pool; drain re-arms; opt-out wins over both.
+  await store.markUnreadNotified("bob", 2000);
+  assert.equal((await store.unreadEmailCandidates(1000 + DAY, 50)).length, 0);
+  await store.clearUnreadNotified("bob");
+  assert.equal((await store.unreadEmailCandidates(1000 + DAY, 50)).length, 1);
+  await store.setUnreadEmails("bob", false, 3000);
+  assert.equal((await store.unreadEmailCandidates(1000 + DAY, 50)).length, 0);
+  await store.setUnreadEmails("bob", true, 4000);
+
+  // Too-young mail doesn't qualify; an account without a bound signPub never appears.
+  assert.equal((await store.unreadEmailCandidates(1000, 50)).length, 0);
+  await store.getOrCreateAccount("ghost@example.com", 1000);
+  const again = await store.unreadEmailCandidates(1000 + DAY, 50);
+  assert.deepEqual(again.map((c) => c.email), ["bob@example.com"]);
+});

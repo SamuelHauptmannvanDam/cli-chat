@@ -337,3 +337,34 @@ test("resolve of an unknown handle is 404", async () => {
   const res = await signedRequest(app, alice, "GET", "/resolve/nobody");
   assert.equal(res.status, 404);
 });
+
+// CORS: the browser client (online.cli-chat.dev) is allowed, foreign sites are
+// not, and preflights carry the signature/bearer headers the client sends.
+test("CORS preflight from the web client origin is allowed", async () => {
+  const app = freshApp();
+  const res = await app.fetch(
+    new Request("http://mailbox/messages", {
+      method: "OPTIONS",
+      headers: {
+        origin: "https://online.cli-chat.dev",
+        "access-control-request-method": "POST",
+        "access-control-request-headers": "content-type,x-pubkey,x-timestamp,x-signature",
+      },
+    }),
+  );
+  assert.equal(res.headers.get("access-control-allow-origin"), "https://online.cli-chat.dev");
+  const allowed = (res.headers.get("access-control-allow-headers") ?? "").toLowerCase();
+  for (const h of ["authorization", "x-pubkey", "x-timestamp", "x-signature"]) {
+    assert.ok(allowed.includes(h), `allow-headers missing ${h}`);
+  }
+});
+
+test("CORS allows localhost dev and denies foreign origins", async () => {
+  const app = freshApp();
+  const at = (origin: string) =>
+    app.fetch(new Request("http://mailbox/health", { headers: { origin } }));
+  const local = await at("http://localhost:8788");
+  assert.equal(local.headers.get("access-control-allow-origin"), "http://localhost:8788");
+  const foreign = await at("https://evil.example.com");
+  assert.equal(foreign.headers.get("access-control-allow-origin"), null);
+});

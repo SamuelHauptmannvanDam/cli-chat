@@ -13,6 +13,7 @@ import type {
   MailSummary,
   NetworkPerson,
   Store,
+  UnreadEmailCandidate,
   VaultRecord,
 } from "./store.ts";
 import type { WireMessage } from "../src/identity.ts";
@@ -701,6 +702,78 @@ export function d1Store(db: D1Like): Store {
         .bind(signPub, newHandle)
         .run();
       return "ok";
+    },
+
+    // --- Waiting-mail email (NOTIFY-EMAIL.md) ------------------------------
+    async unreadEmailCandidates(agedBefore: number, limit: number): Promise<UnreadEmailCandidate[]> {
+      // Step 1: eligible accounts — one aged unfetched message qualifies;
+      // self-mail (sender = recipient) never counts.
+      const { results } = await db
+        .prepare(
+          `SELECT a.email, a.signPub FROM accounts a
+           WHERE a.signPub IS NOT NULL
+             AND a.unread_emails = 1
+             AND a.unread_notified_at IS NULL
+             AND EXISTS (SELECT 1 FROM messages m
+                         WHERE m.recipient = a.signPub AND m.fetched_at IS NULL
+                           AND m.sender <> a.signPub
+                           AND m.received_at IS NOT NULL AND m.received_at < ?)
+           LIMIT ?`,
+        )
+        .bind(agedBefore, limit)
+        .all();
+      const candidates = results as { email: string; signPub: string }[];
+      // Step 2: the email reports EVERYTHING waiting, not just what aged past
+      // the trigger — the user is away either way.
+      const out: UnreadEmailCandidate[] = [];
+      for (const c of candidates) {
+        const row = (await db
+          .prepare(
+            `SELECT COUNT(*) AS n FROM messages
+             WHERE recipient = ? AND fetched_at IS NULL AND sender <> ?`,
+          )
+          .bind(c.signPub, c.signPub)
+          .first()) as { n: number };
+        const { results: nameRows } = await db
+          .prepare(
+            `SELECT DISTINCT h.name AS name FROM messages m
+             LEFT JOIN handles h ON h.signPub = m.sender
+             WHERE m.recipient = ? AND m.fetched_at IS NULL AND m.sender <> ?`,
+          )
+          .bind(c.signPub, c.signPub)
+          .all();
+        out.push({
+          email: c.email,
+          signPub: c.signPub,
+          count: Number(row.n),
+          senderNames: (nameRows as { name: string | null }[]).map((r) => r.name),
+        });
+      }
+      return out;
+    },
+
+    async markUnreadNotified(signPub: string, now: number) {
+      await db
+        .prepare(`UPDATE accounts SET unread_notified_at = ? WHERE signPub = ?`)
+        .bind(now, signPub)
+        .run();
+    },
+
+    async clearUnreadNotified(signPub: string) {
+      await db
+        .prepare(
+          `UPDATE accounts SET unread_notified_at = NULL
+           WHERE signPub = ? AND unread_notified_at IS NOT NULL`,
+        )
+        .bind(signPub)
+        .run();
+    },
+
+    async setUnreadEmails(signPub: string, on: boolean, _now: number) {
+      await db
+        .prepare(`UPDATE accounts SET unread_emails = ? WHERE signPub = ?`)
+        .bind(on ? 1 : 0, signPub)
+        .run();
     },
   };
 }

@@ -60,6 +60,50 @@ export function inviteEmail(to: string, senderName: string | null): OutboundEmai
   };
 }
 
+// Build the waiting-mail email (NOTIFY-EMAIL.md): sent to an ACCOUNT holder when
+// mail has sat unfetched for 24h — no device of theirs has been online since it
+// arrived. Once per away-stretch: after this sends, silence until they come
+// online again. Counts + sender display names only; bodies are sealed (we
+// couldn't include them and wouldn't). Names are self-chosen — untrusted, so the
+// HTML variant escapes them.
+export function unreadEmail(
+  to: string,
+  info: { count: number; senderNames: (string | null)[] },
+): OutboundEmail {
+  const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+  const names = [...new Set(info.senderNames.map((n) => n?.trim()).filter((n): n is string => !!n))];
+  const shown = names.slice(0, 3);
+  const extra = names.length - shown.length;
+  const fromWho =
+    shown.length === 0
+      ? ""
+      : ` from ${shown.join(", ")}${extra > 0 ? ` and ${extra} other${extra === 1 ? "" : "s"}` : ""}`;
+  const n = info.count;
+  const subject =
+    n === 1 && shown.length === 1
+      ? `${shown[0]} is waiting on you on cli-chat`
+      : `You have ${n} message${n === 1 ? "" : "s"} waiting on cli-chat`;
+  const footer =
+    `Messages wait up to 30 days. We email at most once per absence — you won't ` +
+    `hear from us again until you've picked up your mail and new messages pile up. ` +
+    `To turn these emails off, tell your agent: "stop emailing me about waiting mail".`;
+  return {
+    to,
+    subject,
+    text:
+      `You have ${n} unread message${n === 1 ? "" : "s"}${fromWho} waiting in your ` +
+      `cli-chat inbox — encrypted, so only your device can read ${n === 1 ? "it" : "them"}.\n\n` +
+      `Open your agent CLI and ask it to read your messages.\n\n` +
+      footer,
+    html:
+      `<p>You have <b>${n} unread message${n === 1 ? "" : "s"}</b>${esc(fromWho)} waiting in your ` +
+      `<a href="https://cli-chat.dev">cli-chat</a> inbox — encrypted, so only your device can read ` +
+      `${n === 1 ? "it" : "them"}.</p>` +
+      `<p>Open your agent CLI and ask it to read your messages.</p>` +
+      `<p style="color:#666;font-size:13px">${esc(footer)}</p>`,
+  };
+}
+
 // Resend-backed sender for the Worker. `from` must be a verified Resend domain
 // (e.g. "cli-chat <login@your-domain.com>"). Throws on a non-2xx so /auth/login
 // surfaces a real error rather than silently dropping the link.

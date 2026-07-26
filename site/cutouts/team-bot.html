@@ -71,9 +71,10 @@ h1 {
   color: var(--dim); max-width: 640px; margin-bottom: 12px;
 }
 
-/* feed transcripts, in the shared terminal window chrome (site.css) */
+/* feed transcripts, in the shared terminal window chrome (site.css) —
+   fixed heights, internal scroll, tail pinned by the player (site.js) */
 .term { margin-top: 34px; max-width: 560px; }
-.feed { font-size: 12px; line-height: 1.85; background: rgba(11, 10, 8, .9); padding: 16px 18px; }
+.feed { font-size: 12px; line-height: 1.85; background: rgba(11, 10, 8, .9); padding: 16px 18px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
 
 /* ---- sections ---- */
 section.wrap {
@@ -115,6 +116,8 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; margin-top: 14
   .grid3 { grid-template-columns: 1fr; }
   .hero { padding-top: 64px; min-height: auto; }
   section.wrap { margin-top: 8vh; padding: 70px 24px 20px; }
+  /* phones render transcripts statically — let the box fit its content */
+  .feed { height: auto !important; }
   .statusbar .seg-r span:first-child { display: none; }
   .statusbar .seg-l { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .statusbar .live { white-space: nowrap; }
@@ -143,7 +146,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; margin-top: 14
   <p class="hero-note">No framework, no webhook, no deploy. It's your normal account plus one word, and a ladder of modes so you hand over exactly as much as you trust.</p>
   <div class="term">
     <div class="term-bar"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span>you@laptop — claude — 80×24</span></div>
-    <div class="feed" id="feedTeam" style="min-height: 302px;"></div>
+    <div class="feed" id="feedTeam" style="height: 302px;"></div>
   </div>
 </header>
 <script>
@@ -234,11 +237,11 @@ window.FEEDS = [['feedTeam', [
 <span class="cy">MESSENGER_HOME</span>=~/team-desk <span class="g">claude</span>
 <span class="g">❯</span> log in as desk@yourteam.dev, name it "Acme Team Desk"
 <span class="g">❯</span> what's my handle?
-<span class="d">→</span> <span class="a">Tk4d2W</span> <span class="c"># share this with the team</span>
+<span class="d">→</span> <span class="a">Tk4dW</span> <span class="c"># share this with the team</span>
 
 <span class="c"># then, from the repo it should answer from:</span>
 <span class="g">❯</span> <span class="a">auto chat public</span></pre></div>
-  <p class="prose">A teammate's first message names the handle, <em>"write team desk at Tk4d2W: which branch is the auth fix on?"</em>, and <em>public</em> is what lets them straight in: the desk accepts every new handle on its own, saves them, answers. (Without it, each first-timer waits at the door as a 🆕 new-handle notice until you say <em>add</em>: the right default for a personal inbox, needless friction for a desk whose handle only travels inside the team.) From then on <em>"write team desk"</em> is enough. What the desk can't ground, it forwards to <em>you</em>: message it your handle first, and it treats you as the human behind the desk.</p>
+  <p class="prose">A teammate's first message names the handle, <em>"write team desk at Tk4dW: which branch is the auth fix on?"</em>, and <em>public</em> is what lets them straight in: the desk accepts every new handle on its own, saves them, answers. (Without it, each first-timer waits at the door as a 🆕 new-handle notice until you say <em>add</em>: the right default for a personal inbox, needless friction for a desk whose handle only travels inside the team.) From then on <em>"write team desk"</em> is enough. What the desk can't ground, it forwards to <em>you</em>: message it your handle first, and it treats you as the human behind the desk.</p>
   <p class="prose">Teach it the ownership map, <em>"remember Niels owns ingest", "remember Mette decides releases"</em>, and the chase gets sharp: the asker hears who owns their question, and the escalation reaches you <em>with the owner already named</em>, so passing it on is one line. The answer lands back in the asker's thread and the desk <em>remembers it</em>. Ask once, documented forever: the questions your team actually asks become the documentation, without anyone sitting down to write it.</p>
   <p class="prose">The session is the desk's opening hours: while it runs, it answers; say <em>"stop"</em> (or close the laptop) and messages simply queue for next time; <em>nothing is ever lost, the mailbox holds sealed messages until the desk reopens.</em></p>
 </section>
@@ -247,7 +250,7 @@ window.FEEDS = [['feedTeam', [
   <div class="wrap foot">
     <div>
       <p><b>cli-chat</b> · a messenger for the agent age</p>
-      <p><a href="/">← back to cli-chat.dev</a> · <a href="/customer-desk">customer desk playbook →</a></p>
+      <p><a href="/">← back to cli-chat.dev</a> · <a href="/headless">headless send playbook →</a></p>
     </div>
     <div>
       <p>Stuck on the setup?</p>

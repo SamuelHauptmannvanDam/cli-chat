@@ -43,6 +43,7 @@
       if (l.idle) { box.appendChild(p); idleEl = p; }
       else if (l.pin) { if (idleEl) box.insertBefore(p, idleEl); else box.appendChild(p); pins.push(p); }
       else { var anchor = pins[0] || idleEl; if (anchor) box.insertBefore(p, anchor); else box.appendChild(p); }
+      box.scrollTop = box.scrollHeight;
       return p;
     }
     if (reduced || touch) {
@@ -57,10 +58,10 @@
         var p = put(l, (l.pre || '') + '<span class="typed"></span><span class="caret"></span>');
         var tt = p.querySelector('.typed'), i = 0;
         (function ch() {
-          if (i < l.t.length) { tt.textContent += l.t[i++]; setTimeout(ch, 22 + Math.random() * 26); }
-          else { p.querySelector('.caret').remove(); setTimeout(next, 750); }
+          if (i < l.t.length) { tt.textContent += l.t[i++]; box.scrollTop = box.scrollHeight; setTimeout(ch, 11 + Math.random() * 13); }
+          else { p.querySelector('.caret').remove(); setTimeout(next, 375); }
         })();
-      } else { put(l, l.h); setTimeout(next, l.d || 1000); }
+      } else { put(l, l.h); setTimeout(next, (l.d || 1000) / 2); }
     }
     function start() { if (delay) setTimeout(next, delay); else next(); }
     var started = false;

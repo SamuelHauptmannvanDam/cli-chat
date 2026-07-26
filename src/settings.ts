@@ -25,10 +25,26 @@ export interface Settings {
   // ever). Rides the vault with the rest of settings, so one device seeding
   // covers all — and deleting the contact never resurrects it.
   feedbackSeeded: boolean;
+  // Desktop (OS) notifications for mail arriving while the user is away
+  // (notify.ts). ON by default; "stop notifying me" flips it via update_notify.
+  // Rides the vault like the rest of settings; MESSENGER_NOTIFY=0/1 is the
+  // per-device force-override.
+  notify: boolean;
+  // Waiting-mail email (NOTIFY-EMAIL.md): a LOCAL mirror of the server-side
+  // accounts flag, like requestsOnly — the server is the source of truth (the
+  // sweep runs while every device is offline); this reflects the last toggle
+  // from here so "status" answers without a network round-trip. ON by default.
+  emailNotify: boolean;
 }
 
 function defaults(): Settings {
-  return { tagMode: DEFAULT_TAG_MODE, requestsOnly: false, feedbackSeeded: false };
+  return {
+    tagMode: DEFAULT_TAG_MODE,
+    requestsOnly: false,
+    feedbackSeeded: false,
+    notify: true,
+    emailNotify: true,
+  };
 }
 
 // Read settings, falling back to defaults for a missing/corrupt file or any
@@ -39,7 +55,15 @@ export function loadSettings(path: string): Settings {
     const tagMode = TAG_MODES.includes(raw?.tagMode as TagMode)
       ? (raw!.tagMode as TagMode)
       : DEFAULT_TAG_MODE;
-    return { tagMode, requestsOnly: raw?.requestsOnly === true, feedbackSeeded: raw?.feedbackSeeded === true };
+    return {
+      tagMode,
+      requestsOnly: raw?.requestsOnly === true,
+      feedbackSeeded: raw?.feedbackSeeded === true,
+      // Default-on: only an explicit false turns it off (a pre-0.22 file has no field).
+      notify: raw?.notify !== false,
+      // Same default-on rule (pre-0.23 files have no field).
+      emailNotify: raw?.emailNotify !== false,
+    };
   } catch {
     return defaults();
   }

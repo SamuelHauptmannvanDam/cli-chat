@@ -63,6 +63,9 @@ export interface MailboxClient {
   // Handle controls (FRIENDS.md): requests-only mode + handle rotation.
   setRequestsOnly(on: boolean): Promise<void>;
   rotateHandle(handle: string): Promise<"ok" | "taken" | "no_identity">;
+  // Waiting-mail email opt-out (NOTIFY-EMAIL.md). Server-side flag — the sweep
+  // runs while this device is offline, so a local setting alone can't stop it.
+  setUnreadEmails(on: boolean): Promise<void>;
 }
 
 export function createMailboxClient(
@@ -260,6 +263,16 @@ export function createMailboxClient(
         body,
       });
       if (!res.ok) await fail(res, "requests-only");
+    },
+
+    async setUnreadEmails(on) {
+      const body = JSON.stringify({ on });
+      const res = await fetch(`${base}/account/unread-emails`, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...headers("POST", "/account/unread-emails", body) },
+        body,
+      });
+      if (!res.ok) await fail(res, "unread-emails");
     },
 
     async rotateHandle(handle) {

@@ -33,11 +33,10 @@ account). Requires Node 22+.
 ## Headless / CI
 
 Scripts can send without an agent: `npx cli-chat-mcp send ops "deploy landed"`.
-Full playbook: https://cli-chat.dev/headless
 
 ## Links
 
 - Site: https://cli-chat.dev
 - npm: https://www.npmjs.com/package/cli-chat-mcp
 - Delivery is end-to-end encrypted; the mailbox only ever stores ciphertext.
-- License: PolyForm Noncommercial 1.0.0
+- License: MIT

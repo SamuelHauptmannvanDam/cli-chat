@@ -3,7 +3,9 @@
 Status: implemented and deployed. The background warmer runs in the MCP server;
 the live mode is the "chat" inbox (await-mail waker + `read_messages`, see
 `LIVE-INBOX.md`), which replaced the old in-call `watch` tool. The desktop
-notification is opt-in via `MESSENGER_NOTIFY=1`, off by default.
+notification is ON by default since 0.22 (`src/notify.ts` — see
+[Desktop notifications](#desktop-notifications)); the user toggles it with the
+`update_notify` tool, and `MESSENGER_NOTIFY=0/1` force-overrides per device.
 Superseded the 3-second poll loop in `listen_for_messages`.
 
 ## Goal
@@ -23,14 +25,14 @@ problem, not the transport.
 
 Instead, do the receiving in the **MCP server process itself**, which is alive for
 the whole session and runs its own event loop independent of tool calls. It holds
-a WebSocket in the background, drains new mail into the local cache, and (opt-in
-via `MESSENGER_NOTIFY=1`) fires a desktop notification — all **without occupying
+a WebSocket in the background, drains new mail into the local cache, and fires a
+desktop notification (on by default — see below) — all **without occupying
 the agent**. The agent stays free
 to chat. Messages then surface through the normal turn mechanisms:
 
 | Path | When it shows | Occupies agent? |
 |---|---|---|
-| Background warmer (WS in MCP server) | writes cache + desktop notify (opt-in `MESSENGER_NOTIFY=1`), **instant** | ❌ no |
+| Background warmer (WS in MCP server) | writes cache + desktop notify (default-on), **instant** | ❌ no |
 | `check-inbox` hook (on each prompt) | "📬 new from Sam — read it?" on your **next turn** | ❌ no |
 | `listen_for_messages` (now optional) | full body into context, instant | ✅ yes (opt-in only) |
 
@@ -48,7 +50,7 @@ sender ──POST /messages──▶ Worker ──┬─▶ D1 (source of truth,
                               recipient's MCP server (background WS)
                                               │ on wake → sync(ctx)  [existing pull]
                                               ▼
-                          local cache (~/.cli-chat) + desktop notify (opt-in: MESSENGER_NOTIFY=1)
+                          local cache (~/.cli-chat) + desktop notify (default-on, update_notify toggles)
                                               │
                                    surfaced on next turn (hook) / or watch tool
 ```
@@ -113,8 +115,8 @@ A **background warmer**, started at server boot, fully decoupled from tool calls
 2. **On open**: run one `sync(ctx)` immediately — drains anything that arrived
    while this device was offline. (Catch-up; never rely on the socket for missed
    mail.)
-3. **On wake frame**: run `sync(ctx)`; if it added anything, fire an optional
-   desktop notification (`osascript` / `notify-send`, opt-in via `MESSENGER_NOTIFY`).
+3. **On wake frame**: run `sync(ctx)`; if it added anything, fire a desktop
+   notification (see [Desktop notifications](#desktop-notifications)).
    Do **not** mark read — the agent still surfaces it on a turn.
 4. **Reconnect**: exponential backoff on drop (e.g. 1s→2s→…→30s, jittered). On
    every successful reconnect, step 2 again.
@@ -124,6 +126,30 @@ A **background warmer**, started at server boot, fully decoupled from tool calls
 
 Everything here runs on the MCP server's event loop between tool-call handlers —
 it never blocks a turn.
+
+#### Desktop notifications (0.22 — `src/notify.ts`)
+The one surface that reaches a **genuinely idle** user: an OS notification fired
+by the warmer the moment a drain adds mail. ON by default, toggled with the
+`update_notify` tool ("stop notifying me" → `{action:'off'}`); the preference
+lives in settings and rides the vault to every device, while `MESSENGER_NOTIFY=0`
+/ `=1` force-overrides a single device (headless boxes, CI) and wins over the
+preference.
+
+- **Platforms**: macOS (`osascript display notification`), Linux
+  (`notify-send -a cli-chat`), Windows 10+ (a WinRT toast via PowerShell — text
+  travels in env vars, never interpolated into the script). All fire-and-forget.
+- **Content rules mirror the model-facing read paths**: one fresh message shows
+  sender + a 120-char preview; a batch collapses to counts + deduped names
+  ("3 new messages from Niels, Sam"); mail HELD behind the new-handle gate never
+  contributes a body — only "n held from new handle <name>", exactly the 🆕 card;
+  a dismissed handle's mail is silent here too.
+- **No double-alerting**: while a live chat session runs (fresh `chat.lock`) the
+  feed already shows mail in real time, so notifications stay quiet. A per-process
+  announced-ids set means a later drain only announces genuinely new mail, never
+  re-counts old unread.
+- **No terminal bell**: on the stdio transport stdout IS the MCP JSON-RPC stream —
+  the pre-0.22 opt-in path wrote a BEL byte there, which risked corrupting a
+  frame. Removed; the OS notification is the whole signal.
 
 #### `check-inbox` hook (unchanged behavior, now reads a warm cache)
 On `SessionStart` / `UserPromptSubmit` it reads the **local cache** (already warmed

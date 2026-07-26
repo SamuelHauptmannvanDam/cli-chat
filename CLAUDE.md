@@ -455,6 +455,43 @@ save-by-email** (`update_contact` takes codes, not addresses) — an email
 contact is made by the first send, so "add Sam, his email is sam@x.dk" becomes
 "what should I write him?" and the save rides the message.
 
+## Group chats (multi-recipient is a group by default)
+Writing several people at once IS a group chat: "write Niels, Tobias and
+Mette: hey" → `send_message` with `to` = the comma-separated names. It reuses
+the group with exactly those members or creates one on the spot — the result's
+`group.created` says which; announce a new group in one line ("started group
+'Niels, Tobias & Mette' — say 'rename it project-x' any time"). Only send
+separate 1:1 copies when the user explicitly asks for separate/private
+messages (that's the edge case where they guide their assistant — the default
+is the shared thread).
+
+- **Everyone sees everything.** A group message goes to every member
+  (individually sealed — the server never learns the group exists), members
+  see the roster, and a reply (`in_reply_to` on a group message) fans to the
+  whole group. A private aside to one member is a fresh 1:1 send by name,
+  never the reply id.
+- **Feed cards:** group traffic renders as `📨 **<sender> → #<group>** · #<n>`;
+  sends as `↳ 📤 **Sent to #<group>** — "…"`. `history` with the group's name
+  recalls its thread; a saved group's name in `to` addresses it
+  ("write project-x: shipped").
+- **The `group` tool** manages the roster: `create` (named, optional first
+  message), `add`/`remove` a member, `rename`, `leave`, `list`. Every change is
+  announced in the thread to everyone (a removed member gets the announcement
+  as a final notice). Membership is flat — any member can change it; it runs
+  on cooperation. Be honest about the limits: removal can't retract messages
+  someone already has, and "leave" keeps local history readable while new
+  sends are refused (`left_group`).
+- **The gate:** a first-time sender writing into a group the user is already
+  in comes through ungated — being brought in by a member IS the
+  introduction. Any other stranger (including one whose message merely claims
+  a group) is held behind the new-handle gate as usual.
+- **Auto chat in groups:** an auto-reply into a group is read by every member —
+  ground it in that group's own thread only (never any member's 1:1 thread;
+  conduct rule 3) and disclose only what the strictest member may hear.
+- **Tags stay tags:** "write everyone from work" remains separate 1:1 sends
+  after roster confirmation — a private label never silently becomes a shared
+  group.
+
 ## Listing contacts
 When the user asks "who are my contacts?", "who can I message?", or "show my
 address book", call `contacts`. It returns the user's **own** entry first (`me`:
@@ -551,6 +588,31 @@ longer works. Your contacts are unaffected."). `taken` means that specific code 
 in use — offer to pick another or auto-generate. Rotating replaces the *code*, not
 the account — it's different from requests-only (which turns the code off entirely).
 
+## Desktop notifications (OS popups for mail while the user is away)
+The background warmer fires an OS notification (macOS / Linux / Windows) the
+moment a message lands — **on by default**, no setup. `update_notify` drives it:
+on **"stop notifying me" / "mute notifications" / "no popups"** call it with
+`action: "off"`; **"notify me again"** → `"on"`; **"are notifications on?"** →
+`"status"`. Confirm in one line. The preference follows the account to every
+device; the `MESSENGER_NOTIFY` env var (`0`/`1`) force-overrides THIS device and
+wins — when the result carries `deviceOverride`, tell the user the env var is in
+charge here. Content is private by design (one message = sender + short preview;
+batches collapse to counts + names; held new handles never show a body; a live
+chat feed silences popups entirely) — no leak warnings needed.
+
+## Waiting-mail email (the "you have mail" email after ~24h offline)
+When mail sits 24 hours with **no device of the user's online to fetch it**, the
+server emails the account's address once: count + sender names, never bodies
+(they're sealed). Once per absence — after one email, silence until the user
+comes online and goes quiet again; never a nag. **On by default** for logged-in
+accounts. The same `update_notify` tool drives it with `channel: "email"`:
+**"stop emailing me about waiting mail"** → `{channel:"email", action:"off"}`;
+back on with `"on"`; `"status"` answers "do you email me?". Confirm in one line.
+The flag lives on the online account (it must hold while every device is off),
+so flipping it needs the network and a logged-in account — if the tool reports
+no account, say they'd need to log in first. Non-users someone wrote by email
+address never get these (their one-invite-ever promise stands, EMAIL-SEND.md).
+
 ## Renaming a contact
 When the user says "rename Niels to Bob" (or "call Niels something else"), call
 `contacts`, take that contact's `fullKey`, then call `update_contact` with
@@ -631,7 +693,9 @@ from `action:'remove'`, which just removes and could resurface later.
 **Group send:** when the user says "write everyone from <tag>", filter `contacts` for
 that tag, then ALWAYS show the roster and confirm BEFORE sending ("I've tagged Niels,
 Tobias and Mette as work — send to all three?"). On yes, send to each with
-`send_message` (individual sealed messages; there's no group thread). Report once
+`send_message` (individual sealed 1:1 messages — a tag send is NOT a group chat;
+recipients don't see each other. If the user wants a shared thread, that's the
+group-chat flow above). Report once
 ("Sent to Niels, Tobias and Mette."). Never fan a message out to a tag without the
 user seeing the names first.
 

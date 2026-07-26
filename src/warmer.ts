@@ -1,7 +1,7 @@
 // Background push warmer. Runs inside the long-lived MCP server process, on its
 // own event loop — independent of any tool call, so it NEVER occupies the agent's
 // turn. Holds a WebSocket to the recipient's inbox Durable Object; on a "wake"
-// frame it drains new mail into the local cache (and optionally desktop-notifies).
+// frame it drains new mail into the local cache (and desktop-notifies — notify.ts).
 // The agent surfaces it on the next engagement (the inbox rider) or live (the chat
 // waker / read_messages).
 //
@@ -17,12 +17,10 @@
 // as the HTTP routes) travels in the URL query instead — the server reads it
 // from there. See STORE.md.
 
-import { execFile } from "node:child_process";
 import { rmSync } from "node:fs";
 import { makeAuthHeaders } from "./auth.ts";
 import { sync, refreshPending, type NetContext } from "./core-net.ts";
-import { unreadFor } from "./db.ts";
-import { displayNameByKey } from "./contacts.ts";
+import { notifyNewMail } from "./notify.ts";
 
 export interface WarmerOpts {
   mailboxUrl: string;
@@ -31,6 +29,10 @@ export interface WarmerOpts {
   // The warmer is the sole writer of pendingPath; the hook the sole writer of ackPath.
   pendingPath: string;
   ackPath: string;
+  // Desktop notifications (notify.ts): the settings file carrying the notify
+  // preference, and chat.lock so a live feed suppresses them.
+  settingsPath: string;
+  chatLockPath: string;
   // Called on a {t:"vault"} wake (another device pushed a new vault version) and
   // on reconnect catch-up — pull + apply the account's vault. Absent → the warmer
   // is mail-only and ignores vault frames. Must not throw; coalesced by the warmer.
@@ -102,7 +104,8 @@ export function startWarmer(ctx: NetContext, opts: WarmerOpts): () => void {
       } catch {
         /* disk hiccup — the next tick rewrites it */
       }
-      if (added > 0) notifyNewMail(ctx);
+      if (added > 0)
+        notifyNewMail(ctx, { settingsPath: opts.settingsPath, chatLockPath: opts.chatLockPath });
     } catch {
       /* network blip — the next wake or the fallback poll retries */
     } finally {
@@ -213,32 +216,4 @@ export function startWarmer(ctx: NetContext, opts: WarmerOpts): () => void {
       /* ignore */
     }
   };
-}
-
-// Opt-in desktop notification (MESSENGER_NOTIFY=1) for newly-arrived mail. The
-// in-chat surfacing still happens on the next turn — this is the only thing that
-// reaches a genuinely idle user. (See the boundaries in PUSH.md.)
-function notifyNewMail(ctx: NetContext): void {
-  if (process.env.MESSENGER_NOTIFY !== "1") return;
-  const unread = unreadFor(ctx.cache, ctx.me.signPub);
-  const latest = unread[unread.length - 1];
-  if (!latest) return;
-  const from = displayNameByKey(ctx.book, latest.sender);
-  const title = "New message";
-  const body = `${from}: ${latest.body.slice(0, 80)}`;
-  try {
-    process.stdout.write("\x07"); // terminal bell
-  } catch {
-    /* ignore */
-  }
-  if (process.platform === "darwin") {
-    const safe = (s: string) => s.replace(/["\\]/g, " ");
-    execFile(
-      "osascript",
-      ["-e", `display notification "${safe(body)}" with title "${safe(title)}"`],
-      () => {},
-    );
-  } else if (process.platform === "linux") {
-    execFile("notify-send", [title, body], () => {});
-  }
 }

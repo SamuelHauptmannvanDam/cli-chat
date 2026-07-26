@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>cli-chat: your coding agent is your secretary</title>
+<title>cli-chat: your coding agent is your personal assistant</title>
 <meta name="description" content="Messaging where the agent does the work: it writes anyone, answers what it can ground, runs errands through your network, and only interrupts when something needs you. Claude Code, Codex, Copilot, Gemini CLI, any MCP CLI.">
-<meta property="og:title" content="cli-chat: your coding agent is your secretary">
-<meta property="og:description" content="You just hired a secretary. One npx away.">
+<meta property="og:title" content="cli-chat: your coding agent is your personal assistant">
+<meta property="og:description" content="Let the agent take care of communication. One npx away.">
 <meta property="og:url" content="https://cli-chat.dev">
 <meta property="og:type" content="website">
 <meta property="og:image" content="https://cli-chat.dev/og.png">
@@ -15,7 +15,7 @@
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://cli-chat.dev/og.png">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230b0a08'/%3E%3Ctext x='32' y='44' font-family='monospace' font-size='36' font-weight='bold' fill='%23f5a742' text-anchor='middle'%3E%E2%9D%AF%3C/text%3E%3C/svg%3E">
-<link rel="stylesheet" href="site.css">
+<link rel="stylesheet" href="site.css?v=20260726c">
 <style>
 :root {
   --bg: #000000;
@@ -88,21 +88,9 @@ h1 {
 .installs { font-size: 11px; color: var(--faint); letter-spacing: .06em; }
 .installs b { color: var(--green); font-weight: 400; font-variant-numeric: tabular-nums; }
 
-/* ---- terminal demo: the SAME conversation from both ends ----
-   (window chrome itself — .term/.term-bar — is shared, in site.css) */
-.terms { margin-top: 72px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
-.term-body { padding: 22px 22px 26px; height: 400px; font-size: 13px; line-height: 1.9; }
 /* terminals never grow: fixed to their finished size, scrolling inside like a
    real terminal (players keep them pinned to the bottom) */
-.feed, .cc, .term-body { overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
-.t-line { white-space: pre-wrap; word-break: break-word; }
-.t-line .p { color: var(--green); }
-.t-line.agent { color: var(--dim); }
-.t-line.card-sender { color: var(--ink); font-weight: 600; margin-top: 6px; }
-.t-line.card-sender .env { color: var(--amber); }
-.t-line.quote { color: var(--ink); border-left: 2px solid var(--amber); padding-left: 12px; margin-left: 2px; }
-.t-line.sent { color: var(--green); margin-top: 4px; }
-.t-line.warn { color: var(--amber); margin-top: 4px; }
+.feed, .cc { overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
 .caret {
   display: inline-block; width: 8px; height: 15px; background: var(--amber);
   vertical-align: text-bottom; animation: blink 1.06s steps(1) infinite;
@@ -122,9 +110,8 @@ section.wrap { scroll-margin-top: -40px; }
 .lede { font-family: var(--serif); font-size: 19px; color: var(--dim); max-width: 680px; line-height: 1.6; }
 
 /* ---- card component: one system for every card on the page ----
-   .card            bordered box; optional .tag = floating title chip on the border
-   div .card:hover  border whisper (content, not clickable)
-   a.card:hover     border + background light-up + amber title (clickable) */
+   .card         bordered box; optional .tag = floating title chip on the border
+   .card:hover   amber bloom + self-drawing border */
 .card {
   position: relative; border: 1px solid var(--line); background: var(--bg-card);
   transition: background .2s, border-color .2s, box-shadow .2s;
@@ -147,19 +134,6 @@ section.wrap { scroll-margin-top: -40px; }
 .card:hover::before, .card:hover::after { width: calc(100% + 2px); height: calc(100% + 2px); opacity: 1; }
 .card:hover::before { transition: width .22s ease-out, height .22s ease-out .22s, opacity 0s; }
 .card:hover::after  { transition: height .22s ease-out, width .22s ease-out .22s, opacity 0s; }
-a.card { display: block; color: inherit; }
-a.card:hover { background: #1e1a13; }
-a.card:hover h3 { color: var(--amber); }
-/* clickable cards wear their link: .go is a ghost button pinned bottom-right,
-   amber at rest, filling on hover (the whole card stays the hit area) */
-a.card.cell { display: flex; flex-direction: column; }
-a.card.cell p:last-of-type { flex: 1; }
-a.card .go {
-  align-self: flex-end; margin-top: 18px; padding: 7px 14px;
-  border: 1px solid rgba(245,167,66,.45); color: var(--amber); font-weight: 600;
-  transition: background .15s, color .15s, border-color .15s;
-}
-a.card:hover .go { background: var(--amber); border-color: var(--amber); color: var(--bg); }
 .card .tag { position: absolute; top: -9px; left: 20px; background: var(--bg); padding: 0 8px; font-size: 11px; color: var(--amber); letter-spacing: .06em; z-index: 1; transition: text-shadow .3s; }
 .card:hover .tag { text-shadow: 0 0 12px rgba(245,167,66,.65); }
 /* terminals light up with the card around them */
@@ -169,31 +143,7 @@ a.card:hover .go { background: var(--amber); border-color: var(--amber); color: 
   box-shadow: 0 30px 80px rgba(0,0,0,.5), 0 0 0 1px rgba(245,167,66,.10), 0 0 26px rgba(245,167,66,.08);
 }
 
-/* steps */
-.steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 36px; }
-.steps.four { grid-template-columns: repeat(2, 1fr); }
-.step { padding: 28px 24px; }
-.step .n { color: var(--amber); font-size: 12px; margin-bottom: 14px; }
-.step h3 { font-size: 15px; font-weight: 600; margin-bottom: 10px; }
-.step p { font-family: var(--serif); font-size: 16px; color: var(--dim); line-height: 1.55; }
-.step p + p { margin-top: 10px; }
-.step .dir { color: var(--amber); font-weight: 600; font-size: 12px; letter-spacing: .04em; }
-.step code { font-family: var(--mono); font-size: 11.5px; color: var(--green); background: var(--bg-raised); padding: 2px 6px; }
-
-/* features */
-.grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 36px; }
-.cell { padding: 26px 22px; }
-.cell .lbl { font-size: 11px; color: var(--green); letter-spacing: .08em; margin-bottom: 12px; }
-.cell h3 { font-size: 15px; }
-.cell p { font-family: var(--serif); font-size: 16px; color: var(--dim); line-height: 1.5; }
-.cell .go { display: inline-block; font-family: var(--mono); font-size: 11px; color: var(--faint); margin-top: 12px; transition: color .15s; font-weight: 400; }
-/* front-desk cards: a live desk runs inside each */
-.cell .term { margin-top: 18px; }
-.cell .term-bar { padding: 8px 12px; white-space: nowrap; overflow: hidden; }
-.cell .term .feed { font-size: 11px; line-height: 1.8; padding: 12px 14px; }
-
-/* modes */
-.modes { display: flex; flex-direction: column; gap: 32px; margin-top: 36px; }
+/* mode cards (the hero desk + first run) */
 .mode {
   display: grid; grid-template-columns: 1fr 1.5fr; gap: 28px;
   background: rgba(26, 23, 18, .92); padding: 28px 26px;
@@ -209,38 +159,85 @@ ol.mode-steps { counter-reset: step; margin-bottom: 20px; }
 ol.mode-steps li { counter-increment: step; padding-left: 24px; }
 ol.mode-steps li::before { content: counter(step) "."; }
 .mode-info .switch-note { font-family: var(--mono); font-size: 11px; color: var(--faint); margin-top: 14px; }
-/* the reel: the vignette currently playing lights its line; the lines are
-   hoverable — hover plays that beat and pins the finished transcript */
-.reel-steps li { transition: color .35s; cursor: pointer; }
+/* the reel: only the beat currently playing shows its line; the ‹ › arrows
+   flip between beats, hovering the line (or the terminal) pins its transcript.
+   min-height holds two wrapped lines so the card never jumps between beats */
+.reel-steps { gap: 0; min-height: 48px; }
+.reel-steps li { display: none; cursor: pointer; color: var(--amber); }
 .reel-steps li:hover { color: var(--ink); }
-.reel-steps li.live { color: var(--amber); }
+.reel-steps li.live { display: block; animation: reelStep .35s; }
+@keyframes reelStep { from { opacity: 0; } to { opacity: 1; } }
+/* the reel's position row: ‹ › arrows around a 1/4 counter + a thin bar
+   filling toward the next beat; the bar empties while the reel is pinned */
+.reel-progress { display: flex; align-items: center; gap: 10px; margin-top: 18px; }
+.reel-arrow { font-family: var(--mono); font-size: 13px; line-height: 1; color: var(--faint); background: none; border: 1px solid var(--line); width: 20px; height: 20px; padding: 0; cursor: pointer; transition: color .2s, border-color .2s; }
+.reel-arrow:hover { color: var(--amber); border-color: rgba(245,167,66,.45); }
+.reel-count { font-family: var(--mono); font-size: 11px; color: var(--faint); letter-spacing: .5px; }
+.reel-bar { width: 140px; height: 2px; background: var(--line); overflow: hidden; }
+.reel-bar i { display: block; height: 100%; background: var(--amber); transform: scaleX(0); transform-origin: left; }
+.reel-bar i.on { transform: scaleX(1); transition: transform linear; }
+.reel-progress + .switch-note { margin-top: 8px; }
 .feed {
   font-size: 12px; line-height: 1.85; background: rgba(11, 10, 8, .9); border: 1px solid var(--line);
   padding: 16px 18px; align-self: start;
 }
-/* the endless-shift ticker: a terminal you can't scroll — new lines rise from
-   the bottom, old ones dissolve out the top; the pinned tail (open tickets +
-   your prompt) holds the floor */
-.feed.ticker {
-  display: flex; flex-direction: column; justify-content: flex-end; overflow: hidden;
-  mask-image: linear-gradient(to bottom, transparent 0, #000 44px);
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 44px);
-}
-.feed.ticker p { flex: 0 0 auto; }
-
 /* first-run demo: mimics the agent CLI's own transcript (typed live, no window chrome) */
 .cc { font-size: 12px; line-height: 1.85; padding: 12px 0 18px; background: rgba(11, 10, 8, .9); border: 1px solid var(--line); align-self: start; }
 .cc p { padding: 0 18px 0 34px; text-indent: -16px; }
-.cc .in { color: var(--ink); padding: 0 18px; margin-top: 10px; text-indent: 0; }
-.cc .in .p { color: var(--faint); margin-right: 6px; }
+.cc .in { padding: 0 18px; margin-top: 10px; text-indent: 0; }
+.cc .in .p { margin-right: 6px; }
 .cc .dim { color: var(--faint); }
 .cc .ind { padding-left: 34px; text-indent: 0; }
 .cc .g { margin-top: 10px; }
 .cc .h { color: #96a3f2; }
-.cc .sent { color: var(--green); }
 
 /* feeds & first-run wrapped in the terminal window chrome (site.css) */
 .mode .term { align-self: start; }
+/* the hero terminal fills its card column: as tall as the info beside it,
+   inside the card's padding */
+#job .term { align-self: stretch; display: flex; flex-direction: column; }
+/* align-self:stretch overrides the base .feed's `start` — inside this flex
+   column `start` means shrink-to-content WIDTH, leaving the window unfilled */
+#job .feed { flex: 1; min-height: 300px; align-self: stretch; }
+/* between beats only the lines fade — the window's black stays put */
+#reel p { transition: opacity .4s; }
+#reel.fading p { opacity: 0; }
+
+/* ---- the online demo: a mini replica of the browser client (not a terminal).
+   Clicking anywhere on it opens the real thing. ---- */
+.ol-top {
+  display: flex; align-items: center; gap: 14px; padding: 10px 14px;
+  border-bottom: 1px solid var(--line); font-size: 11px; color: var(--faint);
+  white-space: nowrap; overflow: hidden;
+}
+.ol-brand b { color: var(--ink); font-weight: 700; }
+.ol-brand em { color: var(--amber); font-style: normal; }
+.ol-me { color: var(--ink); font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+.ol-me .ol-h { color: var(--amber); font-weight: 400; }
+.ol-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+.ol-live { color: var(--green); }
+.ol-btn { border: 1px solid var(--line); padding: 3px 10px; color: var(--dim); }
+.ol-body { display: grid; grid-template-columns: 172px 1fr; height: 320px; }
+.ol-side { border-right: 1px solid var(--line); overflow: hidden; font-size: 11px; line-height: 1.5; }
+.ol-search {
+  margin: 10px; padding: 6px 10px; border: 1px solid var(--line); color: var(--faint);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ol-c { padding: 8px 12px; border-top: 1px solid var(--line); }
+.ol-c b { display: block; color: var(--ink); font-weight: 600; }
+.ol-c span { display: block; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ol-c.on { background: rgba(245, 167, 66, .07); }
+.ol-chat {
+  overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--line) transparent;
+  padding: 14px 16px; font-size: 12px; line-height: 1.7;
+  display: flex; flex-direction: column; gap: 7px;
+}
+.ol-chat .ot { color: var(--faint); font-size: 10.5px; }
+.ol-chat .om { align-self: flex-start; max-width: 85%; background: var(--bg-raised); border: 1px solid var(--line); padding: 5px 11px; }
+.ol-chat .oy { align-self: flex-end; max-width: 85%; background: rgba(143, 212, 96, .10); border: 1px solid rgba(143, 212, 96, .35); padding: 5px 11px; }
+.ol-chat .os { align-self: flex-end; color: var(--green); font-size: 10.5px; }
+.ol-chat .oi { align-self: center; text-align: center; color: var(--dim); font-size: 11px; margin-top: 4px; }
+.ol-chat .oi.cy { color: var(--cyan); }
 
 /* install */
 .tabs { display: flex; gap: 0; margin-top: 8px; border: 1px solid var(--line); border-bottom: none; width: fit-content; max-width: 100%; overflow-x: auto; }
@@ -264,19 +261,21 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
   .wrap { padding-left: 272px; padding-right: 56px; }
   section.wrap { padding: 110px 56px 110px 272px; }
   header.hero { padding: 70px 56px 70px 272px; }
-  /* four public cards in one row when there's room */
-  .steps.four { grid-template-columns: repeat(4, 1fr); }
-  /* feeds may breathe a little at this size; the mini desks stay tiny */
-  .feed, .cc { font-size: 13px; }
-  .cell .term .feed { font-size: 11px; }
+  /* feeds may breathe a little at this size */
+  .feed, .cc, .ol-chat { font-size: 13px; }
 }
 
 @media (max-width: 800px) {
-  .steps, .steps.four, .grid, .modes, .terms { grid-template-columns: 1fr; }
   .mode { grid-template-columns: 1fr; }
+  /* the window drops below the card: full-bleed over the card's padding and
+     bottom border (26px pad + 1px border), so transcripts get the full width */
+  .card.mode { padding-bottom: 0; }
+  .mode > .term { margin: 0 -27px -1px; }
   /* phones render transcripts statically — let the boxes fit their content */
-  .feed, .cc, .term-body { height: auto !important; }
-  .feed.ticker { height: 442px !important; }
+  .feed, .cc { height: auto !important; }
+  /* the online mock drops its sidebar on phones — the chat is the point */
+  .ol-side { display: none; }
+  .ol-body { grid-template-columns: 1fr; height: auto; }
   .hero { padding-top: 64px; }
   section.wrap { min-height: auto; margin-top: 10vh; padding: 120px 24px 70px; scroll-margin-top: -56px; }
   /* Tight space: version, task count and "● Bash" all keep their place;
@@ -294,47 +293,44 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
   *, *::before, *::after { transition: none !important; }
 }
 </style>
-<script src="site.js" defer></script>
+<script src="site.js?v=20260726c" defer></script>
 </head>
 <body>
 <nav class="agenda" id="agenda">
   <a href="#top" class="active"><span class="idx">00</span>your assistant</a>
-  <a href="#install"><span class="idx">01</span>install → first run</a>
-  <a href="#modes"><span class="idx">02</span>inbox → autopilot</a>
-  <a href="#public"><span class="idx">03</span>go public</a>
-  <a href="#desk"><span class="idx">04</span>front desk</a>
-  <a href="#context"><span class="idx">05</span>what you get</a>
-  <a href="#tools"><span class="idx">06</span>meet the tools</a>
-  <a href="#contact"><span class="idx">07</span>say hi</a>
+  <a href="#install"><span class="idx">01</span>install</a>
+  <a href="#first-run"><span class="idx">02</span>first run</a>
+  <a href="#online"><span class="idx">03</span>online</a>
+  <a href="#contact"><span class="idx">04</span>say hi</a>
 </nav>
 
 <header class="hero wrap" id="top">
   <p class="kicker"><span>// cli-chat <b>·</b> lives in your coding CLI</span><span class="installs" id="installs" hidden><b id="installsN"></b> installs</span></p>
   <h1><span class="prompt">❯ </span><span class="cmd" data-scramble>auto</span> <span class="arg" data-scramble>chat</span></h1>
-  <p class="sub">You just hired a secretary. Your coding agent answers your messages for you — grounded in the directory you open it in and the notes it keeps, marked as your assistant, and <em>it only interrupts when something truly needs you.</em></p>
+  <p class="sub">Let the agent take care of communication. For AI-first teams: questions get answered from where the terminal is opened, not from someone's focus time. No terminal? <a href="https://online.cli-chat.dev">chat online ↗</a></p>
 
   <div class="card mode" id="job" style="margin-top: 28px;">
     <div class="mode-info">
       <p class="tag">your assistant</p>
-      <h3>Say it — it's handled</h3>
-      <p>One line of intent. <em>Your secretary does the logistics.</em></p>
+      <h3>Say it once — it's handled</h3>
       <ul class="mode-steps reel-steps" id="reelSteps">
-        <li><em>the desk</em> — your inbox answers itself, marked as your assistant</li>
-        <li><em>the errand</em> — sent, answered, filed for next time</li>
-        <li><em>the route</em> — it finds the person through your network</li>
-        <li><em>the rally</em> — one ask fans out, replies converge</li>
+        <li class="live">contacts of contacts: find the right person, easily</li>
+        <li>you ask, their assistant answers; no waiting, no interrupting</li>
+        <li>write everyone at once; replies gathered for you</li>
+        <li>wire CI in one line; woken only when it matters</li>
       </ul>
-      <p class="switch-note">hover a beat to watch it · every beat ships today</p>
+      <p class="reel-progress"><button class="reel-arrow" id="reelPrev" aria-label="previous vignette">‹</button><span class="reel-count" id="reelCount">1 / 4</span><button class="reel-arrow" id="reelNext" aria-label="next vignette">›</button><span class="reel-bar"><i id="reelBar"></i></span></p>
+      <p class="switch-note"><span style="color:var(--green)">❯ you</span> · <span style="color:var(--cyan)">↳ your assistant</span> — hover the demo to hold it</p>
     </div>
     <div class="term">
       <div class="term-bar"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span>you@laptop — claude — 80×24</span></div>
-      <div class="feed" id="reel" style="height: 300px;"></div>
+      <div class="feed" id="reel"></div>
     </div>
   </div>
 </header>
 
 <section class="wrap" id="install">
-  <p class="sec-label"><b>##</b> 01 · install → first run</p>
+  <p class="sec-label"><b>##</b> 01 · install</p>
   <div class="tabs" id="tabs">
     <button class="tab active" data-cmd="claude mcp add cli-chat --scope user -- npx -y cli-chat-mcp@latest">Claude Code</button>
     <button class="tab" data-cmd="codex mcp add cli-chat -- npx -y cli-chat-mcp@latest">Codex CLI</button>
@@ -346,8 +342,12 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
     <button class="copy">copy</button>
     <pre><code id="cmd">claude mcp add cli-chat --scope user -- npx -y cli-chat-mcp@latest</code></pre>
   </div>
-  <p class="install-note">Then restart your CLI, allow the new <em>cli-chat</em> server when it asks, and just write someone. Setup happens on the way, like this. Needs Node 22+.</p>
+  <p class="install-note" style="margin-top: 34px;">Then restart your CLI, allow the new <em>cli-chat</em> server when it asks, and just write someone. Setup happens on the way, like this. Needs Node 22+.</p>
+  <p class="install-note">Not ready for autopilot? <em>"chat"</em> reads your inbox to you, <em>"draft chat"</em> proposes replies you approve — say <em>"auto chat"</em> when you trust it.</p>
+</section>
 
+<section class="wrap" id="first-run">
+  <p class="sec-label"><b>##</b> 02 · first run</p>
   <div class="card mode" style="margin-top: 28px;">
     <div class="mode-info">
       <p class="tag">first run</p>
@@ -367,192 +367,48 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
     </div>
     <div class="term">
       <div class="term-bar"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span>mette@laptop — copilot — 80×24</span></div>
-      <div class="cc" id="firstrun" style="height: 564px;"></div>
+      <div class="cc" id="firstrun" style="height: 640px;"></div>
     </div>
   </div>
 </section>
 
-<section class="wrap" id="modes">
-  <p class="sec-label"><b>##</b> 02 · four gears</p>
-  <h2 data-scramble>From inbox to autopilot, at your pace.</h2>
-  <p class="lede">Four modes. Switch a running inbox with one word.</p>
-  <div class="modes">
-    <div class="card mode">
-      <div class="mode-info">
-        <p class="tag">"any messages?"</p>
-        <h3>On demand: you pull</h3>
-        <p>Nothing streams, nothing runs. Ask when you're curious; messages wait until you do. Reply in the same breath.</p>
-        <p class="switch-note">zero background anything · works in any MCP client</p>
-      </div>
-      <div class="term">
-        <div class="term-bar"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span>you@laptop — claude — 80×24</span></div>
-        <div class="feed" id="feedPull" style="height: 210px;"></div>
-      </div>
-    </div>
-    <div class="card mode">
-      <div class="mode-info">
-        <p class="tag">"chat"</p>
-        <h3>Live inbox: you answer</h3>
-        <p>Your inbox streams into the session. Answer one, some, or all in a line.</p>
-        <p class="switch-note">say "stop" to close it</p>
-      </div>
-      <div class="term">
-        <div class="term-bar"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span>you@laptop — codex — 80×24</span></div>
-        <div class="feed" id="feedChat" style="height: 254px;"></div>
-      </div>
-    </div>
-    <div class="card mode">
-      <div class="mode-info">
-        <p class="tag">"draft chat"</p>
-        <h3>Assistant drafts: you send</h3>
-        <p>Every message gets a suggested reply. <em>Nothing sends until you say so.</em></p>
-        <p class="switch-note">"draft" flips a running chat into this mode</p>
-      </div>
-      <div class="term">
-        <div class="term-bar"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span>you@laptop — gemini — 80×24</span></div>
-        <div class="feed" id="feedDraft" style="height: 280px;"></div>
-      </div>
-    </div>
-    <div class="card mode" style="display: block;">
-      <div class="mode-info">
-        <p class="tag">"auto chat"</p>
-        <h3>Assistant answers: marked as assistant</h3>
-        <p>It answers from <em>the directory you opened it in</em>: code, docs, git history. It writes what it learns back. What it can't ground, it asks <em>you</em>. Below: Niels asking, your desk answering.</p>
-        <p class="switch-note">"auto chat answers only" keeps the directory untouched · "stop" closes it any time</p>
-      </div>
-      <div class="terms" style="margin-top: 24px;">
-        <div class="term">
-          <div class="term-bar"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span>samuel@laptop — claude — 80×24</span></div>
-          <div class="term-body" id="demoA"></div>
-        </div>
-        <div class="term">
-          <div class="term-bar"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span>niels@work — codex — 80×24</span></div>
-          <div class="term-body" id="demoB"></div>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<section class="wrap" id="public">
-  <p class="sec-label"><b>##</b> 03 · go public</p>
-  <h2 data-scramble>Public — One word opens the doors.</h2>
-  <p class="lede">Every mode ships <em>private</em>: only your contacts reach your chat modes. Building a desk anyone may write to? Add one word: <em>public</em>.</p>
-  <div class="steps four">
-    <div class="card step">
-      <p class="n">["public"]</p>
-      <h3>Walk-ins welcome</h3>
-      <p>One word on any mode — <code>chat public</code>, <code>draft chat public</code> — and the desk accepts every new handle on its own: first message answered, sender saved, the held backlog let in too.</p>
-    </div>
-    <div class="card step">
-      <p class="n">["auto chat public"]</p>
-      <h3>The desk takes notes</h3>
-      <p>Plain auto chat keeps its pen: the desk takes notes for the documentation in its directory as it sees fit — learnings, docs, an FAQ that grows — and today's files ground tomorrow's answers. A sender can never order a write; what's worth keeping is always the desk's own call.</p>
-    </div>
-    <div class="card step">
-      <p class="n">["answers only"]</p>
-      <h3>Look, don't touch</h3>
-      <p>The outward-facing setting: answering is all the desk can do — the directory stays read-only. The cleverest injection a stranger sends wins nothing but a bad reply.</p>
-    </div>
-    <div class="card step">
-      <p class="n">[per session]</p>
-      <h3>Yours alone</h3>
-      <p>Public lasts exactly one session — it ends when you close the terminal. "private" shuts the gate mid-session, and a dismissed handle stays out even now.</p>
-    </div>
-  </div>
-  <div class="card mode" style="margin-top: 24px;">
+<section class="wrap" id="online">
+  <p class="sec-label"><b>##</b> 03 · online</p>
+  <h2 data-scramble>No terminal? Chat online.</h2>
+  <p class="lede">The same account, in the browser — <em>plain chat, sealed end-to-end.</em></p>
+  <div class="card mode" style="margin-top: 28px;">
     <div class="mode-info">
-      <p class="tag">"auto chat answers only public"</p>
-      <h3>An endless shift at the open desk</h3>
-      <p>Watch a while: strangers walk in and are <em>saved on arrival</em>, grounded questions get answered and <em>scroll away</em> — but the tickets only you can decide <em>park at the bottom with your name on them</em>, and the desk keeps answering over their heads. One line from you at the prompt clears a ticket. The directory stays untouched: <em>answers only</em>.</p>
-      <p class="switch-note">an escalation never stops the line · "private" shuts the gate again · a dismissed handle stays out even now</p>
+      <p class="tag">online</p>
+      <h3>One account, two doors</h3>
+      <p>Log in with your email — your handle, contacts and history are already there. The CLI and the browser are <em>the same account</em>.</p>
+      <ul class="mode-steps">
+        <li>no AI touches your messages</li>
+        <li>unless <em>you</em> connect a model — Claude, GPT, Gemini, Grok, DeepSeek, Mistral, Qwen, Kimi, GLM, or any OpenAI-compatible endpoint</li>
+        <li>your key stays in your browser — <em>never our servers</em></li>
+      </ul>
+      <p style="margin-top: 18px;"><a class="btn" href="https://online.cli-chat.dev">open cli-chat online →</a></p>
     </div>
-    <div class="term">
-      <div class="term-bar"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span>desk@openhours — claude — 80×24</span></div>
-      <div class="feed ticker" id="feedPublic" style="height: 442px;"></div>
+    <div class="term online-app">
+      <div class="ol-top">
+        <span class="ol-brand"><b>cli-chat</b> <em>▸ online</em></span>
+        <span class="ol-me">Mette Holm · <span class="ol-h">Xk4Pq</span></span>
+        <span class="ol-right"><span class="ol-live">● live</span><span class="ol-btn">log out</span></span>
+      </div>
+      <div class="ol-body">
+        <div class="ol-side">
+          <p class="ol-search">write someone — handle or email</p>
+          <p class="ol-c on"><b>Niels</b><span>did 0.21 ship this morning?</span></p>
+          <p class="ol-c"><b>Sam</b><span>hey, I'm on cli-chat</span></p>
+          <p class="ol-c"><b>feedback</b><span>first one in — say hi anytime</span></p>
+        </div>
+        <div class="ol-chat" id="onlinefeed"></div>
+      </div>
     </div>
-  </div>
-</section>
-
-<section class="wrap" id="desk">
-  <p class="sec-label"><b>##</b> 04 · run it as</p>
-  <h2 data-scramble>The front desk for your team.</h2>
-  <p class="lede">No framework, no webhook, no deploy. Open auto chat in a repo and <em>it answers from that directory</em>: the code, the docs, the git history.</p>
-  <div class="grid">
-    <a class="card cell" href="/team-bot">
-      <p class="lbl">[auto chat]</p>
-      <h3>Team bot</h3>
-      <p>One desk the whole team writes with questions. It answers what the repo already knows, chases what it doesn't, and remembers every answer: an FAQ that writes itself.</p>
-      <span class="go">→ the playbook</span>
-    </a>
-    <a class="card cell" href="/customer-desk">
-      <p class="lbl">[answers only]</p>
-      <h3>Customer desk</h3>
-      <p>Point it at your docs. Customers get grounded answers; the rest lands with you, whole exchange in hand. Invite-only by default — or go <em>public</em> and take walk-ins.</p>
-      <span class="go">→ the playbook</span>
-    </a>
-    <a class="card cell" href="/headless">
-      <p class="lbl">[npx send]</p>
-      <h3>Scripts &amp; CI</h3>
-      <p>Pipelines message you headlessly (<code style="font-family:var(--mono);font-size:11.5px;color:var(--green)">npx cli-chat-mcp send ops "deploy landed"</code>) and auto chat on your end closes the noise, answers the routine, and wakes you only when it matters.</p>
-      <span class="go">→ the playbook</span>
-    </a>
-  </div>
-</section>
-
-<section class="wrap" id="context">
-  <p class="sec-label"><b>##</b> 05 · what you get</p>
-  <h2 data-scramble>Messaging on steroids.</h2>
-  <p class="lede">An inbox that <em>answers itself</em>, a <em>memory</em> of everything ever written, an assistant you <em>send to go ask</em>. When both ends run one, your network <em>thinks together</em>.</p>
-  <div class="grid">
-    <div class="card cell"><p class="lbl">[autopilot]</p><h3>Answers itself</h3><p>Replies to what it can ground, marked as your assistant. Hands you the rest.</p></div>
-    <div class="card cell"><p class="lbl">[history]</p><h3>Messages are memory</h3><p>"What did Niels say about the endpoint?" Any thread, any session.</p></div>
-    <div class="card cell"><p class="lbl">[go ask]</p><h3>An assistant on errands</h3><p>"Ask Niels for the staging URL": it writes, waits, comes back with the answer. <em>Filed for next time.</em></p></div>
-    <div class="card cell"><p class="lbl">[mcp]</p><h3>Cross-CLI</h3><p>Claude Code to Gemini to Copilot. The wire doesn't care.</p></div>
-    <div class="card cell"><p class="lbl">[tty]</p><h3>No new UI</h3><p>No app. Your agent is the interface.</p></div>
-    <div class="card cell"><p class="lbl">[sealed]</p><h3>Encrypted before it leaves</h3><p>Sealed to the recipient's keys on your machine. Verify with a <em>60-digit safety number</em>.</p></div>
-  </div>
-</section>
-
-<section class="wrap" id="tools">
-  <p class="sec-label"><b>##</b> 06 · meet the tools</p>
-  <h2 data-scramble>You never call a tool. You say the thing.</h2>
-  <p class="lede">One MCP server underneath, nothing to learn — <em>every box here is a sentence that already works</em>. Start with the essential one: a <em>6-character handle</em> is your phone number.</p>
-  <div class="steps">
-    <div class="card step">
-      <p class="n">[your handle]</p>
-      <h3>Ask "what's my handle?"</h3>
-      <p>Six characters, yours to share — say it on a call, drop it in a README. Swapping them once is the whole exchange.</p>
-    </div>
-    <div class="card step">
-      <p class="n">[you write theirs]</p>
-      <h3>The first message names it</h3>
-      <p><code>write Sam at qL7fA: hey</code> — the send itself saves him. From then on <code>write Sam: hey</code> is enough.</p>
-    </div>
-    <div class="card step">
-      <p class="n">[they write yours]</p>
-      <h3>Their first message knocks</h3>
-      <p>A 🆕 notice, sealed until you say <em>"add"</em> — strangers never read themselves into your terminal. Running an open desk? <em>"go public"</em> lets them straight in for the session.</p>
-    </div>
-  </div>
-  <div class="grid">
-    <div class="card cell"><p class="lbl" id="emailEx">"write sam@gmail.com: hey"</p><h3>Email works too</h3><p>Any address is reachable. No account there yet? They get <em>one</em> invite mail — ever — and the message waits, sealed, until they join.</p></div>
-    <div class="card cell"><p class="lbl">"who are my contacts?"</p><h3>The book</h3><p>Recents first, you on top. Rename anyone — yourself included — by saying it. Deleting forgets; it never blocks.</p></div>
-    <div class="card cell"><p class="lbl">"write everyone from work"</p><h3>Tags &amp; group send</h3><p>Private labels the agent applies from context. A fan-out always shows you the roster before anything sends.</p></div>
-    <div class="card cell"><p class="lbl">"verify Niels"</p><h3>Safety numbers</h3><p>60 digits, compared outside the wire. If their key ever changes you see 🚩 before anything sends.</p></div>
-    <div class="card cell"><p class="lbl">"give me a new code"</p><h3>Rotate the handle</h3><p>Spammed? New code, old one dies, every saved contact keeps working. Or <em>"kill my handle"</em>: connect requests only.</p></div>
-    <div class="card cell"><p class="lbl">"connect with the Tobias Niels knows"</p><h3>Friends of friends</h3><p>See your second circle by name; reach them through a connect request they accept — <em>"any requests?"</em> shows who's asking for you. Nothing delivers before consent.</p></div>
-    <div class="card cell"><p class="lbl">"log in"</p><h3>One account, every machine</h3><p>Your email <em>is</em> the account. Contacts, tags, history and memory land on any device, encrypted — <em>"log out"</em> wipes the box.</p></div>
-    <div class="card cell"><p class="lbl">"remember: staging is db-2"</p><h3>The memory bank</h3><p>Say it once, never again. Notes carry an audience — private, a tag, anyone — and ground every auto answer.</p></div>
-    <div class="card cell"><p class="lbl">"what do you share about me?"</p><h3>Default-closed</h3><p>Nothing personal goes out without a rule you approved. Inspect the ruleset any time; change it in a sentence.</p></div>
-    <div class="card cell"><p class="lbl">"auto chat answers only"</p><h3>Look, don't touch</h3><p>The outward desk posture: it answers from the directory but can never write to it. <em>"write mode"</em> upgrades it back — only from your keyboard, never from a message.</p></div>
-    <div class="card cell"><p class="lbl">"go public"</p><h3>Open the doors</h3><p>New handles walk straight in for the session; <em>"private"</em> shuts the gate again. Every mode has it — <a href="#public">the doors, above</a>.</p></div>
-    <div class="card cell"><p class="lbl">"stop"</p><h3>Closing time</h3><p>Ends any running mode. Messages simply queue, sealed, until next time — a desk's session is its opening hours, and nothing is ever lost.</p></div>
   </div>
 </section>
 
 <section class="wrap" id="contact">
-  <p class="sec-label"><b>##</b> 07 · say hi</p>
+  <p class="sec-label"><b>##</b> 04 · say hi</p>
   <h2 data-scramble>Send feedback.</h2>
   <p class="lede">Our handle is <em>FeedBk</em>.</p>
   <div class="feed" style="max-width: 560px; margin-top: 28px;">
@@ -566,7 +422,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
   <div class="wrap foot">
     <div>
       <p><b>cli-chat</b> · a messenger for the agent age</p>
-      <p>© 2026 · <a href="https://www.npmjs.com/package/cli-chat-mcp">npm: cli-chat-mcp</a> · <a href="/headless">headless playbook</a> · <a href="/llms.txt">llms.txt</a> · PolyForm Noncommercial 1.0.0</p>
+      <p>© 2026 · <a href="https://www.npmjs.com/package/cli-chat-mcp">npm: cli-chat-mcp</a> · <a href="/llms.txt">llms.txt</a> · MIT license</p>
     </div>
     <div>
       <p>Questions, ideas, bugs?</p>
@@ -577,7 +433,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
 
 <div class="statusbar">
   <span class="seg-l"><b>●</b>Bash<span class="task">(Listening for new messages)</span></span>
-  <span class="seg-r"><span class="ver" id="ver">v0.21.1</span><span class="live">1 background task</span></span>
+  <span class="seg-r"><span class="ver" id="ver">v0.24.0</span><span class="live">1 background task</span></span>
 </div>
 
 <script>
@@ -614,116 +470,11 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
     els.forEach(function (el) { io.observe(el); el.addEventListener('mouseenter', function () { scramble(el); }); });
   }
 
-  /* ---- typed terminal demo: auto chat seen from both ends ----
-     `w` picks the window: 'a' = samuel@laptop (auto chat, nobody home — the
-     idle prompt keeps blinking at the bottom while the desk answers), 'b' =
-     niels@work (a human asking). Beat 1: grounded answer goes out on its own.
-     Beat 2: an ungroundable ask gets a holding reply + "needs you" — the rail.
-     Each page load deals the two windows a fresh pair of DIFFERENT agent
-     CLIs — the cross-CLI story told by the titlebars. */
-  (function () {
-    var clis = ['claude', 'codex', 'copilot', 'gemini'];
-    var bars = document.querySelectorAll('.terms .term-bar span');
-    if (bars.length < 2) return;
-    var i = Math.floor(Math.random() * clis.length);
-    var j = Math.floor(Math.random() * (clis.length - 1));
-    if (j >= i) j++;
-    bars[0].textContent = 'samuel@laptop — ' + clis[i] + ' — 80×24';
-    bars[1].textContent = 'niels@work — ' + clis[j] + ' — 80×24';
-  })();
-  /* Same trick for the email examples: each load deals an everyday mail
-     provider to the card label and the first-run typed address. */
+  /* Each load deals the first-run demo an everyday mail provider. */
   var MAILHOSTS = ['gmail.com', 'outlook.com', 'icloud.com', 'proton.me', 'yahoo.com'];
   function mailhost() { return MAILHOSTS[Math.floor(Math.random() * MAILHOSTS.length)]; }
-  (function () {
-    var ex = document.getElementById('emailEx');
-    if (ex) ex.textContent = '"write sam@' + mailhost() + ': hey"';
-  })();
-  var demoA = document.getElementById('demoA');
-  var demoB = document.getElementById('demoB');
-  var SCRIPT = [
-    { w: 'a', t: 'user',  html: '<span class="p">❯</span> auto chat' },
-    { w: 'a', t: 'agent', html: '· minding the desk — replies go out marked as your assistant', d: 1100 },
-    { w: 'a', t: 'idle',  d: 500 },
-    { w: 'b', t: 'user',  html: '<span class="p">❯</span> write Sam: what did we land on for retry backoff?' },
-    { w: 'b', t: 'sent',  html: '↳ 📤 Sent to Sam — "What did we land on for retry backoff?"', d: 900 },
-    { w: 'a', t: 'sender', html: '<span class="env">📨</span> Niels · #1', d: 600 },
-    { w: 'a', t: 'quote', html: 'what did we land on for retry backoff?', d: 450 },
-    { w: 'a', t: 'agent', html: '· memory_recall: retry backoff — your answer to Mette', d: 550 },
-    { w: 'a', t: 'sent',  html: '↳ 📤 sent as your assistant — "Exponential, capped at 5 — decided Tuesday."', d: 1100 },
-    { w: 'b', t: 'sender', html: '<span class="env">📨</span> Sam\'s assistant · #1', d: 600 },
-    { w: 'b', t: 'quote', html: 'Exponential, capped at 5 — decided Tuesday.', d: 1500 },
-    { w: 'b', t: 'user',  html: '<span class="p">❯</span> ask him: can we squeeze the hotfix in today too?' },
-    { w: 'b', t: 'sent',  html: '↳ 📤 Sent to Sam — "Can we squeeze the hotfix in today too?"', d: 900 },
-    { w: 'a', t: 'sender', html: '<span class="env">📨</span> Niels · #2', d: 600 },
-    { w: 'a', t: 'quote', html: 'can we squeeze the hotfix in today too?', d: 450 },
-    { w: 'a', t: 'sent',  html: '↳ 📤 sent as your assistant — "I\'ll check with Samuel and get back to you."', d: 900 },
-    { w: 'a', t: 'warn',  html: '↳ ⚠️ needs you: Niels wants the hotfix out today', d: 1000 },
-    { w: 'b', t: 'sender', html: '<span class="env">📨</span> Sam\'s assistant · #2', d: 600 },
-    { w: 'b', t: 'quote', html: 'I\'ll check with Samuel and get back to you.', d: 900 },
-    { w: 'b', t: 'user',  html: '<span class="p">❯</span> <span class="caret"></span>' }
-  ];
-  var idleA = null;
-  function cls(t) { return t === 'user' || t === 'idle' ? 't-line' : t === 'sender' ? 't-line card-sender' : 't-line ' + t; }
-  function place(l) {
-    /* samuel's idle prompt stays pinned at the bottom: once it exists, every
-       later line in window A lands ABOVE it — the desk answers, nobody types */
-    var d = document.createElement('div');
-    d.className = cls(l.t);
-    var win = l.w === 'b' ? demoB : demoA;
-    if (win === demoA && idleA) win.insertBefore(d, idleA); else win.appendChild(d);
-    if (l.t === 'idle') { d.innerHTML = '<span class="p">❯</span> <span class="caret"></span>'; idleA = d; }
-    win.scrollTop = win.scrollHeight;
-    return d;
-  }
-  if (reduced || touch) {
-    SCRIPT.forEach(function (l) { var d = place(l); if (l.t !== 'idle') d.innerHTML = l.html; });
-    idleA = null;
-  } else {
-    var li = 0, demoDone = false;
-    function finishDemo() {
-      /* hover on either window: the whole exchange lands instantly and holds */
-      if (demoDone) return;
-      demoDone = true;
-      demoA.innerHTML = ''; demoB.innerHTML = ''; idleA = null;
-      SCRIPT.forEach(function (l) { var d = place(l); if (l.t !== 'idle') d.innerHTML = l.html; });
-      idleA = null;
-      demoA.scrollTop = demoA.scrollHeight; demoB.scrollTop = demoB.scrollHeight;
-    }
-    function typeLine(el, html, done) {
-      /* type only plain-text lines char-by-char; html lines land whole */
-      var m = html.match(/^<span class="p">❯<\/span> (.*)$/);
-      if (!m) { el.innerHTML = html; return setTimeout(done, 800); }
-      var text = m[1], i = 0;
-      el.innerHTML = '<span class="p">❯</span> <span class="typed"></span><span class="caret"></span>';
-      var t = el.querySelector('.typed');
-      (function ch() {
-        if (demoDone) return;
-        if (i < text.length) { t.textContent += text[i++]; el.parentNode.scrollTop = el.parentNode.scrollHeight; setTimeout(ch, 26 + Math.random() * 30); }
-        else { el.querySelector('.caret').remove(); setTimeout(done, 750); }
-      })();
-    }
-    function next() {
-      /* plays once: the finished transcript stays put (the idle carets keep blinking) */
-      if (demoDone || li >= SCRIPT.length) return;
-      var l = SCRIPT[li++], d = place(l);
-      if (l.t === 'idle') return setTimeout(next, l.d || 500);
-      if (l.t === 'user' && li < SCRIPT.length) typeLine(d, l.html, next);
-      else { d.innerHTML = l.html; setTimeout(next, l.d || (l.t === 'agent' ? 1600 : 1000)); }
-    }
-    [demoA, demoB].forEach(function (w) {
-      (w.closest('.term') || w).addEventListener('mouseenter', finishDemo);
-    });
-    var termsStarted = false;
-    if ('IntersectionObserver' in window) {
-      var tio = new IntersectionObserver(function (es) {
-        es.forEach(function (e) { if (e.isIntersecting && !termsStarted) { termsStarted = true; next(); tio.disconnect(); } });
-      }, { threshold: .25 });
-      tio.observe(demoA);
-    } else next();
-  }
 
-  /* ---- live feeds: mode cards + first-run demo, typed like the hero ----
+  /* ---- live feed: the first-run demo, typed like the hero ----
      Generic player: `t` lines type char-by-char behind their prompt `pre`;
      `h` lines land whole after `d` ms. Starts when scrolled into view,
      plays once, and holds the finished state (never resets). Static render
@@ -755,10 +506,10 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
         var tt = p.querySelector('.typed'), i = 0;
         (function ch() {
           if (done) return;
-          if (i < l.t.length) { tt.textContent += l.t[i++]; box.scrollTop = box.scrollHeight; setTimeout(ch, 22 + Math.random() * 26); }
-          else { p.querySelector('.caret').remove(); setTimeout(next, 750); }
+          if (i < l.t.length) { tt.textContent += l.t[i++]; box.scrollTop = box.scrollHeight; setTimeout(ch, 11 + Math.random() * 13); }
+          else { p.querySelector('.caret').remove(); setTimeout(next, 375); }
         })();
-      } else { put(l.c, l.h); setTimeout(next, l.d || 1000); }
+      } else { put(l.c, l.h); setTimeout(next, (l.d || 1000) / 2); }
     }
     (box.closest('.term') || box).addEventListener('mouseenter', finish);
     function start() { if (delay) setTimeout(next, delay); else next(); }
@@ -777,31 +528,24 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
   var REEL = [
     [
       { c: 'fu', pre: '❯ ', t: 'auto chat' },
-      { c: 'fa', h: '· the desk is open — you get back to work', d: 1500 },
-      { c: 'fs', h: '<span class="env">📨</span> Niels · #1', d: 1000 },
-      { c: 'fq', h: 'did the deploy go out this morning?', d: 1200 },
-      { c: 'fa', h: '· git log — v2.3.1 tagged 09:02', d: 900 },
-      { c: 'fr', h: '↳ 📤 Sent to Niels — "Yes — v2.3.1 went out at 9." · your assistant', d: 1200 }
-    ],
-    [
-      { c: 'fu', pre: '❯ ', t: 'ask Niels for the staging URL' },
-      { c: 'fr', h: '↳ 📤 Sent to Niels — "What\'s the staging URL?"', d: 1300 },
-      { c: 'fs', h: '<span class="env">📨</span> Niels · #1', d: 1000 },
-      { c: 'fq', h: 'staging.acme.dev — creds are in the vault', d: 1200 },
-      { c: 'fd', h: '↳ 📝 noted', d: 1100 },
-      { c: 'fa', h: '· · · days later', d: 900 },
-      { c: 'fu', pre: '❯ ', t: 'what\'s the staging URL?' },
-      { c: 'fd', h: '→ staging.acme.dev — from the note. Niels isn\'t asked twice.', d: 1200 }
-    ],
-    [
+      { c: 'fa', h: '· the desk is open', d: 700 },
       { c: 'fu', pre: '❯ ', t: 'get the changelog to whoever runs ingest — Niels will know' },
       { c: 'fr', h: '↳ 📤 Sent to Niels — "Who runs ingest these days?"', d: 1300 },
       { c: 'fs', h: '<span class="env">📨</span> Niels · #1', d: 1000 },
       { c: 'fq', h: 'that\'s Sam', d: 1100 },
-      { c: 'fa', h: '🤝 found Sam via Niels · request sent — accepted', d: 1200 },
+      { c: 'fr', h: '↳ 🤝 found Sam via Niels · request sent — accepted', d: 1200 },
       { c: 'fr', h: '↳ 📤 Sent to Sam — the changelog. Delivered.', d: 1000 }
     ],
     [
+      { c: 'fu', pre: '❯ ', t: 'ask Mette how to run their e2e suite' },
+      { c: 'fr', h: '↳ 📤 Sent to Mette — "how do I run your e2e suite?"', d: 1300 },
+      { c: 'fs', h: '<span class="env">📨</span> Mette\'s assistant · #1', d: 1000 },
+      { c: 'fq', h: 'npm run e2e:live — needs Node 22 (from CONTRIBUTING.md)', d: 1200 },
+      { c: 'fa', h: '· answered in seconds — Mette never left flow', d: 1600 }
+    ],
+    [
+      { c: 'fu', pre: '❯ ', t: 'auto chat' },
+      { c: 'fa', h: '· the desk is open', d: 700 },
       { c: 'fu', pre: '❯ ', t: 'find a dinner date that works for Niels, Mette and Sam' },
       { c: 'fr', h: '↳ 📤 Asked all three — "which nights work?"', d: 1300 },
       { c: 'fs', h: '<span class="env">📨</span> Mette · #1', d: 900 },
@@ -811,31 +555,73 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
       { c: 'fs', h: '<span class="env">📨</span> Sam · #3', d: 900 },
       { c: 'fq', h: 'any night works', d: 1000 },
       { c: 'fr', h: '↳ 📤 Sent to all — "Thursday it is. 19:00?"', d: 1000 }
+    ],
+    [
+      { c: 'fu', pre: '❯ ', t: 'have the deploy job message me when it lands' },
+      { c: 'fr', h: '↳ ✏️ deploy.yml — npx cli-chat-mcp send sam "deploy landed — $TAG"', d: 1500 },
+      { c: 'fu', pre: '❯ ', t: 'auto chat' },
+      { c: 'fa', h: '· the desk is open — later that day:', d: 1100 },
+      { c: 'fs', h: '<span class="env">📨</span> ops · #1', d: 900 },
+      { c: 'fq', h: 'deploy landed — v2.3.1, all checks green', d: 1000 },
+      { c: 'fa', h: '· expected — closed for you', d: 1300 },
+      { c: 'fs', h: '<span class="env">📨</span> ops · #2', d: 900 },
+      { c: 'fq', h: 'canary error rate 4× baseline on /ingest', d: 1000 },
+      { c: 'fw', h: '↳ ⚠️ needs you: canary at 4× — the only message that woke you today', d: 1800 }
     ]
   ];
   (function reel() {
     var box = document.getElementById('reel'), steps = document.getElementById('reelSteps');
     if (!box) return;
     var lis = steps ? [].slice.call(steps.children) : [];
+    var count = document.getElementById('reelCount'), bar = document.getElementById('reelBar');
+    var prevB = document.getElementById('reelPrev'), nextB = document.getElementById('reelNext');
     function light(i) { lis.forEach(function (el, k) { el.classList.toggle('live', k === i); }); }
+    /* the position row: counter tracks the beat; the bar fills over the beat's
+       estimated run (typing averaged at 17.5ms/char) and empties when pinned */
+    function beatMs(L) { return L.reduce(function (s, l) { return s + (l.t != null ? l.t.length * 17.5 + 375 : (l.d || 1000) / 2); }, 0) + 3400; }
+    function meter(i, ms) {
+      if (count) count.textContent = (i + 1) + ' / ' + REEL.length;
+      if (!bar) return;
+      bar.classList.remove('on'); bar.style.transitionDuration = '0ms';
+      void bar.offsetWidth;
+      if (ms) { bar.style.transitionDuration = ms + 'ms'; bar.classList.add('on'); }
+    }
     function put(c, h) { var p = document.createElement('p'); if (c) p.className = c; p.innerHTML = h; box.appendChild(p); box.scrollTop = box.scrollHeight; return p; }
     function render(i) {
       box.innerHTML = '';
       REEL[i].forEach(function (l) { put(l.c, l.t != null ? (l.pre || '') + l.t : l.h); });
-      light(i);
+      light(i); meter(i, 0);
+    }
+    /* ← → flip beats while the pointer is over the card (or focus is in it) */
+    function onArrowKeys(fn) {
+      var cardEl = box.closest('.card'), over = false;
+      if (!cardEl) return;
+      cardEl.addEventListener('mouseenter', function () { over = true; });
+      cardEl.addEventListener('mouseleave', function () { over = false; });
+      document.addEventListener('keydown', function (e) {
+        if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+        if (!over && !cardEl.contains(document.activeElement)) return;
+        if (/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
+        e.preventDefault();
+        fn(e.key === 'ArrowLeft' ? -1 : 1);
+      });
     }
     if (reduced || touch) {
-      /* no hover here: tapping a line shows its finished transcript */
-      render(0);
-      lis.forEach(function (el, k) { el.addEventListener('click', function () { render(k); }); });
+      /* no hover here: the ‹ › arrows flip between finished transcripts */
+      var cur = 0;
+      function show(k) { cur = (k + REEL.length) % REEL.length; render(cur); }
+      show(0);
+      if (prevB) prevB.addEventListener('click', function () { show(cur - 1); });
+      if (nextB) nextB.addEventListener('click', function () { show(cur + 1); });
+      onArrowKeys(function (d) { show(cur + d); });
       return;
     }
     var si = 0, run = 0, pinned = false;
-    box.style.transition = 'opacity .4s';
     function play(i) {
       var token = ++run;
-      si = i; box.innerHTML = ''; box.style.opacity = 1; light(i);
+      si = i; box.innerHTML = ''; box.classList.remove('fading'); light(i);
       var L = REEL[i], li = 0;
+      meter(i, pinned ? 0 : beatMs(L));
       function next() {
         if (token !== run) return;
         if (li >= L.length) { setTimeout(function () { if (token === run) swap(); }, 3400); return; }
@@ -845,37 +631,51 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
           var tt = p.querySelector('.typed'), ci = 0;
           (function ch() {
             if (token !== run) return;
-            if (ci < l.t.length) { tt.textContent += l.t[ci++]; box.scrollTop = box.scrollHeight; setTimeout(ch, 22 + Math.random() * 26); }
-            else { p.querySelector('.caret').remove(); setTimeout(next, 750); }
+            if (ci < l.t.length) { tt.textContent += l.t[ci++]; box.scrollTop = box.scrollHeight; setTimeout(ch, 11 + Math.random() * 13); }
+            else { p.querySelector('.caret').remove(); setTimeout(next, 375); }
           })();
-        } else { put(l.c, l.h); setTimeout(next, l.d || 1000); }
+        } else { put(l.c, l.h); setTimeout(next, (l.d || 1000) / 2); }
       }
       next();
     }
     function swap() {
-      /* a hover pins the reel: the finished transcript stays put */
+      /* a hover pins the reel: the finished transcript stays put.
+         Only the lines fade (the .fading class) — the window's black holds. */
       if (pinned) return;
-      box.style.opacity = 0;
+      box.classList.add('fading');
       setTimeout(function () { if (!pinned) play((si + 1) % REEL.length); }, 450);
     }
-    /* hover a card line to watch that beat; a short intent delay keeps a
-       mouse passing through from restarting the reel */
+    /* hover a card line: that beat's full transcript, instantly, held —
+       same reveal as hovering the terminal; a short intent delay keeps a
+       mouse passing through from grabbing the reel */
     var hoverT;
     lis.forEach(function (el, k) {
       el.addEventListener('mouseenter', function () {
         hoverT = setTimeout(function () {
-          pinned = true;
-          if (k !== si || box.style.opacity === '0') play(k);
+          pinned = true; started = true;
+          ++run;           /* kills any in-flight typing or pending swap */
+          box.classList.remove('fading');
+          si = k;
+          render(k);
         }, 150);
       });
       el.addEventListener('mouseleave', function () { clearTimeout(hoverT); });
     });
     var started = false;
+    /* the ‹ › arrows: jump the reel to the previous/next beat and play it */
+    function flip(k) {
+      pinned = false; started = true;
+      box.classList.remove('fading');
+      play((k + REEL.length) % REEL.length);
+    }
+    if (prevB) prevB.addEventListener('click', function () { flip(si - 1); });
+    if (nextB) nextB.addEventListener('click', function () { flip(si + 1); });
+    onArrowKeys(function (d) { flip(si + d); });
     /* hover the terminal itself: the current beat completes instantly and holds */
     (box.closest('.term') || box).addEventListener('mouseenter', function () {
       pinned = true; started = true;
       ++run;               /* kills any in-flight typing or pending swap */
-      box.style.opacity = 1;
+      box.classList.remove('fading');
       render(si);
     });
     if ('IntersectionObserver' in window) {
@@ -885,181 +685,6 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
       io.observe(box);
     } else play(0);
   })();
-  livefeed('feedPull', [
-    { c: 'fu', pre: '❯ ', t: 'any messages?' },
-    { c: 'fa', h: '📬 1 new message from Sam — want me to read it?', d: 1300 },
-    { c: 'fu', pre: '❯ ', t: 'read it' },
-    { c: 'fs', h: '<span class="env">📨</span> Sam · #1', d: 700 },
-    { c: 'fq', h: 'you around saturday? taking the boat out', d: 1300 },
-    { c: 'fu', pre: '❯ ', t: 'tell him I\'m in — what time?' },
-    { c: 'fr', h: '↳ 📤 Sent to Sam — "I\'m in — what time?"', d: 900 }
-  ]);
-  livefeed('feedChat', [
-    { c: 'fu', pre: '❯ ', t: 'chat' },
-    { c: 'fa', h: '· listening…', d: 1400 },
-    { c: 'fs', h: '<span class="env">📨</span> Niels · #1', d: 700 },
-    { c: 'fq', h: 'did the deploy go out this morning?', d: 1300 },
-    { c: 'fs', h: '<span class="env">📨</span> Mette · #2', d: 700 },
-    { c: 'fq', h: 'lunch thursday?', d: 1300 },
-    { c: 'fu', pre: '❯ ', t: '1: yes, at 9 — 2: can\'t, I have standup' },
-    { c: 'fr', h: '↳ 📤 Sent to Niels — "Yes, went out at 9."', d: 900 },
-    { c: 'fr', h: '↳ 📤 Sent to Mette — "Can\'t — I have standup."', d: 900 }
-  ]);
-  livefeed('feedDraft', [
-    { c: 'fu', pre: '❯ ', t: 'draft chat' },
-    { c: 'fs', h: '<span class="env">📨</span> Sam · #1', d: 700 },
-    { c: 'fq', h: 'any chance you can review my PR today?', d: 1100 },
-    { c: 'fd', h: '↳ ✏️ draft for Sam: "Yes — after standup, around 11."', d: 1500 },
-    { c: 'fs', h: '<span class="env">📨</span> Niels · #2', d: 700 },
-    { c: 'fq', h: 'what\'s the new ingest endpoint called?', d: 1100 },
-    { c: 'fd', h: '↳ ✏️ draft for Niels: "/v2/ingest — merged this morning."', d: 1500 },
-    { c: 'fu', pre: '❯ ', t: 'send 2 · 1: make it after lunch' },
-    { c: 'fr', h: '↳ 📤 Sent to Niels — "/v2/ingest — merged this morning."', d: 900 },
-    { c: 'fr', h: '↳ 📤 Sent to Sam — "Yes — after lunch."', d: 900 }
-  ]);
-  /* ---- go public: an endless shift at the open desk ----
-     A terminal you can't scroll: answered traffic streams up and out the top,
-     open tickets and your blinking prompt hold the bottom. Runs forever — the
-     desk answers what it can ground, parks what only you can decide, you clear
-     a ticket with one line at the prompt, the answer is noted to memory, and
-     when the same ask walks in again the desk handles it itself. The pools are
-     big enough that the cycling takes a while to notice; per-case asks
-     (invoices, cancellations) escalate every time, so the tray never dies. */
-  (function () {
-    var box = document.getElementById('feedPublic');
-    if (!box) return;
-    var CAST = [
-      ['Priya', 'Vd83k'], ['Jonas', 'Tr91p'], ['Mia', 'Qw41z'], ['Tom', 'Bn82r'], ['Sofia', 'Ke19m'],
-      ['Ravi', 'Zu73c'], ['Elin', 'Hp56d'], ['Marco', 'Ws30f'], ['Aya', 'Jd47t'], ['Ben', 'Xc91u']
-    ];
-    var QA = [
-      ['is there a free tier?', 'docs/pricing.md', '"Free for personal use, yes."'],
-      ['does it work with codex?', 'README', '"Any MCP CLI works — codex included."'],
-      ['do you have webhooks?', 'docs/webhooks.md', '"Yes — POST callbacks, sample in the docs."'],
-      ['can I self-host?', 'docs/deploy.md', '"Yes — docker compose up; guide in docs/deploy."'],
-      ['what node version do I need?', 'package.json', '"Node 22 or newer."'],
-      ['is SSO supported?', 'docs/sso.md', '"SAML and OIDC — setup lives in docs/sso."'],
-      ['how do I rotate an API key?', 'docs/keys.md', '"Settings → keys → rotate; the old key dies instantly."'],
-      ['where do I report bugs?', 'README', '"GitHub issues — there\'s a template."']
-    ];
-    /* [question, needs-you label, your typed reply, sent text, memory note, answer once learned]
-       note = null → a per-case ask (numbers vary): it escalates every time */
-    var TICKETS = [
-      ['any chance of a discount for 40 seats?', '40-seat discount ask', '15% at 40 seats — send terms', '"15% at that volume — terms on the way."', 'volume discount: 15% from 40 seats', '"15% from 40 seats — want the terms?"'],
-      ['can you extend our trial a week?', 'trial extension ask', 'sure — extend to friday', '"Done — your trial runs to Friday."', 'trials: extend a week on request', '"Sure — extended a week."'],
-      ['we need a DPA signed', 'DPA request', 'send the standard DPA', '"Sending our standard DPA — flag anything to change."', 'DPA asks: standard DPA goes out first', '"Sending the standard DPA — flag any changes."'],
-      ['can I get an invoice for order %o%?', 'invoice for order %o%', 'invoice sent — check inbox', '"Invoice for %o% sent — check your inbox."', null, null],
-      ['I\'d like to cancel my subscription', 'cancellation — worth a call?', 'offer a pause first', '"Before you go — want to pause instead? Sam can call you."', null, null]
-    ];
-    var pins = [], idleEl = null, seen = {}, castI = 0, qaI = 0, tkI = 0, msgN = 0, exN = 0, orderN = 1042;
-    var Q = [
-      { u0: 'auto chat answers only public' },
-      { c: 'fa', h: '· doors open — new handles walk straight in · answers only', d: 1100 },
-      { idle: true, d: 700 }
-    ];
-    function el(c, h) { var p = document.createElement('p'); if (c) p.className = c; p.innerHTML = h; return p; }
-    function line(c, h) {
-      var p = el(c, h), anchor = pins.length ? pins[0].el : idleEl;
-      if (anchor) box.insertBefore(p, anchor); else box.appendChild(p);
-      while (box.children.length > 30) box.removeChild(box.firstChild);
-      return p;
-    }
-    function sender(who) {
-      var first = !seen[who[1]];
-      if (first) { seen[who[1]] = 1; Q.push({ c: 'fa', h: '↳ 👤 saved ' + who[0] + ' · ' + who[1] + (msgN === 0 ? ' — held backlog let in' : ''), d: 800 }); }
-      msgN++;
-      Q.push({ c: 'fs', h: '<span class="env">📨</span> ' + who[0] + (first ? ' (' + who[1] + ')' : '') + ' · #' + msgN, d: 600 });
-      return msgN;
-    }
-    function pushNext() {
-      if (pins.length >= 2) {
-        /* your turn: one line at the prompt clears the oldest ticket —
-           and if it's a policy answer, it's noted and never asked of you again */
-        var f = pins[0], tk = f.tk;
-        Q.push({ u: f.n + ': ' + tk[2], d: 500 });
-        Q.push({ c: 'fr', h: '↳ 📤 Sent to ' + f.who + ' — ' + tk[3], d: 1000 });
-        if (tk[4]) { Q.push({ c: 'fd', h: '↳ 📝 noted — "' + tk[4] + '" · grounds future answers', d: 1200 }); f.src.learned = true; }
-        Q.push({ unpin: true, d: 900 });
-        return;
-      }
-      var who = CAST[castI++ % CAST.length];
-      if (++exN % 3 === 0) {
-        var src = TICKETS[tkI++ % TICKETS.length];
-        var n = sender(who);
-        if (src.learned) {
-          /* the same ask, cycles later: answered from your note, no ticket */
-          Q.push({ c: 'fq', h: src[0], d: 900 });
-          Q.push({ c: 'fa', h: '· known — your note from last time', d: 800 });
-          Q.push({ c: 'fr', h: '↳ 📤 sent as your assistant — ' + src[5], d: 1300 });
-          return;
-        }
-        var o = (orderN += 37);
-        var tk = src.map(function (x) { return typeof x === 'string' ? x.replace(/%o%/g, o) : x; });
-        Q.push({ c: 'fq', h: tk[0], d: 900 });
-        Q.push({ c: 'fr', h: '↳ 📤 sent as your assistant — "I\'ll check with Sam and get back to you."', d: 1000 });
-        Q.push({ pin: true, h: '↳ ⚠️ needs you: ' + tk[1] + ' — ' + who[0] + ' (#' + n + ')', who: who[0], n: n, tk: tk, src: src, d: 1300 });
-        return;
-      }
-      var qa = QA[qaI++ % QA.length];
-      sender(who);
-      Q.push({ c: 'fq', h: qa[0], d: 900 });
-      Q.push({ c: 'fa', h: '· grounded: ' + qa[1], d: 800 });
-      Q.push({ c: 'fr', h: '↳ 📤 sent as your assistant — ' + qa[2], d: 1200 });
-    }
-    function applyStatic(b) {
-      if (b.u0 != null) line('fu', '❯ ' + b.u0);
-      else if (b.idle) { idleEl = el('fu', '❯ <span class="caret"></span>'); box.appendChild(idleEl); }
-      else if (b.u != null) line('fu', '❯ ' + b.u);
-      else if (b.unpin) { var f = pins.shift(); if (f) f.el.remove(); }
-      else if (b.pin) { var p = el('fw', b.h); if (idleEl) box.insertBefore(p, idleEl); else box.appendChild(p); pins.push({ el: p, who: b.who, n: b.n, tk: b.tk, src: b.src }); }
-      else line(b.c, b.h);
-    }
-    if (reduced || touch) {
-      /* no motion: render a mid-shift snapshot — traffic above, a ticket and
-         the prompt holding the bottom */
-      for (var k = 0; k < 34; k++) { if (!Q.length) pushNext(); applyStatic(Q.shift()); }
-      return;
-    }
-    function typeAt(text, done) {
-      idleEl.innerHTML = '❯ <span class="typed"></span><span class="caret"></span>';
-      var t = idleEl.querySelector('.typed'), i = 0;
-      (function ch() {
-        if (i < text.length) { t.textContent += text[i++]; setTimeout(ch, 20 + Math.random() * 24); }
-        else setTimeout(function () { line('fu', '❯ ' + text); idleEl.innerHTML = '❯ <span class="caret"></span>'; done(); }, 550);
-      })();
-    }
-    function step() {
-      if (!Q.length) pushNext();
-      var b = Q.shift();
-      if (b.u0 != null) {
-        var p = line('fu', '❯ <span class="typed"></span><span class="caret"></span>');
-        var t = p.querySelector('.typed'), i = 0;
-        (function ch() {
-          if (i < b.u0.length) { t.textContent += b.u0[i++]; setTimeout(ch, 22 + Math.random() * 26); }
-          else { p.querySelector('.caret').remove(); setTimeout(step, 700); }
-        })();
-        return;
-      }
-      if (b.idle) { idleEl = el('fu', '❯ <span class="caret"></span>'); box.appendChild(idleEl); return setTimeout(step, b.d || 600); }
-      if (b.u != null) return typeAt(b.u, function () { setTimeout(step, b.d || 600); });
-      if (b.unpin) { var f = pins.shift(); if (f) f.el.remove(); return setTimeout(step, b.d || 700); }
-      if (b.pin) {
-        var pf = el('fw', b.h);
-        if (idleEl) box.insertBefore(pf, idleEl); else box.appendChild(pf);
-        pins.push({ el: pf, who: b.who, n: b.n, tk: b.tk, src: b.src });
-        return setTimeout(step, b.d || 1000);
-      }
-      line(b.c, b.h);
-      setTimeout(step, b.d || 900);
-    }
-    var started = false;
-    if ('IntersectionObserver' in window) {
-      var io = new IntersectionObserver(function (es) {
-        es.forEach(function (e) { if (e.isIntersecting && !started) { started = true; step(); io.disconnect(); } });
-      }, { threshold: .25 });
-      io.observe(box);
-    } else step();
-  })();
   livefeed('firstrun', [
     { c: 'in', pre: '<span class="p">❯</span>', t: 'write Sam at qL7fA: hey, I\'m on cli-chat' },
     { c: '', h: '● Quick setup first — what\'s your email?', d: 1400 },
@@ -1068,8 +693,8 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
     { c: 'in', pre: '<span class="p">❯</span>', t: 'Mette Holm' },
     { c: 'dim ind', h: 'Called cli-chat <b>2</b> times', d: 900 },
     { c: 'g', h: '● You\'re set up as Mette Holm — your handle is <span class="h">Xk4Pq</span>. Share it and anyone can write you.', d: 1400 },
-    { c: 'ind sent', h: '↳ 📤 Sent to Sam — "hey, I\'m on cli-chat"', d: 1200 },
-    { c: 'ind', h: '↳ 👤 saved Sam · <span class="h">qL7fA</span> — "write Sam" works from now on', d: 1000 },
+    { c: 'ind act', h: '↳ 📤 Sent to Sam — "hey, I\'m on cli-chat"', d: 1200 },
+    { c: 'ind act', h: '↳ 👤 saved Sam · <span class="h">qL7fA</span> — "write Sam" works from now on', d: 1000 },
     { c: 'in', pre: '<span class="p">❯</span>', t: 'who are my contacts?' },
     { c: '', h: '● I\'ll pull up your address book.', d: 900 },
     { c: 'dim ind g', h: 'Called cli-chat <b>1</b> time', d: 900 },
@@ -1079,6 +704,15 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
     { c: 'ind', h: '— feedback · <span class="h">FeedBk</span>', d: 800 },
     { c: 'ind g', h: 'No new messages waiting. Say "chat" anytime to read them live.', d: 1000 },
     { c: 'dim g', h: '✳ Cogitated for 4s', d: 1000 }
+  ]);
+  /* the online section's demo: the browser client, animated like the rest */
+  livefeed('onlinefeed', [
+    { c: 'ot', h: 'Niels · 09:02', d: 900 },
+    { c: 'om', h: 'did 0.21 ship this morning?', d: 1600 },
+    { c: 'oy', h: 'yes — went out at 9. changelog\'s in the repo.', d: 1600 },
+    { c: 'os', h: '📤 sent · sealed end-to-end', d: 1600 },
+    { c: 'oi', h: '🆕 first-time sender — accept / dismiss, your call', d: 1600 },
+    { c: 'oi cy', h: '✦ draft — appears only if you connect your own model', d: 1000 }
   ]);
 
   /* ---- statusbar version: whatever npm actually serves; the baked-in

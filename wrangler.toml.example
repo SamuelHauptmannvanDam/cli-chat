@@ -77,11 +77,14 @@ type = "ratelimit"
 namespace_id = "1003"
 simple = { limit = 60, period = 60 }
 
-# Daily retention sweep (worker.ts scheduled()): prune read mail after a week
-# and anything older than a month, so the mailbox can't grow without bound. The
-# same sweep also drops expired magic-link tokens and dead sessions (purgeAuth).
+# Cron triggers (worker.ts scheduled() branches on the cron string — keep in
+# step with DAILY_CRON / HOURLY_CRON there):
+#   "0 3 * * *" — daily retention: prune read mail after a week and anything
+#                 older than a month, plus expired magic-link tokens/sessions.
+#   "0 * * * *" — hourly waiting-mail sweep (NOTIFY-EMAIL.md): email accounts
+#                 whose mail has sat unfetched for 24h, once per away-stretch.
 [triggers]
-crons = ["0 3 * * *"]
+crons = ["0 3 * * *", "0 * * * *"]
 
 # ----------------------------------------------------------------------------
 # Account layer (AUTH-SYNC.md): optional, paid online account for multi-device
@@ -97,6 +100,9 @@ crons = ["0 3 * * *"]
 #
 # [vars]
 # EMAIL_FROM   = "cli-chat <login@your-domain.com>"  # a verified Resend sender
+# INVITE_EMAIL_FROM = "cli-chat <invite-once@your-domain.com>"  # once-ever invites (EMAIL-SEND.md)
+# NOTIFY_EMAIL_FROM = "cli-chat <notify@your-domain.com>"  # waiting-mail emails (NOTIFY-EMAIL.md);
+#                                                          # falls back to INVITE_EMAIL_FROM when unset
 # APP_BASE_URL = "https://<your-worker-name>.<subdomain>.workers.dev"  # magic-link origin
 # CHECKOUT_URL = "https://buy.stripe.com/xxx"          # one-time-unlock Payment Link
 #

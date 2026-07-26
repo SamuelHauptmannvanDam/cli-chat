@@ -16,3 +16,6 @@ wrangler.toml
 # build output
 dist/
 !site/wrangler.toml
+
+# online web client build output
+online/public/app.js

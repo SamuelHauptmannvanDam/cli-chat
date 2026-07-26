@@ -1,9 +1,9 @@
 {
   "name": "cli-chat-mcp",
-  "version": "0.21.1",
+  "version": "0.24.0",
   "type": "module",
   "description": "Headless cross-CLI messenger for coding agents (MCP)",
-  "license": "PolyForm-Noncommercial-1.0.0",
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/SamuelHauptmannvanDam/cli-chat.git"
@@ -24,7 +24,9 @@
   },
   "scripts": {
     "build": "node build.mjs",
-    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.worker.json",
+    "build:online": "node online/build.mjs",
+    "deploy:online": "node online/build.mjs && npx wrangler deploy --config online/wrangler.toml",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.worker.json && tsc -p online/tsconfig.json",
     "prepublishOnly": "npm run typecheck && node build.mjs",
     "test": "node --test \"test/unit/*.test.ts\" \"test/integration/*.test.ts\"",
     "test:unit": "node --test \"test/unit/*.test.ts\"",
@@ -48,6 +50,7 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@anthropic-ai/sdk": "^0.114.0",
     "@cloudflare/workers-types": "^4.20260621.1",
     "@types/node": "^26.0.0",
     "esbuild": "^0.28.1",
