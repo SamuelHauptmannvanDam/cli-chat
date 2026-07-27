@@ -133,4 +133,7 @@ h1 .arg { color: var(--amber); }
   display: inline-block; width: 8px; height: 15px; background: var(--amber);
   vertical-align: text-bottom; animation: blink 1.06s steps(1) infinite;
 }
-@media (prefers-reduced-motion: reduce) { .caret { animation: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .caret, .statusbar .live::before { animation: none; }
+  html { scroll-behavior: auto; }
+}
