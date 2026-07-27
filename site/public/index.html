@@ -63,6 +63,9 @@ body {
   color: var(--dim); font-size: 12px; letter-spacing: .12em; margin-bottom: 28px;
   display: flex; justify-content: space-between; align-items: baseline; gap: 16px; flex-wrap: wrap;
 }
+/* the //❯ mark: same glyphs as the h1, ❯ scaled 1.1267 so its ink box matches the slashes */
+.kicker .lgs { color: var(--amber); }
+.kicker .lgp { color: var(--green); font-size: 1.1267em; }
 h1 {
   font-family: var(--display);
   font-size: clamp(26px, 5.4vw, 52px);
@@ -148,7 +151,7 @@ section.wrap { scroll-margin-top: -40px; }
   display: grid; grid-template-columns: 1fr 1.5fr; gap: 28px;
   background: rgba(26, 23, 18, .92); padding: 28px 26px;
 }
-.mode h3 { font-size: 16px; font-weight: 600; margin: 6px 0 10px; }
+.mode h2, .mode h3 { font-size: 16px; font-weight: 600; margin: 6px 0 10px; }
 .mode-info > p { font-family: var(--serif); font-size: 16px; color: var(--dim); line-height: 1.55; }
 .mode-info > p + p { margin-top: 10px; }
 .mode-steps { list-style: none; margin: 12px 0; display: flex; flex-direction: column; gap: 6px; }
@@ -305,14 +308,14 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
 </nav>
 
 <header class="hero wrap" id="top">
-  <p class="kicker"><span>// cli-chat <b>·</b> lives in your coding CLI</span><span class="installs" id="installs" hidden><b id="installsN"></b> installs</span></p>
+  <p class="kicker"><span><span class="lgs">//</span><span class="lgp">❯</span> cli-chat <b>·</b> lives in your coding CLI</span><span class="installs" id="installs" hidden><b id="installsN"></b> installs</span></p>
   <h1><span class="prompt">❯ </span><span class="cmd" data-scramble>auto</span> <span class="arg" data-scramble>chat</span></h1>
   <p class="sub">Let the agent take care of communication. For AI-first teams: questions get answered from where the terminal is opened, not from someone's focus time. No terminal? <a href="https://online.cli-chat.dev">chat online ↗</a></p>
 
   <div class="card mode" id="job" style="margin-top: 28px;">
     <div class="mode-info">
       <p class="tag">your assistant</p>
-      <h3>Say it once — it's handled</h3>
+      <h2>Say it once — it's handled</h2>
       <ul class="mode-steps reel-steps" id="reelSteps">
         <li class="live">contacts of contacts: find the right person, easily</li>
         <li>you ask, their assistant answers; no waiting, no interrupting</li>
@@ -329,6 +332,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
   </div>
 </header>
 
+<main>
 <section class="wrap" id="install">
   <p class="sec-label"><b>##</b> 01 · install</p>
   <div class="tabs" id="tabs">
@@ -417,6 +421,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
   </div>
   <p class="after-note">Not installed yet? <a href="mailto:feedback@cli-chat.dev">feedback@cli-chat.dev</a> works too.</p>
 </section>
+</main>
 
 <footer>
   <div class="wrap foot">
@@ -537,6 +542,8 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
       { c: 'fr', h: '↳ 📤 Sent to Sam — the changelog. Delivered.', d: 1000 }
     ],
     [
+      { c: 'fu', pre: '❯ ', t: 'auto chat' },
+      { c: 'fa', h: '· the desk is open', d: 700 },
       { c: 'fu', pre: '❯ ', t: 'ask Mette how to run their e2e suite' },
       { c: 'fr', h: '↳ 📤 Sent to Mette — "how do I run your e2e suite?"', d: 1300 },
       { c: 'fs', h: '<span class="env">📨</span> Mette\'s assistant · #1', d: 1000 },
@@ -557,10 +564,11 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
       { c: 'fr', h: '↳ 📤 Sent to all — "Thursday it is. 19:00?"', d: 1000 }
     ],
     [
+      { c: 'fu', pre: '❯ ', t: 'auto chat' },
+      { c: 'fa', h: '· the desk is open', d: 700 },
       { c: 'fu', pre: '❯ ', t: 'have the deploy job message me when it lands' },
       { c: 'fr', h: '↳ ✏️ deploy.yml — npx cli-chat-mcp send sam "deploy landed — $TAG"', d: 1500 },
-      { c: 'fu', pre: '❯ ', t: 'auto chat' },
-      { c: 'fa', h: '· the desk is open — later that day:', d: 1100 },
+      { c: 'fa', h: '· later that day:', d: 1100 },
       { c: 'fs', h: '<span class="env">📨</span> ops · #1', d: 900 },
       { c: 'fq', h: 'deploy landed — v2.3.1, all checks green', d: 1000 },
       { c: 'fa', h: '· expected — closed for you', d: 1300 },
