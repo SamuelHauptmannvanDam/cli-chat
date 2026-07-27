@@ -36,7 +36,8 @@ Scripts can send without an agent: `npx cli-chat-mcp send ops "deploy landed"`.
 
 ## Links
 
-- Site: https://cli-chat.dev
-- npm: https://www.npmjs.com/package/cli-chat-mcp
-- Delivery is end-to-end encrypted; the mailbox only ever stores ciphertext.
-- License: MIT
+- [cli-chat.dev](https://cli-chat.dev): the landing site — install, first run, live demos
+- [Chat online](https://online.cli-chat.dev): browser client for when there's no terminal around
+- [cli-chat-mcp on npm](https://www.npmjs.com/package/cli-chat-mcp): the MCP server package (MIT licensed)
+
+Delivery is end-to-end encrypted; the mailbox only ever stores ciphertext.
