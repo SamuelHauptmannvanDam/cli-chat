@@ -54,6 +54,7 @@ import { appendOutbox, syncHistory } from "./history-sync.ts";
 import { startWarmer } from "./warmer.ts";
 import { claimHandle } from "./provision.ts";
 import { INSTRUCTIONS } from "./instructions.ts";
+import pkg from "../package.json" with { type: "json" };
 import {
   addContact,
   deleteContact,
@@ -290,7 +291,7 @@ const identityBlurb = S
     "message already starts a chat mode."
   : "\n\nTHIS DEVICE: no account yet — every tool returns no_account until the user " +
     "logs in. Ask once for their EMAIL, then run the two-step `login`.";
-const server = new McpServer({ name: "cli-chat", version: "0.19.0" }, { instructions: INSTRUCTIONS + identityBlurb });
+const server = new McpServer({ name: "cli-chat", version: pkg.version }, { instructions: INSTRUCTIONS + identityBlurb });
 const ok = (data: unknown) => ({
   content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }],
 });
