@@ -15,6 +15,7 @@ import { extname, join, relative, isAbsolute, resolve } from "node:path";
 import { initCrypto, generateIdentity, open, type Identity } from "./crypto.ts";
 import { loadIdentity } from "./identity.ts";
 import { loadContacts, saveContacts, orderedContacts, cleanName, resolve as resolveContact, safetyNumber, contactByKey, senderLabel } from "./contacts.ts";
+import { scanGitContacts, findRepos } from "./git-scan.ts";
 import { openMailbox, unreadFor } from "./db.ts";
 import { createMailboxClient } from "./mailbox-client.ts";
 import { encodeKey } from "./key-code.ts";
@@ -607,6 +608,11 @@ async function establishSession(token: string, account: ReadyAccount, name?: str
       (S.ctx.book.contacts.some((c) => c.name === FEEDBACK_CONTACT_NAME)
         ? ` A "${FEEDBACK_CONTACT_NAME}" contact is pre-saved — the user can send the ` +
           `cli-chat makers feedback anytime with "write feedback: …".`
+        : "") +
+      (findRepos(process.cwd()).length
+        ? ` The working directory has git history — offer ONCE, in one line: "Want me to ` +
+          `add the people you work with from this repo's history? I won't message anyone ` +
+          `without asking." On yes, update_contact action:'scan' and follow its note.`
         : ""),
   };
 }
@@ -940,16 +946,22 @@ const TOOLS: {
   },
   {
     name: "update_contact",
-    title: "Edit the address book: save, rename, or delete a contact",
+    title: "Edit the address book: save, rename, or delete a contact — or scan git for collaborators",
     description:
       "The one tool for editing the address book. `action` selects: " +
       "'add' — remember a person by name from the key code they shared, so the " +
-      "user can later just say 'write <name>' ('add my mate Sam, his key is …'). " +
+      "user can later just say 'write <name>' ('add my mate Sam, his key is …'), " +
+      "OR from their email address ('add Sam, his email is sam@x.dk') — an email " +
+      "save is SILENT: nothing is sent, no invite, the server isn't even " +
+      "contacted; the first real 'write Sam' resolves the address (and a " +
+      "non-user gets their once-ever invite email then). " +
       "Upserts by key, not name: saving a name against a key that's already on " +
       "file REPLACES the old entry (no duplicate), which is also how a RENAME " +
-      "works — pass the existing `fullKey` (from contacts) with the new name. " +
+      "works — pass the existing `fullKey` (from contacts) with the new name " +
+      "(an email already on file renames the same way). " +
       "Confirm a NEW save with the contact-saved line " +
-      "(`↳ 👤 **saved Sam** · AbC123 — \"write Sam\" works from now on`); a " +
+      "(`↳ 👤 **saved Sam** · AbC123 — \"write Sam\" works from now on`; an " +
+      "email save shows the address where the handle would go); a " +
       "rename is just \"Renamed X to Y.\" " +
       "'delete' — remove a saved person by name ('delete Niels', 'forget this " +
       "person'). Name matching is partial, like send_message: a short name " +
@@ -959,25 +971,65 @@ const TOOLS: {
       "them, and they can be re-added from their code later.",
     inputSchema: {
       action: z
-        .enum(["add", "delete"])
-        .describe("'add' = save or rename (needs `key`) | 'delete' = remove by name"),
+        .enum(["add", "delete", "scan"])
+        .describe(
+          "'add' = save or rename (needs `key` or `email`) | 'delete' = remove by name | " +
+            "'scan' = find the user's collaborators in the git history of the working " +
+            "directory (the repo they're in, or every repo one level under it) — returns a " +
+            "CLEANED candidate roster (bots, noreply/dead addresses, the user's own " +
+            "identities and already-saved people dropped), nobody contacted. Use it when " +
+            "the user says 'add everyone from blame' / 'add my collaborators' / 'check " +
+            "this repo for people I know'. ALWAYS show the roster (name · email · last " +
+            "active) and get a yes BEFORE saving anyone; then silent-add each with " +
+            "action:'add' + email, and afterwards offer once, exactly: \"Let me give " +
+            "them all a heads-up?\"",
+        ),
       name: z
         .string()
-        .describe("Your nickname for them, e.g. 'Sam' — or, for delete, the saved name (partial match ok)"),
+        .optional()
+        .describe("add/delete: your nickname for them, e.g. 'Sam' (for delete, partial match ok). Not used by scan"),
       key: z
         .string()
         .optional()
         .describe(
           "add only: their 6-char handle or long full key code (for a rename, the existing " +
-            "contact's fullKey). NOT an email address — there is no save-by-email; someone " +
-            "new is reached by email through send_message ('write Sam at sam@x.dk: …'), " +
-            "which saves them as part of the first send",
+            "contact's fullKey). For an email address use `email` instead",
+        ),
+      email: z
+        .string()
+        .optional()
+        .describe(
+          "add only: their email address — saves them WITHOUT sending anything at all " +
+            "(no message, no invite, no server call; the result's `pending: true` marks " +
+            "the keyless save). The first real 'write <name>' resolves the address and " +
+            "delivers — that's when a non-user gets their once-ever invite email",
+        ),
+      since: z
+        .string()
+        .optional()
+        .describe(
+          "scan only: how far back to look, any git date phrase ('12 months ago' default, " +
+            "'2 years ago', '2024-01-01'). Say the cut to the user so they can widen it",
         ),
     },
-    run: async (s, { action, name, key }) => {
+    run: async (s, { action, name, key, email, since }) => {
+      if (action === "scan") {
+        const savedEmails = new Set(
+          s.book.contacts.flatMap((c) => (c.email ? [c.email.toLowerCase()] : [])),
+        );
+        const r = await scanGitContacts({
+          cwd: process.cwd(),
+          since,
+          savedEmails,
+          ownEmails: loadSession(s.user)?.email ? [loadSession(s.user)!.email] : [],
+          ownNames: s.me.name ? [s.me.name] : [],
+        });
+        return { ...r, action };
+      }
+      if (!name) return { ok: false, reason: "need_name", action };
       if (action === "delete") return { ...deleteContact(s.ctx, { name }), action };
-      if (!key) return { ok: false, reason: "need_key", action };
-      return { ...(await addContact(s.ctx, { name, key })), action };
+      if (!key && !email) return { ok: false, reason: "need_key_or_email", action };
+      return { ...(await addContact(s.ctx, { name, key, email })), action };
     },
   },
   {
@@ -1122,8 +1174,10 @@ const TOOLS: {
       "person also carries `tags` (local labels like 'work'/'family'); this is the " +
       "data you filter to resolve 'who's tagged work?' and to build the roster for " +
       "'write everyone from work' — see the server instructions for the group-send flow. " +
-      "A contact saved by email send carries `email` — show it where the handle would " +
-      "go until a handle is known. " +
+      "A contact saved by email (a send, or a silent update_contact add) carries " +
+      "`email` — show it where the handle would go until a handle is known (a null " +
+      "`fullKey` alongside an email just means they haven't been written yet — the " +
+      "first send resolves it; nothing to warn about). " +
       "ALSO returns `contactsOfContacts`: people reachable THROUGH your contacts " +
       "(second-degree), each with `name` (their own self-name), `via` (which of your " +
       "contacts they come through), and `signPub` (an opaque routing id — NO handle, " +
@@ -1350,9 +1404,10 @@ const TOOLS: {
       "Read back the facts saved with `memory_add` — the messenger's own memory, " +
       "grouped by topic. Call it whenever the user asks in any wording — 'recall X', " +
       "'do you remember…', 'what do you know about…' — when answering questions that may hinge on a " +
-      "stored fact ('what's the staging URL?'), when entering auto chat (it's " +
+      "stored fact ('what's the staging URL?'), when entering auto or draft chat (it's " +
       "part of the grounding stack — read the 'disclosure' topic BEFORE answering " +
-      "anything personal on the user's behalf; no covering rule = do not disclose), " +
+      "anything personal on the user's behalf (no covering rule = do not disclose) " +
+      "and the 'style' topic before writing in the user's voice), " +
       "or when the user asks what you know/remember or what you're allowed to share. " +
       "THE AUDIENCE GATE: when grounding an answer TO a contact (auto/draft chat), " +
       "ALWAYS pass `for` = that contact's name — the server then filters IN CODE " +
@@ -1721,7 +1776,10 @@ const resultNote = (name: string, r: any): string | undefined => {
           "(a dictated reply, an approved draft, a decision, a URL — not small talk), distill it into one " +
           "generalised fact and save it with memory_add (inferred `audience`: 'private' default / 'anyone' / " +
           "a contact-book tag), then tell in one line ('📝 noted — …'); never facts learned FROM third " +
-          "parties, never secrets. " +
+          "parties, never secrets. STYLE: if the user reworded or corrected your draft before approving " +
+          "this send, that delta is style feedback — the SAME correction seen before → save one " +
+          "generalised rule with memory_add(topic:'style', audience stays private) and tell " +
+          "('📝 noted style: …'). " +
           `AUTO-TAG (unless tagging mode is 'off'): if this message clearly signals a circle ` +
           `(work/family/gaming) and ${r.to?.name ?? "the recipient"} isn't already tagged it, ` +
           "call tag_contact. In 'auto' do it SILENTLY unless it's that contact's FIRST tag " +
@@ -1740,7 +1798,7 @@ const resultNote = (name: string, r: any): string | undefined => {
           "request with request_contact (signPub=" + r.signPub + (r.via?.length ? `, via='${r.via[0]}'` : "") + "); " +
           "once they accept, the message can go. Don't add them by code."
         );
-      if (r.reason === "no_contact") return "No contact matched. Offer to add them with their 6-char code.";
+      if (r.reason === "no_contact") return "No contact matched. Ask for their 6-char code OR email address — either one reaches them.";
       if (r.reason === "ambiguous") return "Several matched: name the candidates and ask the user which — don't guess.";
       if (r.reason === "not_found") return "No message with that id in the local store — reply from a real inbox/feed/history id.";
       if (r.reason === "need_recipient") return "Pass `to` (a contact name) or `in_reply_to` (a message id).";
@@ -1782,7 +1840,7 @@ const resultNote = (name: string, r: any): string | undefined => {
     case "verify_contact":
       if (!r.ok) {
         if (r.reason === "ambiguous") return "Multiple contacts match — name the candidates and ask which one.";
-        if (r.reason === "no_keys") return "That contact has no stored keys (legacy entry) — re-add them from their handle, then verify.";
+        if (r.reason === "no_keys") return "That contact has no stored keys yet (a pending email save, or a legacy entry) — write them once (or re-add from their handle), then verify.";
         return "No contact matched — verification needs a saved contact; tell the user.";
       }
       if (r.verifiedNow)
@@ -1797,8 +1855,38 @@ const resultNote = (name: string, r: any): string | undefined => {
         (r.keyChanged ? " NOTE: this contact is flagged key-changed — re-verifying is exactly what's called for." : "")
       );
     case "update_contact":
-      if (r.reason === "need_key") return "Pass `key` — 'add' saves from their 6-char handle or full key code.";
+      if (r.action === "scan") {
+        if (r.ok && r.candidates?.length)
+          return (
+            `Found ${r.candidates.length} people across ${r.repos?.join(", ")} (${r.since}; skipped ` +
+            `${r.skipped?.bots ?? 0} bots, ${r.skipped?.unreachable ?? 0} unreachable, ${r.skipped?.saved ?? 0} already saved). ` +
+            "SHOW the full roster — name · email · last active — say the time cut (they can widen it with `since`), " +
+            "and ask before saving ANYONE. On yes: update_contact action:'add' with `email` for each — silent " +
+            "saves, nobody is contacted. THEN offer once, exactly and only: \"Let me give them all a heads-up?\" " +
+            "On yes to that, show the note once for approval, then send it to each as the user (see the add note " +
+            "for the default copy). On no, they simply stay saved."
+          );
+        if (r.ok) return `No collaborators found in ${r.repos?.join(", ")} within "${r.since}" (after cleaning). Offer to widen the range with \`since\`.`;
+        if (r.reason === "no_repo") return "No git repo here (or one level down) — say so; the user can run this from a project folder.";
+        if (r.reason === "no_git") return "git isn't runnable on this machine — say so.";
+        return undefined;
+      }
+      if (r.reason === "need_name") return "Pass `name` — add and delete target a contact by name.";
+      if (r.reason === "need_key_or_email") return "Pass `key` (their 6-char handle or full key code) or `email` — 'add' saves from either.";
+      if (r.reason === "bad_email") return "That doesn't look like an email address — check it with the user.";
       if (r.action === "delete" && r.ok) return "Confirm in one line, e.g. 'Deleted Niels.'";
+      if (r.ok && r.pending)
+        return (
+          `Saved silently — nothing was sent, and ${r.name} won't hear anything until the user first writes them ` +
+          "(that send resolves the address; a non-user gets their once-ever invite then). Confirm with the " +
+          `saved line (\`↳ 👤 **saved ${r.name}** · ${r.email} — "write ${r.name}" works from now on\`). ` +
+          "AFTER a BULK add (several people saved in a row, e.g. from git blame), finish by offering ONCE, " +
+          "exactly and only this: \"Let me give them all a heads-up?\" — an easy yes. On yes, send each new " +
+          "contact one short personal note as the user (e.g. 'Heads-up — I'm on cli-chat now, messaging that " +
+          "lives in the terminal. If you ever need me quickly, this reaches me faster than email. No need to " +
+          "reply.'), shown to the user before it goes if they haven't approved the wording yet. On no, they " +
+          "simply stay saved."
+        );
       return undefined;
     case "tag_contact":
       if (r.action === "mode")
@@ -2606,7 +2694,12 @@ registerChatTool(
     "do NOT send: render it under the message's card (`↳ ✏️ **draft for <name>:** \"…\"`) and WAIT. The user " +
     "approves by number ('send 1', 'send all') or asks for a change; only THEN " +
     "send THAT draft with send_message (same in_reply_to) WITHOUT as_assistant (reviewed-and-approved " +
-    "goes out as the user). No draft for a message with `warnings`; never secrets/" +
+    "goes out as the user). VOICE: draft in the USER'S voice — memory_recall('style') " +
+    "before the first draft (per-contact tone is in their Digest); when the user " +
+    "edits your wording before approving, that delta is style feedback — the SAME " +
+    "correction seen again → save one generalised rule with memory_add(topic:'style') " +
+    "and tell in one line ('📝 noted style: …'). " +
+    "No draft for a message with `warnings`; never secrets/" +
     "keys in a draft; can't ground → mark it 'needs you' with your ONE specific " +
     "question instead. 'auto' upgrades to auto chat; the user asking to take " +
     "it back ('I'll take it', 'normal chat') drops to plain chat.",
@@ -2615,7 +2708,8 @@ registerChatTool(
 const AUTO_CHAT_NOTE_CORE =
   "AUTO CHAT MODE: dispose of each message (backlog included) per the code of " +
   "conduct + rails — answer ONLY from grounding (the sender's own thread, recall " +
-  "notes, the working directory), send with send_message(in_reply_to, as_assistant:true), and " +
+  "notes, the working directory), write in the USER'S voice (memory_recall('style') " +
+  "+ the contact's Digest tone), send with send_message(in_reply_to, as_assistant:true), and " +
   "NARRATE each send as its `↳ 📤` feed line. Saved contacts only; flagged (`warnings`) " +
   "messages are NEVER auto-answered; never secrets/keys/money/commitments/" +
   "personal matters. What you can't ground stays in the feed marked 'needs you', " +

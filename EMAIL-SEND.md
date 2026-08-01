@@ -124,6 +124,29 @@ to receive at most N emails total, once each, forever. On top:
   one true off-switch, since an email — unlike a handle — can't be rotated
   away.
 
+## Silent save (add-without-send)
+
+`update_contact` (action `add`) also takes an `email` instead of a code: the
+contact is saved **keyless and locally only** — no message, no invite, and no
+server call at all (the address never leaves the device until the user actually
+writes them). The first real send to that name runs the normal resolve path
+above, which is also when the once-ever invite fires for a non-user — so the
+invite stays tied to a genuine message, never to bookkeeping. The keyless entry
+(`pending`) merges into the full contact on that first resolve (nick, tags and
+evidence carry over; the user's chosen nick outranks a name derived from the
+address). Group sends and verify refuse a still-pending entry with `no_keys` —
+write them 1:1 once first.
+
+**Git onboarding** rides on this: `update_contact` action `scan` reads the
+working directory's git log **in the MCP server process** (so it works from any
+client, shell or not — universal-only rule), returns a cleaned candidate
+roster (bots, noreply/dead hosts, own identities, already-saved dropped;
+`.mailmap` honoured; same-name addresses merged to the most recent; 12-month
+default window), and the agent flow is roster → confirm → silent adds → the
+one heads-up offer. A fresh `login` whose working directory has git history
+carries the offer in its result note. The scan contacts nobody and never
+touches the network.
+
 ## What we deliberately do NOT build
 
 - No reminder or follow-up emails, ever (the rule above). This promise is to

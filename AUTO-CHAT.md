@@ -194,6 +194,16 @@ is where regular users land, with every reply visible as it goes out.
 Missing from all four → don't guess. Ask the human (the ask-then-answer
 loop), or leave it in the feed.
 
+Alongside *what* to answer, the stack also grounds *how it's written*: the
+**voice ledger** — a `style` topic in the messenger's memory, learned the
+answer-once way. When the user corrects the assistant's wording (edits a draft
+before approving, "shorter", "no greetings"), a repeated correction is distilled
+into one generalised rule (`memory_add(topic:"style")`, audience `private`) and
+announced, never asked ("📝 noted style: …"). Draft and auto chat read it before
+writing; per-contact tone lives in that contact's thread Digest. Style facts
+never come from a sender's body, and a style rule never loosens the rails —
+tone changes, disclosure doesn't.
+
 ## `cli-chat-context/` — the assistant's memory
 
 A persistent directory of md files under the user dir

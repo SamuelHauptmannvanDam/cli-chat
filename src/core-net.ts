@@ -98,9 +98,18 @@ export function rememberContact(
 ): void {
   // Upsert by key: drop any existing entry, but carry its self-name forward so a
   // rename (re-add with a new nick) doesn't lose what THEY call themselves.
-  const prev = contactByKey(ctx.book, c.signPub);
-  ctx.book.contacts = ctx.book.contacts.filter((x) => x.signPub !== c.signPub);
+  // A save-by-email placeholder (keyless, EMAIL-SEND.md) counts as the previous
+  // entry too: the first resolve of that address merges it — nick, tags,
+  // evidence — instead of leaving a duplicate person behind.
+  const emailTwin = c.email
+    ? ctx.book.contacts.find((x) => !x.signPub && x.email?.toLowerCase() === c.email!.toLowerCase())
+    : undefined;
+  const prev = contactByKey(ctx.book, c.signPub) ?? emailTwin;
+  ctx.book.contacts = ctx.book.contacts.filter((x) => x.signPub !== c.signPub && x !== emailTwin);
   const entry: Contact = { name: cleanName(c.name) || c.name, signPub: c.signPub, boxPub: c.boxPub };
+  // A placeholder's nick was chosen by the user on purpose ("add Sam, sam@x.dk"),
+  // so it outranks a name derived from the address at send time.
+  if (prev === emailTwin && emailTwin && !emailTwin.auto) entry.name = emailTwin.name;
   // Carry the known handle forward like selfName: a re-save by full key (the
   // rename flow) brings no handle, and must not lose the one already on file.
   if (c.handle) entry.handle = c.handle;
@@ -305,15 +314,37 @@ async function resolveCode(
 }
 
 export type AddContactResult =
-  | { ok: true; name: string }
-  | { ok: false; reason: "bad_key" | "not_found" };
+  | { ok: true; name: string; email?: string; pending?: boolean }
+  | { ok: false; reason: "bad_key" | "bad_email" | "not_found" };
 
-// Add a contact from a shared code (handle or full key) — conversational onboarding.
+// Add a contact from a shared code (handle or full key) — conversational
+// onboarding. Or from an EMAIL ADDRESS: that save is deliberately SILENT — no
+// message, no invite, not even a server call (the address never leaves this
+// device). The entry sits keyless (`pending`) until the user first actually
+// writes them; the send path then resolves the address, which is also the
+// moment a non-user's once-ever invite email goes out (EMAIL-SEND.md).
 export async function addContact(
   ctx: NetContext,
-  args: { name: string; key: string },
+  args: { name: string; key?: string; email?: string },
 ): Promise<AddContactResult> {
-  if (!parseKey(args.key) && !isHandle(args.key)) return { ok: false, reason: "bad_key" };
+  const email = args.email?.trim().toLowerCase();
+  if (email) {
+    if (!EMAIL_ADDR_RE.test(email)) return { ok: false, reason: "bad_email" };
+    const name = cleanName(args.name) || args.name;
+    // Upsert by address, mirroring the key path's rename semantics: re-adding
+    // an email already on file (keyed or still pending) just renames them.
+    const prev = ctx.book.contacts.find((x) => x.email?.toLowerCase() === email);
+    if (prev) {
+      prev.name = name;
+      delete prev.auto; // a user-chosen nick replaces an auto-saved label
+    } else {
+      ctx.book.contacts.push({ name, email });
+    }
+    if (ctx.contactsPath) saveContacts(ctx.contactsPath, ctx.book);
+    ctx.onBookChange?.();
+    return { ok: true, name, email, pending: !prev?.signPub || undefined };
+  }
+  if (!args.key || (!parseKey(args.key) && !isHandle(args.key))) return { ok: false, reason: "bad_key" };
   const keys = await resolveCode(ctx, args.key);
   if (!keys) return { ok: false, reason: "not_found" };
   const name = cleanName(args.name) || args.name;
@@ -1026,8 +1057,21 @@ export async function sendMessage(
       candidates: r.candidates.map((c) => c.name),
     };
   const c = r.contact;
-  if (!c.signPub || !c.boxPub)
+  if (!c.signPub || !c.boxPub) {
+    // A save-by-email placeholder (addContact): keys ride the first real write.
+    // Resolving now is also what triggers a non-user's once-ever invite email
+    // server-side — exactly as if this send had carried the address itself.
+    if (c.email) {
+      const keys = await ctx.client.resolveEmail(c.email);
+      if (!keys) return { ok: false, reason: "email_unreachable", query: c.email };
+      // The address resolved to the user's own account → self-send, never self-save.
+      if (keys.signPub === ctx.me.signPub) return sendToSelf(ctx, args.body, asAssistant);
+      rememberContact(ctx, { name: c.name, signPub: keys.signPub, boxPub: keys.boxPub, email: c.email });
+      const id = await sendSealed(ctx, { name: c.name, signPub: keys.signPub, boxPub: keys.boxPub }, args.body, null, asAssistant);
+      return { ok: true, id, to: { name: c.name, signPub: keys.signPub }, email: c.email };
+    }
     return { ok: false, reason: "no_keys", query: to };
+  }
 
   // Writing to a gated new handle is consent: the user is addressing them on
   // purpose, so the gate clears exactly as an explicit accept would (their held

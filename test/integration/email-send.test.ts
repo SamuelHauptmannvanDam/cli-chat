@@ -16,7 +16,7 @@ import { nodeSqliteStore, type Store } from "../../server-mailbox/store.ts";
 import type { OutboundEmail } from "../../server-mailbox/email.ts";
 import { initCrypto, generateIdentity, type Identity } from "../../src/crypto.ts";
 import { createAccountClient } from "../../src/account-client.ts";
-import { sendMessage, sync, type SendResult } from "../../src/core-net.ts";
+import { addContact, sendMessage, sync, type SendResult } from "../../src/core-net.ts";
 import { makeContext, now, FIXED_NOW } from "../helpers.ts";
 import type { NetContext } from "../../src/core-net.ts";
 
@@ -122,6 +122,68 @@ describe("send to an address without an account", () => {
       () => sendMessage(ghost, { to: "X", email: "target@example.com", body: "hi" }),
       /403/,
     );
+  });
+});
+
+describe("silent save-by-email (add without sending)", () => {
+  test("the add is silent — no invite, no stub — and the first write resolves and invites", async () => {
+    const erik = await sender(mb.baseUrl, "Erik");
+    const invitesBefore = mb.invites.length;
+
+    const added = await addContact(erik, { name: "Pia", email: "Pia@Example.com " });
+    assert.ok(added.ok);
+    assert.equal(added.ok && added.email, "pia@example.com");
+    assert.equal(added.ok && added.pending, true);
+
+    // Saved keyless, address normalised; the server never heard about it.
+    const c = erik.book.contacts.find((x) => x.name === "Pia");
+    assert.equal(c?.email, "pia@example.com");
+    assert.equal(c?.signPub, undefined);
+    assert.equal(await mb.store.getEmailStub("pia@example.com"), null);
+    assert.equal(mb.invites.length, invitesBefore);
+
+    // First real write: resolves, delivers, fires the once-ever invite.
+    const r = sentOk(await sendMessage(erik, { to: "Pia", body: "hi Pia" }));
+    assert.equal(r.email, "pia@example.com");
+    assert.equal(mb.invites.length, invitesBefore + 1);
+    assert.equal(mb.invites.at(-1)!.to, "pia@example.com");
+
+    // The placeholder merged into the keyed contact — one entry, nick kept.
+    const pias = erik.book.contacts.filter((x) => x.email === "pia@example.com");
+    assert.equal(pias.length, 1);
+    assert.equal(pias[0]!.name, "Pia");
+    assert.ok(pias[0]!.signPub && pias[0]!.boxPub);
+
+    // A second write is a plain send — still exactly one invite ever.
+    sentOk(await sendMessage(erik, { to: "Pia", body: "me again" }));
+    assert.equal(mb.invites.length, invitesBefore + 1);
+  });
+
+  test("re-adding an email already on file renames instead of duplicating", async () => {
+    const gro = await sender(mb.baseUrl, "Gro");
+    await addContact(gro, { name: "Bo", email: "bo@example.com" });
+    const renamed = await addContact(gro, { name: "Bosse", email: "bo@example.com" });
+    assert.ok(renamed.ok);
+    const entries = gro.book.contacts.filter((x) => x.email === "bo@example.com");
+    assert.equal(entries.length, 1);
+    assert.equal(entries[0]!.name, "Bosse");
+  });
+
+  test("a bad address is refused, and a bare add sends nothing to a requests-only owner", async () => {
+    const ulf = await sender(mb.baseUrl, "Ulf");
+    const bad = await addContact(ulf, { name: "X", email: "not-an-address" });
+    assert.equal(bad.ok === false && bad.reason, "bad_email");
+
+    // Closed door (requests-only): the ADD still succeeds silently — the wall
+    // is only hit when the user actually writes, as email_unreachable.
+    const rita = await sender(mb.baseUrl, "Rita");
+    const acc = await mb.store.getOrCreateAccount("rita2@example.com", FIXED_NOW);
+    await mb.store.bindAccountSignPub(acc.id, rita.me.signPub, FIXED_NOW);
+    await mb.store.setRequestsOnly(rita.me.signPub, true, FIXED_NOW);
+    const added = await addContact(ulf, { name: "Rita", email: "rita2@example.com" });
+    assert.ok(added.ok);
+    const r = await sendMessage(ulf, { to: "Rita", body: "hi" });
+    assert.equal(r.ok === false && r.reason, "email_unreachable");
   });
 });
 
