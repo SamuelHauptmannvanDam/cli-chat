@@ -5,9 +5,9 @@
 import { test, before } from "node:test";
 import assert from "node:assert/strict";
 import { verifyRequest } from "../../server-mailbox/verify.ts";
-import { makeAuthHeaders, type AuthHeaders } from "../../src/auth.ts";
-import { MAX_SKEW_MS } from "../../src/canonical.ts";
-import { initCrypto, generateIdentity } from "../../src/crypto.ts";
+import { makeAuthHeaders, type AuthHeaders } from "../../src/core/auth.ts";
+import { MAX_SKEW_MS } from "../../src/core/canonical.ts";
+import { initCrypto, generateIdentity } from "../../src/core/crypto.ts";
 
 before(async () => {
   await initCrypto();

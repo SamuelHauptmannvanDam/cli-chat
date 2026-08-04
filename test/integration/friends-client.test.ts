@@ -12,7 +12,7 @@ import {
   drainAccepts,
   sendMessage,
 } from "../../src/core-net.ts";
-import { generateIdentity } from "../../src/crypto.ts";
+import { generateIdentity } from "../../src/core/crypto.ts";
 import { startMailbox, makeContext, regSelf } from "../helpers.ts";
 import type { Mailbox } from "../helpers.ts";
 import type { NetContext } from "../../src/core-net.ts";

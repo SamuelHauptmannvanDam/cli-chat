@@ -18,7 +18,7 @@
 // from there. See STORE.md.
 
 import { rmSync } from "node:fs";
-import { makeAuthHeaders } from "./auth.ts";
+import { makeAuthHeaders } from "./core/auth.ts";
 import { sync, refreshPending, type NetContext } from "./core-net.ts";
 import { notifyNewMail } from "./notify.ts";
 

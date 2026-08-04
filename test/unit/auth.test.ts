@@ -1,8 +1,8 @@
 import { test, before } from "node:test";
 import assert from "node:assert/strict";
-import { makeAuthHeaders } from "../../src/auth.ts";
-import { canonical } from "../../src/canonical.ts";
-import { initCrypto, generateIdentity, verifyDetached } from "../../src/crypto.ts";
+import { makeAuthHeaders } from "../../src/core/auth.ts";
+import { canonical } from "../../src/core/canonical.ts";
+import { initCrypto, generateIdentity, verifyDetached } from "../../src/core/crypto.ts";
 
 before(async () => {
   await initCrypto();

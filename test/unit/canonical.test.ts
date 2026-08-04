@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { canonical, MAX_SKEW_MS } from "../../src/canonical.ts";
+import { canonical, MAX_SKEW_MS } from "../../src/core/canonical.ts";
 
 test("canonical joins method/path/timestamp/body with newlines", () => {
   assert.equal(canonical("POST", "/messages", 123, "hi"), "POST\n/messages\n123\nhi");

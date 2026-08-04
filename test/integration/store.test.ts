@@ -5,7 +5,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { nodeSqliteStore } from "../../server-mailbox/store.ts";
-import type { WireMessage } from "../../src/identity.ts";
+import type { WireMessage } from "../../src/core/wire.ts";
 
 function wire(over: Partial<WireMessage> = {}): WireMessage {
   return {

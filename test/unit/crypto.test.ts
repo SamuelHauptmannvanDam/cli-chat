@@ -7,7 +7,7 @@ import {
   open,
   signDetached,
   verifyDetached,
-} from "../../src/crypto.ts";
+} from "../../src/core/crypto.ts";
 
 before(async () => {
   await initCrypto();

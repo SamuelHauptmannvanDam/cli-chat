@@ -6,8 +6,8 @@ import { test, before } from "node:test";
 import assert from "node:assert/strict";
 import { createApp } from "../../server-mailbox/app.ts";
 import { nodeSqliteStore } from "../../server-mailbox/store.ts";
-import { makeAuthHeaders } from "../../src/auth.ts";
-import { initCrypto, generateIdentity, type Identity } from "../../src/crypto.ts";
+import { makeAuthHeaders } from "../../src/core/auth.ts";
+import { initCrypto, generateIdentity, type Identity } from "../../src/core/crypto.ts";
 
 const NOW = 1_700_000_000_000;
 

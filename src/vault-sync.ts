@@ -3,7 +3,7 @@
 // unit-testable without the MCP plumbing. Local-first: callers pull at session
 // start and push when the dirty flag is set; reads never touch the network.
 
-import type { AccountClient, PollResult } from "./account-client.ts";
+import type { AccountClient, PollResult } from "./core/account-client.ts";
 import { assembleVault, applyVault, mergeVaults } from "./vault.ts";
 import { decryptBlob, encryptBlob } from "./blob-crypto.ts";
 import { setVaultVersion, clearVaultDirty } from "./session.ts";

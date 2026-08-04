@@ -14,8 +14,8 @@ import {
   addContact,
   sync,
 } from "../../src/core-net.ts";
-import { generateIdentity } from "../../src/crypto.ts";
-import { encodeKey } from "../../src/key-code.ts";
+import { generateIdentity } from "../../src/core/crypto.ts";
+import { encodeKey } from "../../src/core/key-code.ts";
 import { startMailbox, makeContext, twoUsers, regSelf, now, type Mailbox } from "../helpers.ts";
 
 let mb: Mailbox;
@@ -115,7 +115,7 @@ describe("onboarding by code", () => {
     const bobId = generateIdentity();
     const bob = makeContext(mb.baseUrl, bobId);
     await regSelf(bob); // Bob is a real account → has a handle on file
-    const { encodeKey } = await import("../../src/key-code.ts");
+    const { encodeKey } = await import("../../src/core/key-code.ts");
     const code = encodeKey(bobId.signPub, bobId.boxPub);
 
     const r = await sendMessage(alice, { to: "Bob", body: "hi via code", key: code });
@@ -229,7 +229,7 @@ describe("reply failures", () => {
   test("replying to a legacy (no self-introduction) stranger is still no_keys", async () => {
     // A message sealed WITHOUT the self-introduction envelope (an older client):
     // no reply key travels, so there's nothing to auto-save or reply to.
-    const { seal } = await import("../../src/crypto.ts");
+    const { seal } = await import("../../src/core/crypto.ts");
     const { randomUUID } = await import("node:crypto");
     const strangerId = generateIdentity();
     const bobId = generateIdentity();

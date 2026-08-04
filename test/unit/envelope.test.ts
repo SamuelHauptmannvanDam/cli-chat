@@ -5,7 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { packBody, unpackBody } from "../../src/core-net.ts";
-import type { Identity } from "../../src/crypto.ts";
+import type { Identity } from "../../src/core/crypto.ts";
 
 const me = {
   boxPub: "box-pub-hex",

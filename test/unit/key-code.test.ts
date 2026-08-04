@@ -6,8 +6,8 @@ import {
   isHandle,
   randomHandle,
   HANDLE_LEN,
-} from "../../src/key-code.ts";
-import { initCrypto, generateIdentity } from "../../src/crypto.ts";
+} from "../../src/core/key-code.ts";
+import { initCrypto, generateIdentity } from "../../src/core/crypto.ts";
 
 before(async () => {
   await initCrypto();

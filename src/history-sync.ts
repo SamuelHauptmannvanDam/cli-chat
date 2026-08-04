@@ -12,7 +12,7 @@
 //     that drained the mailbox; syncing read-state across devices is future work.
 
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
-import type { AccountClient } from "./account-client.ts";
+import type { AccountClient } from "./core/account-client.ts";
 import { decryptBlob, encryptBlob } from "./blob-crypto.ts";
 import { insertMessage, type Mailbox, type MessageRow } from "./db.ts";
 import { historyOutboxFile } from "./paths.ts";

@@ -9,11 +9,11 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { verifyRequest } from "./verify.ts";
-import type { WireMessage } from "../src/identity.ts";
+import type { WireMessage } from "../src/core/wire.ts";
 import type { AccountRecord, Store } from "./store.ts";
 import { randomToken, sha256hex } from "./token.ts";
 import { inviteEmail, magicLinkEmail, type SendEmail } from "./email.ts";
-import { generateIdentity, initCrypto } from "../src/crypto.ts";
+import { generateIdentity, initCrypto } from "../src/core/crypto.ts";
 
 export interface AppDeps {
   store: Store;

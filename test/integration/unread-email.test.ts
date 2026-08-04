@@ -14,8 +14,8 @@ import { createApp } from "../../server-mailbox/app.ts";
 import { nodeSqliteStore, type Store } from "../../server-mailbox/store.ts";
 import { unreadEmail, type OutboundEmail } from "../../server-mailbox/email.ts";
 import { sweepUnreadEmails, UNREAD_AGE_MS } from "../../server-mailbox/unread-sweep.ts";
-import { initCrypto, generateIdentity } from "../../src/crypto.ts";
-import { createMailboxClient } from "../../src/mailbox-client.ts";
+import { initCrypto, generateIdentity } from "../../src/core/crypto.ts";
+import { createMailboxClient } from "../../src/core/mailbox-client.ts";
 import { now, FIXED_NOW } from "../helpers.ts";
 
 // Sweep moment: past the 24h trigger for anything received at FIXED_NOW.

@@ -10,11 +10,11 @@
 // Exit 0 on success (prints the message id), 1 on any failure (prints the
 // reason). No interactivity — a missing account is an error, never a prompt.
 
-import { initCrypto } from "./crypto.ts";
+import { initCrypto } from "./core/crypto.ts";
 import { loadIdentity } from "./identity.ts";
 import { loadContacts } from "./contacts.ts";
 import { openMailbox } from "./db.ts";
-import { createMailboxClient } from "./mailbox-client.ts";
+import { createMailboxClient } from "./core/mailbox-client.ts";
 import { currentUser } from "./current-user.ts";
 import { identityFile, contactsFile, inboxFile, threadsDir } from "./paths.ts";
 import { resolveMailboxUrl } from "./config.ts";

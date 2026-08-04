@@ -9,8 +9,8 @@ import assert from "node:assert/strict";
 import { createApp, type AppDeps } from "../../server-mailbox/app.ts";
 import { nodeSqliteStore, type Store } from "../../server-mailbox/store.ts";
 import { serveFetch, type ServedFetch } from "../serve-fetch.ts";
-import { createAccountClient, type AccountClient } from "../../src/account-client.ts";
-import { initCrypto } from "../../src/crypto.ts";
+import { createAccountClient, type AccountClient } from "../../src/core/account-client.ts";
+import { initCrypto } from "../../src/core/crypto.ts";
 
 const NOW = 1_700_000_000_000;
 

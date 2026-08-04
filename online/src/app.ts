@@ -7,17 +7,17 @@
 // mailbox-client.ts, account-client.ts, key-code.ts) verbatim; browser-only
 // parts live next to this file (store-web, blob-crypto-web, envelope).
 
-import { initCrypto, generateIdentity, seal, open, type Identity } from "../../src/crypto.ts";
-import { makeAuthHeaders } from "../../src/auth.ts";
+import { initCrypto, generateIdentity, seal, open, type Identity } from "../../src/core/crypto.ts";
+import { makeAuthHeaders } from "../../src/core/auth.ts";
 import {
   createMailboxClient,
   type FriendRequest,
   type MailboxClient,
   type NetworkPerson,
-} from "../../src/mailbox-client.ts";
-import { createAccountClient, type AccountClient } from "../../src/account-client.ts";
-import { isHandle, parseKey, randomHandle } from "../../src/key-code.ts";
-import type { WireMessage } from "../../src/identity.ts";
+} from "../../src/core/mailbox-client.ts";
+import { createAccountClient, type AccountClient } from "../../src/core/account-client.ts";
+import { isHandle, parseKey, randomHandle } from "../../src/core/key-code.ts";
+import type { WireMessage } from "../../src/core/wire.ts";
 import { packBody, unpackBody } from "./envelope.ts";
 import { decryptBlob, encryptBlob } from "./blob-crypto-web.ts";
 import { store, type Row, type WebBook, type WebContact, type WebSession } from "./store-web.ts";

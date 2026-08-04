@@ -16,7 +16,7 @@
 import { serveFetch } from "../serve-fetch.ts";
 import { createApp } from "../../server-mailbox/app.ts";
 import { nodeSqliteStore } from "../../server-mailbox/store.ts";
-import { initCrypto } from "../../src/crypto.ts";
+import { initCrypto } from "../../src/core/crypto.ts";
 import { magicLinkEmail } from "../../server-mailbox/email.ts";
 
 await initCrypto();

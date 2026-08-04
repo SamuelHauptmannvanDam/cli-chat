@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { claimHandle } from "../../src/provision.ts";
-import { HANDLE_LEN } from "../../src/key-code.ts";
-import type { MailboxClient } from "../../src/mailbox-client.ts";
+import { HANDLE_LEN } from "../../src/core/key-code.ts";
+import type { MailboxClient } from "../../src/core/mailbox-client.ts";
 
 // A client whose registerHandle returns the queued verdicts in order, recording
 // every handle it was asked to claim. Only registerHandle is exercised by

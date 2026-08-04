@@ -3,7 +3,7 @@
 
 import { makeAuthHeaders } from "./auth.ts";
 import type { Identity } from "./crypto.ts";
-import type { WireMessage } from "./identity.ts";
+import type { WireMessage } from "./wire.ts";
 
 // One person in your second-degree network (CONTACTS-OF-CONTACTS.md, FRIENDS.md).
 // NAME-ONLY: `signPub` is an opaque routing id for addressing a connect request —

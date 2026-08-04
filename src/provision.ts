@@ -3,8 +3,8 @@
 // loop lives in exactly one place.
 
 import { randomBytes } from "node:crypto";
-import { randomHandle } from "./key-code.ts";
-import type { MailboxClient } from "./mailbox-client.ts";
+import { randomHandle } from "./core/key-code.ts";
+import type { MailboxClient } from "./core/mailbox-client.ts";
 
 export async function claimHandle(client: MailboxClient, attempts = 8): Promise<string> {
   for (let i = 0; i < attempts; i++) {

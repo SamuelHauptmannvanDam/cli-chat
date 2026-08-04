@@ -6,7 +6,7 @@
 // can address each other by a phone-number-style code instead of a long key.
 
 import { DatabaseSync } from "node:sqlite";
-import type { WireMessage } from "../src/identity.ts";
+import type { WireMessage } from "../src/core/wire.ts";
 import { randomId } from "./token.ts";
 
 export interface MailSummary {

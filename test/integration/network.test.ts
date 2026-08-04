@@ -5,8 +5,8 @@
 
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { createMailboxClient } from "../../src/mailbox-client.ts";
-import { generateIdentity } from "../../src/crypto.ts";
+import { createMailboxClient } from "../../src/core/mailbox-client.ts";
+import { generateIdentity } from "../../src/core/crypto.ts";
 import { startMailbox, now, type Mailbox } from "../helpers.ts";
 
 let mb: Mailbox;

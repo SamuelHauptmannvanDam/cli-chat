@@ -22,7 +22,7 @@ import {
   type NetContext,
   type WireGroup,
 } from "../../src/core-net.ts";
-import { seal, generateIdentity } from "../../src/crypto.ts";
+import { seal, generateIdentity } from "../../src/core/crypto.ts";
 import { contactByKey, groupById } from "../../src/contacts.ts";
 import { startMailbox, makeContext, regSelf, now, type Mailbox } from "../helpers.ts";
 

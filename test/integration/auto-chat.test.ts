@@ -4,7 +4,7 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { startMailbox, twoUsers, makeContext, regSelf, type Mailbox } from "../helpers.ts";
-import { initCrypto, generateIdentity } from "../../src/crypto.ts";
+import { initCrypto, generateIdentity } from "../../src/core/crypto.ts";
 import {
   packBody,
   unpackBody,

@@ -5,7 +5,7 @@
 // where they live differs. Messages are capped — the server-side history
 // stream is the durable copy, this is a window onto it.
 
-import type { Identity } from "../../src/crypto.ts";
+import type { Identity } from "../../src/core/crypto.ts";
 
 export interface WebSession {
   token: string;

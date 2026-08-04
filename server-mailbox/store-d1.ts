@@ -16,7 +16,7 @@ import type {
   UnreadEmailCandidate,
   VaultRecord,
 } from "./store.ts";
-import type { WireMessage } from "../src/identity.ts";
+import type { WireMessage } from "../src/core/wire.ts";
 import { randomId } from "./token.ts";
 
 // Minimal shape of the D1 binding we use.

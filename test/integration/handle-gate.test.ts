@@ -22,7 +22,7 @@ import {
 } from "../../src/core-net.ts";
 import { contactByKey } from "../../src/contacts.ts";
 import { unreadFor } from "../../src/db.ts";
-import { generateIdentity } from "../../src/crypto.ts";
+import { generateIdentity } from "../../src/core/crypto.ts";
 import { startMailbox, makeContext, regSelf, now, type Mailbox } from "../helpers.ts";
 import type { NetContext } from "../../src/core-net.ts";
 

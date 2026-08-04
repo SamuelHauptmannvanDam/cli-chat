@@ -12,13 +12,13 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { secureDir, writeSecret, hardenExisting } from "./secure-fs.ts";
 import { extname, join, relative, isAbsolute, resolve } from "node:path";
-import { initCrypto, generateIdentity, open, type Identity } from "./crypto.ts";
+import { initCrypto, generateIdentity, open, type Identity } from "./core/crypto.ts";
 import { loadIdentity } from "./identity.ts";
 import { loadContacts, saveContacts, orderedContacts, cleanName, resolve as resolveContact, safetyNumber, contactByKey, senderLabel } from "./contacts.ts";
 import { scanGitContacts, findRepos } from "./git-scan.ts";
 import { openMailbox, unreadFor } from "./db.ts";
-import { createMailboxClient } from "./mailbox-client.ts";
-import { encodeKey } from "./key-code.ts";
+import { createMailboxClient } from "./core/mailbox-client.ts";
+import { encodeKey } from "./core/key-code.ts";
 import { currentUser, setCurrentUser, clearCurrentUser } from "./current-user.ts";
 import {
   userDir as userDirOf,
@@ -39,7 +39,7 @@ import { rebuildThreads, rememberNote, recallNotes, appendDigestFact, audienceIn
 import { runCliSend } from "./cli-send.ts";
 import { loadSettings, saveSettings, type TagMode } from "./settings.ts";
 import { resolveMailboxUrl, DEFAULT_MAILBOX_URL, resolveFeedbackHandle, FEEDBACK_CONTACT_NAME } from "./config.ts";
-import { createAccountClient } from "./account-client.ts";
+import { createAccountClient } from "./core/account-client.ts";
 import {
   loadSession,
   saveSession,
@@ -89,7 +89,7 @@ import {
   manageGroup,
   type NetContext,
 } from "./core-net.ts";
-import { randomHandle } from "./key-code.ts";
+import { randomHandle } from "./core/key-code.ts";
 import { randomBytes } from "node:crypto";
 
 const mailboxUrl = resolveMailboxUrl();

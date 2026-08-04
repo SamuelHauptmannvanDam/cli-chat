@@ -11,7 +11,7 @@ import { DatabaseSync } from "node:sqlite";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { d1Store, type D1Like } from "../../server-mailbox/store-d1.ts";
-import type { WireMessage } from "../../src/identity.ts";
+import type { WireMessage } from "../../src/core/wire.ts";
 
 const SCHEMA = readFileSync(
   fileURLToPath(new URL("../../server-mailbox/schema.sql", import.meta.url)),

@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { initCrypto, generateIdentity } from "../../src/crypto.ts";
+import { initCrypto, generateIdentity } from "../../src/core/crypto.ts";
 import { openMailbox, insertMessage, unreadFor, type MessageRow } from "../../src/db.ts";
 import {
   refreshPending,

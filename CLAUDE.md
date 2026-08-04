@@ -674,7 +674,7 @@ back on with `"on"`; `"status"` answers "do you email me?". Confirm in one line.
 The flag lives on the online account (it must hold while every device is off),
 so flipping it needs the network and a logged-in account — if the tool reports
 no account, say they'd need to log in first. Non-users someone wrote by email
-address never get these (their one-invite-ever promise stands, EMAIL-SEND.md).
+address never get these (their one-invite-ever promise stands, docs/EMAIL-SEND.md).
 
 ## Renaming a contact
 When the user says "rename Niels to Bob" (or "call Niels something else"), call
@@ -770,7 +770,7 @@ data key: protection against leaks and dumps, not a strict E2E promise) — and
 follow a `login` onto any device. Every **read stays local**: lookups, history
 searches and sends are served from the device's own decrypted copy; sync just
 converges it in the background. Magic-link based — no passwords. Two tools drive
-it: `login` and `logout`. (Design: AUTH-SYNC.md. The
+it: `login` and `logout`. (Design: docs/AUTH-SYNC.md. The
 setup flow itself — email first, `need_name` for new accounts — is the
 [getting set up](#getting-set-up--login-is-the-only-front-door) section.)
 

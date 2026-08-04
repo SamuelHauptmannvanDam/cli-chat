@@ -3,7 +3,7 @@
 // Workers and Node 20+, so this runs everywhere the mailbox runs — no
 // libsodium / WASM, which Workers can't instantiate at runtime.
 
-import { canonical, MAX_SKEW_MS } from "../src/canonical.ts";
+import { canonical, MAX_SKEW_MS } from "../src/core/canonical.ts";
 
 // Return the non-shared-backed view (Uint8Array<ArrayBuffer>) so it satisfies
 // WebCrypto's BufferSource — the bare `Uint8Array` alias widens to ArrayBufferLike.

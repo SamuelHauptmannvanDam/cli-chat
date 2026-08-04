@@ -42,10 +42,10 @@ import {
   type TagSource,
   type TagSuggestion,
 } from "./contacts.ts";
-import { open, seal, type Identity } from "./crypto.ts";
-import { isHandle, parseKey } from "./key-code.ts";
-import type { FriendRequest, MailboxClient, RequestOutcome } from "./mailbox-client.ts";
-import type { WireMessage } from "./identity.ts";
+import { open, seal, type Identity } from "./core/crypto.ts";
+import { isHandle, parseKey } from "./core/key-code.ts";
+import type { FriendRequest, MailboxClient, RequestOutcome } from "./core/mailbox-client.ts";
+import type { WireMessage } from "./core/wire.ts";
 
 const SIGNPUB_RE = /^[0-9a-f]{64}$/;
 // Loose email shape for the send-by-email path (EMAIL-SEND.md); the server
