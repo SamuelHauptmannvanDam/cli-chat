@@ -34,6 +34,7 @@ import {
   threadsDir,
   notesDir,
 } from "./paths.ts";
+import { parkLogin, readParkedLogin, clearParkedLogin } from "./pending-login.ts";
 import { existsSync, rmSync, statSync } from "node:fs";
 import { rebuildThreads, rememberNote, recallNotes, appendDigestFact, audienceInUse } from "./threads.ts";
 import { runCliSend } from "./cli-send.ts";
@@ -464,8 +465,17 @@ async function paymentRequired(token: string) {
 
 // Logins that authenticated but still need a display name (brand-new email, no
 // identity on this device). The one-shot poll token is already claimed server-
-// side, so the minted session is parked here until `login` comes back with a
-// `name`. In-memory only: a server restart just means restarting the login.
+// side (app.ts claimLogin), so re-polling the same poll_id returns `expired` —
+// the minted session is the ONLY way to finish, and it is parked until `login`
+// comes back with a `name`.
+//
+// This parking is ON DISK, not in memory. It used to be a Map, and that lost
+// every login where the server process restarted between "what's your name?"
+// and the user typing it — a 60s blocking poll makes a client-side tool timeout
+// (and the restart that follows) entirely routine. The account row already
+// exists by then with no identity, so the retry path lands on `need_name`
+// again: the email became permanently un-onboardable. One real signup died this
+// way before it was found.
 type ReadyAccount = { email: string; paid: boolean; hasVault: boolean; dataKey?: string; stub?: StubKeys };
 
 // Bind-path rescue (EMAIL-SEND.md): the device keeps its OWN identity, but mail
@@ -488,7 +498,8 @@ async function adoptStubMail(s: Session, stub: StubKeys): Promise<void> {
     /* offline or nothing waiting — nothing to rescue */
   }
 }
-const pendingLogins = new Map<string, { token: string; account: ReadyAccount }>();
+// Park/read/clear live in ./pending-login.ts — see that file for why this is on
+// disk rather than in a Map.
 
 // Establish a session after a successful magic-link poll. The EMAIL'S ACCOUNT
 // WINS every time (AUTH-SYNC.md): an account behind the email is pulled and
@@ -703,10 +714,10 @@ server.registerTool(
       }
       // A login parked on `need_name` resumes here — its one-shot poll token is
       // already claimed, so the session was kept, not the poll.
-      const parked = pendingLogins.get(poll_id);
+      const parked = readParkedLogin<ReadyAccount>(poll_id, now());
       if (parked) {
         const r = await establishSession(parked.token, parked.account, name);
-        if ((r as { reason?: string }).reason !== "need_name") pendingLogins.delete(poll_id);
+        if ((r as { reason?: string }).reason !== "need_name") clearParkedLogin();
         return ok(r);
       }
       const poll = await pollUntilReady(accountClient, poll_id, 2000, LOGIN_POLL_DEADLINE_MS, now);
@@ -716,7 +727,7 @@ server.registerTool(
         return ok({ ok: false, reason: "expired", note: "That login link expired or was already used. Start over: login with the user's email." });
       const r = await establishSession(poll.session_token, poll.account, name);
       if ((r as { reason?: string }).reason === "need_name")
-        pendingLogins.set(poll_id, { token: poll.session_token, account: poll.account });
+        parkLogin(poll_id, poll.session_token, poll.account, now());
       return ok(r);
     } catch (e) {
       return ok({ ok: false, reason: "error", note: `Login failed: ${(e as Error).message}` });
@@ -788,6 +799,10 @@ server.registerTool(
     }
     const email = sess.email;
     S = null;
+    // A half-finished login parks a bearer token OUTSIDE the user dir (it predates
+    // having one), so the wipe has to clear it explicitly or a "clean slate"
+    // device would still hold a live credential.
+    clearParkedLogin();
     try {
       rmSync(userDirOf(user), { recursive: true, force: true });
     } catch (e) {

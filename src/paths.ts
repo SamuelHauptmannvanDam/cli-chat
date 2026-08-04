@@ -32,6 +32,18 @@ export function usersDir(): string {
   return join(dataHome(), "users");
 }
 
+// A magic-link login that authenticated but still needs the user's display name
+// (brand-new email, no identity on this device). The minted session token parks
+// HERE between the `need_name` answer and the follow-up `login` call.
+//
+// Device-level, not per-user, deliberately: at this point in setup there is no
+// identity and therefore no user dir to put it in. It holds a bearer token (and
+// possibly a stub's private keys), so it is written 0600 like any other secret
+// and deleted the moment the login completes.
+export function pendingLoginFile(): string {
+  return join(dataHome(), "pending-login.json");
+}
+
 export function userDir(user: string): string {
   return join(usersDir(), user);
 }
