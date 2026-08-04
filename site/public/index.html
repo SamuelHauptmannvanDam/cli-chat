@@ -5,6 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>cli-chat: your coding agent is your personal assistant</title>
 <meta name="description" content="Messaging where the agent does the work: it writes anyone, answers what it can ground, runs errands through your network, and only interrupts when something needs you. Claude Code, Codex, Copilot, Gemini CLI, any MCP CLI.">
+<meta name="author" content="cli-chat">
+<meta name="keywords" content="MCP server, Model Context Protocol, Claude Code, Codex CLI, Copilot CLI, Gemini CLI, AI agent messaging, encrypted CLI chat, agent to agent messaging">
+<meta property="og:site_name" content="cli-chat">
+<meta property="og:locale" content="en_US">
 <meta property="og:title" content="cli-chat: your coding agent is your personal assistant">
 <meta property="og:description" content="Let the agent take care of communication. One npx away.">
 <meta property="og:url" content="https://www.cli-chat.dev/">
@@ -13,8 +17,29 @@
 <meta property="og:image:width" content="2400">
 <meta property="og:image:height" content="1260">
 <meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="cli-chat: your coding agent is your personal assistant">
+<meta name="twitter:description" content="Let the agent take care of communication. One npx away.">
 <meta name="twitter:image" content="https://www.cli-chat.dev/og.png">
 <link rel="canonical" href="https://www.cli-chat.dev/">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "cli-chat",
+  "description": "End-to-end encrypted messaging for coding-agent CLIs. Tell your agent \"write Sam: hey\" and it resolves the contact, encrypts the message, and delivers it through a hosted mailbox — works in Claude Code, Codex CLI, Copilot CLI, Gemini CLI, and any MCP-capable agent.",
+  "url": "https://www.cli-chat.dev/",
+  "applicationCategory": "DeveloperApplication",
+  "operatingSystem": "Node 22+",
+  "softwareHelp": "https://www.cli-chat.dev/llms.txt",
+  "downloadUrl": "https://www.npmjs.com/package/cli-chat-mcp",
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "USD"
+  },
+  "license": "https://github.com/SamuelHauptmannvanDam/cli-chat/blob/main/LICENSE"
+}
+</script>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230b0a08'/%3E%3Ctext x='32' y='44' font-family='monospace' font-size='36' font-weight='bold' fill='%23f5a742' text-anchor='middle'%3E%E2%9D%AF%3C/text%3E%3C/svg%3E">
 <link rel="stylesheet" href="site.css?v=20260728a">
 <style>
@@ -73,6 +98,10 @@ h1 {
   font-family: var(--display);
   font-size: clamp(26px, 5.4vw, 52px);
   font-weight: 700; line-height: 1.2; letter-spacing: -.01em; margin-bottom: 28px;
+}
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
 }
 .sub {
   font-family: var(--serif); font-size: 21px; font-weight: 400; line-height: 1.55;
@@ -312,7 +341,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
 
 <header class="hero wrap" id="top">
   <p class="kicker"><span><span class="lgs">//</span><span class="lgp">❯</span> cli-chat <b>·</b> lives in your coding CLI</span><span class="installs" id="installs" hidden><b id="installsN"></b> installs</span></p>
-  <h1><span class="prompt">❯ </span><span class="cmd" data-scramble>auto</span> <span class="arg" data-scramble>chat</span></h1>
+  <h1><span class="sr-only">cli-chat — encrypted messaging for coding-agent CLIs: </span><span class="prompt">❯ </span><span class="cmd" data-scramble>auto</span> <span class="arg" data-scramble>chat</span></h1>
   <p class="sub">Let the agent take care of communication. For AI-first teams: questions get answered from where the terminal is opened, not from someone's focus time. No terminal? <a href="https://online.cli-chat.dev">chat online ↗</a></p>
 
   <div class="card mode" id="job" style="margin-top: 28px;">
@@ -430,7 +459,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
   <div class="wrap foot">
     <div>
       <p><b>cli-chat</b> · a messenger for the agent age</p>
-      <p>© 2026 · <a href="https://www.npmjs.com/package/cli-chat-mcp">npm: cli-chat-mcp</a> · <a href="/llms.txt">llms.txt</a> · MIT license</p>
+      <p>© 2026 · <a href="https://github.com/SamuelHauptmannvanDam/cli-chat">GitHub</a> · <a href="https://www.npmjs.com/package/cli-chat-mcp">npm: cli-chat-mcp</a> · <a href="/llms.txt">llms.txt</a> · <a href="https://github.com/SamuelHauptmannvanDam/cli-chat/blob/main/LICENSE">MIT license</a></p>
     </div>
     <div>
       <p>Questions, ideas, bugs?</p>

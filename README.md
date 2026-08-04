@@ -1,9 +1,17 @@
-# CLI Messenger
+# cli-chat
 
-A peer-to-peer messaging layer for coding-agent CLIs. You tell your agent
-*"write Sam: …"*; it resolves the contact, encrypts the message end-to-end, and
-delivers it through a hosted mailbox. When the recipient opens their CLI, their
-agent surfaces the message and helps them reply.
+**Your coding agent is your personal assistant.** A peer-to-peer messaging
+layer for coding-agent CLIs: tell your agent *"write Sam: …"*; it resolves the
+contact, encrypts the message end-to-end, and delivers it through a hosted
+mailbox. When the recipient opens their CLI, their agent surfaces the message
+and helps them reply.
+
+[![npm](https://img.shields.io/npm/v/cli-chat-mcp)](https://www.npmjs.com/package/cli-chat-mcp)
+[![license: MIT](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
+
+**[www.cli-chat.dev](https://www.cli-chat.dev)** — the pitch, a live demo, and
+install instructions in one page. No terminal handy? **[chat online](https://online.cli-chat.dev)**
+uses the same account, sealed end-to-end in the browser.
 
 - **Works across CLIs** — Claude Code, Copilot CLI, Cursor, Gemini CLI, … (any
   MCP-capable agent). The agent already knows how to use it; no commands to learn.
@@ -183,3 +191,7 @@ off for that machine no matter the account preference; `=1` forces them on.)
 Open source under the [MIT license](./LICENSE): the code is public so anyone
 can audit the end-to-end encryption, and it's free to use however you like —
 personal, commercial, anything.
+
+---
+
+**[www.cli-chat.dev](https://www.cli-chat.dev)** · **[chat online](https://online.cli-chat.dev)** · [npm: cli-chat-mcp](https://www.npmjs.com/package/cli-chat-mcp) · [issues](https://github.com/SamuelHauptmannvanDam/cli-chat/issues)
