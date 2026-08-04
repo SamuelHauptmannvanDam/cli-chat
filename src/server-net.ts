@@ -14,7 +14,7 @@ import { secureDir, writeSecret, hardenExisting } from "./secure-fs.ts";
 import { extname, join, relative, isAbsolute, resolve } from "node:path";
 import { initCrypto, generateIdentity, open, type Identity } from "./core/crypto.ts";
 import { loadIdentity } from "./identity.ts";
-import { loadContacts, saveContacts, orderedContacts, cleanName, resolve as resolveContact, safetyNumber, contactByKey, senderLabel } from "./contacts.ts";
+import { loadContacts, saveContacts, orderedContacts, cleanName, resolve as resolveContact, safetyNumber, contactByKey, senderLabel, type Contact } from "./contacts.ts";
 import { scanGitContacts, findRepos } from "./git-scan.ts";
 import { openMailbox, unreadFor } from "./db.ts";
 import { createMailboxClient } from "./core/mailbox-client.ts";
@@ -355,7 +355,7 @@ type StubKeys = { signPub: string; signSec: string; boxPub: string; boxSec: stri
 // provisional identity mail is already sealed to — ADOPT it instead of minting,
 // so that mail is simply theirs (claiming the handle also makes the server drop
 // its copies of the private halves).
-async function createIdentityForLogin(name: string, stub?: StubKeys): Promise<Session> {
+async function createIdentityForLogin(name: string, stub?: StubKeys, invitedBy?: InvitedBy): Promise<Session> {
   const id: Identity = stub
     ? { signPub: stub.signPub, signSec: stub.signSec, boxPub: stub.boxPub, boxSec: stub.boxSec }
     : generateIdentity();
@@ -366,7 +366,24 @@ async function createIdentityForLogin(name: string, stub?: StubKeys): Promise<Se
 
   secureDir(userDirOf(id.handle));
   writeSecret(identityFile(id.handle), JSON.stringify(id, null, 2) + "\n");
-  saveContacts(contactsFile(id.handle), { me: id.signPub, contacts: [] });
+  // Seed the book with whoever wrote to this email address first (EMAIL-SEND.md).
+  // They are the reason this person installed cli-chat at all, so their waiting
+  // message must NOT be held behind the new-handle gate — being written to at
+  // your own address is the introduction, exactly as being added to a group by a
+  // member is. `auto: true` marks the name as their self-chosen one rather than a
+  // nick the user picked, so renaming still behaves normally.
+  const seeded: Contact[] = invitedBy
+    ? [
+        {
+          name: cleanName(invitedBy.name ?? "") || "Someone",
+          selfName: cleanName(invitedBy.name ?? "") || undefined,
+          signPub: invitedBy.signPub,
+          boxPub: invitedBy.boxPub,
+          auto: true,
+        },
+      ]
+    : [];
+  saveContacts(contactsFile(id.handle), { me: id.signPub, contacts: seeded });
   // Only become the device default when not explicitly pinned via MESSENGER_USER;
   // otherwise a second identity's setup would clobber the first session's .current.
   if (!process.env.MESSENGER_USER?.trim()) setCurrentUser(id.handle);
@@ -476,7 +493,15 @@ async function paymentRequired(token: string) {
 // exists by then with no identity, so the retry path lands on `need_name`
 // again: the email became permanently un-onboardable. One real signup died this
 // way before it was found.
-type ReadyAccount = { email: string; paid: boolean; hasVault: boolean; dataKey?: string; stub?: StubKeys };
+type InvitedBy = { signPub: string; boxPub: string; name: string | null };
+type ReadyAccount = {
+  email: string;
+  paid: boolean;
+  hasVault: boolean;
+  dataKey?: string;
+  stub?: StubKeys;
+  invitedBy?: InvitedBy;
+};
 
 // Bind-path rescue (EMAIL-SEND.md): the device keeps its OWN identity, but mail
 // was already waiting sealed to the email's provisional identity. Drain that
@@ -593,7 +618,7 @@ async function establishSession(token: string, account: ReadyAccount, name?: str
         "recipients see and how mutual contacts find them), then call `login` again with " +
         "the SAME poll_id plus `name`. Don't invent one from the OS unless they decline.",
     };
-  S = await createIdentityForLogin(name, account.stub);
+  S = await createIdentityForLogin(name, account.stub, account.invitedBy);
   saveSession(S.user, token, account.email, now(), dataKey);
   markVaultDirty(S.user);
   const outcome = await syncVault(

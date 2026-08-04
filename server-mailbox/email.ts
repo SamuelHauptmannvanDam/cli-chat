@@ -39,22 +39,39 @@ export function magicLinkEmail(to: string, link: string): OutboundEmail {
 // HTML variant escapes it.
 export function inviteEmail(to: string, senderName: string | null): OutboundEmail {
   const who = senderName?.trim() || "Someone";
-  const esc = who.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+  const escape = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+  const esc = escape(who);
   return {
     to,
     subject: `${who} has a message waiting for you on cli-chat`,
     text:
       `One-time invite — we only send this once.\n\n` +
-      `${who} sent you an encrypted message on cli-chat — messaging for coding-agent ` +
-      `CLIs. It's waiting for you: install cli-chat (https://cli-chat.dev), tell your ` +
-      `agent to log in with this email address, and the message is there.\n\n` +
+      `${who} sent you an encrypted message on cli-chat: free, open-source messaging ` +
+      `that lives inside your coding-agent CLI. Only your device can read it.\n\n` +
+      `To pick it up (about a minute):\n\n` +
+      `  1. In your agent CLI — Claude Code, Codex, Copilot, Gemini CLI — run:\n` +
+      `       claude mcp add cli-chat --scope user -- npx -y cli-chat-mcp@latest\n` +
+      `     (other CLIs: https://cli-chat.dev)\n` +
+      `  2. Restart it and say: log me in\n` +
+      `  3. Give it THIS email address — ${to}\n` +
+      `  4. Click the link it emails you, then tell it your name\n\n` +
+      `${who}'s message is waiting for you when you're set up.\n\n` +
       `Ignore this and you'll never hear from us again — later messages just wait quietly.`,
     html:
       `<p><b>One-time invite</b> — we only send this once.</p>` +
-      `<p><b>${esc}</b> sent you an encrypted message on <a href="https://cli-chat.dev">cli-chat</a> ` +
-      `— messaging for coding-agent CLIs.</p>` +
-      `<p>It's waiting for you: install cli-chat, tell your agent to log in with this ` +
-      `email address, and the message is there.</p>` +
+      `<p><b>${esc}</b> sent you an encrypted message on <a href="https://cli-chat.dev">cli-chat</a>: ` +
+      `free, open-source messaging that lives inside your coding-agent CLI. Only your device can read it.</p>` +
+      `<p><b>To pick it up</b> (about a minute):</p>` +
+      `<ol>` +
+      `<li>In your agent CLI — Claude Code, Codex, Copilot, Gemini CLI — run:<br>` +
+      `<code style="display:inline-block;background:#f4f4f4;padding:6px 8px;border-radius:4px;margin-top:4px">` +
+      `claude mcp add cli-chat --scope user -- npx -y cli-chat-mcp@latest</code><br>` +
+      `<span style="color:#666;font-size:13px">Other CLIs: <a href="https://cli-chat.dev">cli-chat.dev</a></span></li>` +
+      `<li>Restart it and say: <b>log me in</b></li>` +
+      `<li>Give it <b>this</b> email address — ${escape(to)}</li>` +
+      `<li>Click the link it emails you, then tell it your name</li>` +
+      `</ol>` +
+      `<p><b>${esc}</b>'s message is waiting for you when you're set up.</p>` +
       `<p style="color:#666;font-size:13px">Ignore this and you'll never hear from us ` +
       `again — later messages just wait quietly.</p>`,
   };
