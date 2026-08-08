@@ -29,6 +29,12 @@ export type PollResult =
         hasVault: boolean;
         dataKey?: string;
         stub?: { signPub: string; signSec: string; boxPub: string; boxSec: string };
+        // Who wrote to this email address first (EMAIL-SEND.md). Setup saves them
+        // as a contact so the message that prompted the install isn't held behind
+        // the new-handle gate — being written to at your own address IS the
+        // introduction. Absent when the address was never written to, or when the
+        // sender has since dropped out of the handle directory.
+        invitedBy?: { signPub: string; boxPub: string; name: string | null };
       };
     };
 

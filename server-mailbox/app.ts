@@ -89,6 +89,19 @@ const MAX_HISTORY_BLOBS_PER_PUSH = 64;
 const HISTORY_PULL_LIMIT = 200;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// Confirmation-page lines, picked at random. Every one must still send the user
+// back to the terminal — see the note on /auth/verify.
+const GREETINGS = [
+  "Welcome aboard, Commander. Return to your terminal — cli-chat is finishing your login.",
+  "Identity confirmed. Head back to your terminal, we'll take it from here.",
+  "You're in. Return to your terminal — the rest happens there.",
+  "Clearance granted. Back to the terminal with you.",
+  "Handshake complete. Return to your terminal — cli-chat is finishing up.",
+  "Good to see you. Return to your terminal; your agent is waiting.",
+  "That's the browser part done — the last one. Everything else lives in your terminal.",
+  "Authenticated. Return to your terminal, Captain.",
+];
+
 // Abuse limits. These are short text ciphertexts, so the caps are generous yet
 // far below anything that would let one POST balloon the store. MAX_REQUEST_BYTES
 // bounds the whole signed envelope; MAX_BODY_BYTES bounds the sealed ciphertext.
@@ -657,6 +670,13 @@ export function createApp(deps: AppDeps): Hono {
 
   // The email link lands here in a browser. Consume the token (single-use) and
   // show a plain page telling the user to return to their terminal.
+  //
+  // The one line every user reads exactly once, at the only moment they're
+  // looking at a browser instead of a terminal. Every variant has to still say
+  // GO BACK TO THE TERMINAL — that's the job; the flavour is just so it doesn't
+  // read like a receipt. No name is used: the token is all we have here, and
+  // looking the account up to say "welcome back, Samuel" would leak whose email
+  // it is to anyone holding the link.
   app.get("/auth/verify", async (c) => {
     const token = c.req.query("token") ?? "";
     const okPage = (msg: string, ok: boolean) =>
@@ -669,7 +689,7 @@ export function createApp(deps: AppDeps): Hono {
     if (!token) return okPage("Missing token.", false);
     const consumed = await store.consumeLoginToken(await sha256hex(token), now());
     return consumed
-      ? okPage("Return to your terminal — cli-chat is finishing your login.", true)
+      ? okPage(GREETINGS[Math.floor(Math.random() * GREETINGS.length)]!, true)
       : okPage("This link was already used or has expired. Request a new one.", false);
   });
 
@@ -702,10 +722,21 @@ export function createApp(deps: AppDeps): Hono {
     // a fresh one — the waiting mail is then simply theirs. Only while the
     // account has no identity of its own and the stub is unclaimed.
     let stub: { signPub: string; signSec: string; boxPub: string; boxSec: string } | undefined;
+    // Who wrote to this address first. Being written to BY NAME at your own email
+    // is an introduction — the same reasoning that lets a group member bring
+    // someone in ungated. So hand the inviter's public identity to setup, which
+    // saves them as a contact; otherwise the person who installed cli-chat
+    // *because* this sender wrote them would have to approve that sender through
+    // the new-handle gate before seeing the message they came for.
+    let invitedBy: { signPub: string; boxPub: string; name: string | null } | undefined;
     if (account.signPub == null) {
       const s = await store.getEmailStub(poll.email);
       if (s?.signPub && s.boxPub && s.signSec && s.boxSec)
         stub = { signPub: s.signPub, signSec: s.signSec, boxPub: s.boxPub, boxSec: s.boxSec };
+      if (s?.createdBy) {
+        const keys = await store.identityKeys(s.createdBy);
+        if (keys) invitedBy = { signPub: s.createdBy, boxPub: keys.boxPub, name: keys.name };
+      }
     }
     return c.json({
       status: "ready",
@@ -716,6 +747,7 @@ export function createApp(deps: AppDeps): Hono {
         hasVault: account.signPub != null,
         dataKey,
         ...(stub ? { stub } : {}),
+        ...(invitedBy ? { invitedBy } : {}),
       },
     });
   });
