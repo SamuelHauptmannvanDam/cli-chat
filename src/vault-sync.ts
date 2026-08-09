@@ -4,7 +4,7 @@
 // start and push when the dirty flag is set; reads never touch the network.
 
 import type { AccountClient, PollResult } from "./core/account-client.ts";
-import { assembleVault, applyVault, mergeVaults } from "./vault.ts";
+import { assembleVault, applyVault, mergeVaults, type VaultBlob } from "./vault.ts";
 import { decryptBlob, encryptBlob } from "./blob-crypto.ts";
 import { setVaultVersion, clearVaultDirty } from "./session.ts";
 
@@ -36,7 +36,12 @@ export type SyncOutcome =
   | { action: "pushed"; version: number }
   | { action: "noop"; version: number }
   | { action: "payment_required"; checkoutUrl: string | null }
-  | { action: "unauthorized" };
+  | { action: "unauthorized" }
+  // This device's local identity isn't the one bound to the account — e.g. it
+  // lost a first-push race against another device/terminal logging into the
+  // same brand-new account. Pushing would just 403 forever, so adopt the
+  // account's real identity instead (same reconciliation a full login does).
+  | { action: "reidentified"; handle: string; version: number };
 
 // Reconcile this device's vault with the server's, given the bearer token, the
 // device `user` (handle dir), its `signPub` (bound on first push), the last
@@ -60,6 +65,18 @@ export async function syncVault(
   const serverAhead = serverVersion > knownVersion && pulled.blob != null;
   // decryptBlob passes legacy plaintext blobs through untouched.
   const serverBlob = pulled.blob != null ? decryptBlob(pulled.blob, dataKey) : null;
+
+  // The account already has a vault bound to a DIFFERENT identity than this
+  // device's. Pushing under `signPub` would just 403 (identity_mismatch) — the
+  // server binds signPub once, on the account's first-ever push — and every
+  // sync after that would fail the same way forever. Adopt the account's real
+  // identity instead, exactly like a full login's restore path would.
+  const serverIdentity = serverBlob ? (JSON.parse(serverBlob) as VaultBlob).identity : null;
+  const serverSignPub = serverIdentity?.["signPub"];
+  if (typeof serverSignPub === "string" && serverSignPub !== signPub) {
+    const handle = applyVault(serverBlob!);
+    return { action: "reidentified", handle, version: serverVersion };
+  }
 
   // Server is ahead and we have no local edits → adopt the server blob wholesale.
   if (serverAhead && !dirty) {

@@ -442,6 +442,17 @@ function syncResult(outcome: Awaited<ReturnType<typeof syncVault>>) {
       return { ok: false, reason: "payment_required", checkoutUrl: outcome.checkoutUrl, note: "Syncing online is a one-time unlock — give the user the checkout link, then sync again once paid." };
     case "unauthorized":
       return { ok: false, reason: "unauthorized", note: "The session expired — log in again with `login`." };
+    case "reidentified":
+      return {
+        ok: true,
+        action: "reidentified",
+        handle: outcome.handle,
+        version: outcome.version,
+        note:
+          `This device's local identity didn't match the one already bound to the account ` +
+          `(likely two terminals/devices racing on the first-ever login) — adopted the account's ` +
+          `real identity (handle ${outcome.handle}) automatically. Tell the user in one line.`,
+      };
   }
 }
 
@@ -2376,6 +2387,22 @@ async function syncNow(s: Session) {
     dataKey,
   );
   if (outcome.action === "payment_required") return paymentRequired(sess.token);
+  // Local identity didn't match the account's bound one (see vault-sync.ts) —
+  // switch this session over to the real identity, the same way a full login's
+  // restore path does, so the caller (and every sync after this) uses it.
+  if (outcome.action === "reidentified") {
+    const previous = s.me.handle;
+    setCurrentUser(outcome.handle);
+    S = buildSession(outcome.handle);
+    saveSession(outcome.handle, sess.token, sess.email, now(), dataKey);
+    setVaultVersion(outcome.handle, outcome.version);
+    ensureWarmer();
+    void syncHistoryNow(S).catch(() => {});
+    return {
+      ...syncResult(outcome),
+      note: `The identity on this device (${previous}) didn't match the account — switched to the account's real identity (handle ${outcome.handle}) automatically. Tell the user in one line.`,
+    };
+  }
   // History rides every sync: push the outbox, pull past the cursor. Quietly
   // skipped while not unlocked / offline — the vault result is the headline.
   void syncHistoryNow(s).catch(() => {});
