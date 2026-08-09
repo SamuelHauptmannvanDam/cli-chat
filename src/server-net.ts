@@ -2321,12 +2321,25 @@ for (const t of TOOLS) {
 // (an MCP server can't start the agent's turn).
 //
 // Keep the command CLEAN — the user sees it in the tool call, so don't leak
-// plumbing. The waker self-resolves the account: currentUser() reads MESSENGER_USER
-// from the ambient shell (inherited by the agent's background task) or falls back
-// to the device default (.current / the sole identity), so we DON'T spell out the
-// handle in the visible command. We embed env only for genuinely non-default infra
-// the waker can't infer on its own: a custom mailbox, a dev MESSENGER_HOME, or push
-// disabled. In a normal install that collapses to just `node <path>`.
+// plumbing. We embed env only for genuinely non-default infra the waker can't
+// infer on its own: a custom mailbox, a dev MESSENGER_HOME, push disabled, or
+// public mode. In a normal single-identity install that collapses to just
+// `node <path>`.
+//
+// MESSENGER_USER is the one exception, and it is ALWAYS pinned to this exact
+// session's handle (s.user) — never left to ambient resolution. currentUser()
+// falls back to the shared users/.current pointer file when the env var is
+// absent, and that pointer is DEVICE-global: two terminals open on the same
+// machine as two different identities (e.g. testing with a second account)
+// both write it on login, so whichever logged in most recently wins for
+// EVERY waker on the device. Without this pin, the OTHER terminal's waker
+// silently watches the wrong identity's mailbox — it never sees the new
+// message, so the feed never refreshes, even though that identity's own
+// warmer (which caches its identity once, at MCP-server startup, not per
+// waker launch) still fires the desktop notification correctly. That
+// mismatch — a real OS popup with nothing landing in chat — is exactly the
+// bug this pin fixes. The handle itself isn't sensitive (it's the same code
+// shown in `contacts`), so pinning it costs nothing.
 //
 // We show every filesystem path RELATIVE to the launch dir (the agent runs the
 // command with the same cwd the server was started in), so the user sees
@@ -2342,8 +2355,8 @@ function friendlyPath(p: string): string {
 }
 // Quote a token only when it contains spaces, so clean paths show unquoted.
 const quoteArg = (s: string) => (s.includes(" ") ? JSON.stringify(s) : s);
-function listenerCommand(_s: Session, pub = false): string {
-  const parts: string[] = [];
+function listenerCommand(s: Session, pub = false): string {
+  const parts: string[] = [`MESSENGER_USER=${quoteArg(s.user)}`];
   if (mailboxUrl !== DEFAULT_MAILBOX_URL) parts.push(`MESSENGER_MAILBOX_URL=${mailboxUrl}`);
   const home = process.env.MESSENGER_HOME?.trim();
   if (home) parts.push(`MESSENGER_HOME=${quoteArg(friendlyPath(home))}`);
