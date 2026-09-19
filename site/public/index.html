@@ -342,14 +342,14 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
 <header class="hero wrap" id="top">
   <p class="kicker"><span><span class="lgs">//</span><span class="lgp">❯</span> cli-chat <b>·</b> lives in your coding CLI</span><span class="installs" id="installs" hidden><b id="installsN"></b> installs</span></p>
   <h1><span class="sr-only">cli-chat — encrypted messaging for coding-agent CLIs: </span><span class="prompt">❯ </span><span class="cmd" data-scramble>auto</span> <span class="arg" data-scramble>chat</span></h1>
-  <p class="sub">Let the agent take care of communication. For AI-first teams: questions get answered from where the terminal is opened, not from someone's focus time. No terminal? <a href="https://online.cli-chat.dev">chat online ↗</a></p>
+  <p class="sub">A chat that lives wherever you open your CLI. Your agent answers from that directory's own context, and loops you in for the rest. No terminal? <a href="https://online.cli-chat.dev">chat online ↗</a></p>
 
   <div class="card mode" id="job" style="margin-top: 28px;">
     <div class="mode-info">
       <p class="tag">your assistant</p>
       <h2>Say it once — it's handled</h2>
       <ul class="mode-steps reel-steps" id="reelSteps">
-        <li class="live">contacts of contacts: find the right person, easily</li>
+        <li class="live">answered from this directory; you're pulled in only when it matters</li>
         <li>you ask, their assistant answers; no waiting, no interrupting</li>
         <li>write everyone at once; replies gathered for you</li>
         <li>wire CI in one line; woken only when it matters</li>
@@ -390,7 +390,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
       <h3>Your first message is the setup</h3>
       <p>No onboarding screen.</p>
       <ol class="mode-steps">
-        <li>write <em>their handle</em></li>
+        <li>write <em>their email</em></li>
         <li>give your <em>email</em></li>
         <li>click the <em>login link</em></li>
         <li>give your <em>full name</em></li>
@@ -565,13 +565,14 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
   var REEL = [
     [
       { c: 'fu', pre: '❯ ', t: 'auto chat' },
-      { c: 'fa', h: '· the desk is open', d: 700 },
-      { c: 'fu', pre: '❯ ', t: 'get the changelog to whoever runs ingest — Niels will know' },
-      { c: 'fr', h: '↳ 📤 Sent to Niels — "Who runs ingest these days?"', d: 1300 },
-      { c: 'fs', h: '<span class="env">📨</span> Niels · #1', d: 1000 },
-      { c: 'fq', h: 'that\'s Sam', d: 1100 },
-      { c: 'fr', h: '↳ 🤝 found Sam via Niels · request sent — accepted', d: 1200 },
-      { c: 'fr', h: '↳ 📤 Sent to Sam — the changelog. Delivered.', d: 1000 }
+      { c: 'fa', h: '· the desk is open, this repo\'s context loaded', d: 900 },
+      { c: 'fs', h: '<span class="env">📨</span> Tobias · #1', d: 900 },
+      { c: 'fq', h: 'which env vars does the worker need?', d: 1200 },
+      { c: 'fr', h: '↳ 📤 Sent to Tobias — "DATABASE_URL, REDIS_URL, QUEUE_NAME (from .env.example)"', d: 1600 },
+      { c: 'fa', h: '· answered from this directory — you never left flow', d: 1400 },
+      { c: 'fs', h: '<span class="env">📨</span> Tobias · #2', d: 900 },
+      { c: 'fq', h: 'can you bump my access to prod?', d: 1000 },
+      { c: 'fw', h: '↳ ⚠️ needs you: access request — nothing else today needed you', d: 1800 }
     ],
     [
       { c: 'fu', pre: '❯ ', t: 'auto chat' },
@@ -726,7 +727,7 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
     } else play(0);
   })();
   livefeed('firstrun', [
-    { c: 'in', pre: '<span class="p">❯</span>', t: 'write Sam at qL7fA: hey, I\'m on cli-chat' },
+    { c: 'in', pre: '<span class="p">❯</span>', t: 'write Sam at sam@gmail.com: hey, I\'m on cli-chat' },
     { c: '', h: '● Quick setup first — what\'s your email?', d: 1400 },
     { c: 'in', pre: '<span class="p">❯</span>', t: 'mette.holm@' + mailhost() },
     { c: '', h: '● Sent you a login link — click it and I\'ll wait… you\'re in! What\'s your full name?', d: 1600 },
@@ -734,13 +735,13 @@ footer { border-top: 1px solid var(--line); padding: 56px 0 96px; }
     { c: 'dim ind', h: 'Called cli-chat <b>2</b> times', d: 900 },
     { c: 'g', h: '● You\'re set up as Mette Holm — your handle is <span class="h">Xk4Pq</span>. Share it and anyone can write you.', d: 1400 },
     { c: 'ind act', h: '↳ 📤 Sent to Sam — "hey, I\'m on cli-chat"', d: 1200 },
-    { c: 'ind act', h: '↳ 👤 saved Sam · <span class="h">qL7fA</span> — "write Sam" works from now on', d: 1000 },
+    { c: 'ind act', h: '↳ 👤 saved Sam · sam@gmail.com — "write Sam" works from now on', d: 1000 },
     { c: 'in', pre: '<span class="p">❯</span>', t: 'who are my contacts?' },
     { c: '', h: '● I\'ll pull up your address book.', d: 900 },
     { c: 'dim ind g', h: 'Called cli-chat <b>1</b> time', d: 900 },
     { c: 'g', h: '● <b>You:</b> Mette Holm · <span class="h">Xk4Pq</span>', d: 900 },
     { c: 'ind g', h: '<b>Recent:</b>', d: 600 },
-    { c: 'ind', h: '— Sam · <span class="h">qL7fA</span>', d: 600 },
+    { c: 'ind', h: '— Sam · sam@gmail.com', d: 600 },
     { c: 'ind', h: '— feedback · <span class="h">FeedBk</span>', d: 800 },
     { c: 'ind g', h: 'No new messages waiting. Say "chat" anytime to read them live.', d: 1000 },
     { c: 'dim g', h: '✳ Cogitated for 4s', d: 1000 }
